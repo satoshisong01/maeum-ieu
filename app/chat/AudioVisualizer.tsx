@@ -87,8 +87,9 @@ export function AudioVisualizer({ stream, active, aiSpeaking }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const ctx = context;
 
     const w = canvas.width / (window.devicePixelRatio ?? 1);
     const h = canvas.height / (window.devicePixelRatio ?? 1);
