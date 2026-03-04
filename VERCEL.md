@@ -1,15 +1,20 @@
 # Vercel 배포
 
-## 1. Git 저장소에 올리기
+## 1. GitHub에 올리기
+
+**1) GitHub에서 새 저장소 생성**  
+- [github.com/new](https://github.com/new) → 저장소 이름 예: `maeum-ieu`  
+- **Create repository** (README 추가 안 해도 됨)
+
+**2) 로컬에서 원격 연결 후 푸시** (이미 커밋됨)
 
 ```bash
-git init
-git add .
-git commit -m "Initial commit - 마음이음"
 git branch -M main
-git remote add origin https://github.com/본인아이디/저장소이름.git
+git remote add origin https://github.com/본인아이디/maeum-ieu.git
 git push -u origin main
 ```
+
+(본인아이디/maeum-ieu를 실제 GitHub 사용자명·저장소명으로 바꾸세요.)
 
 ## 2. Vercel에서 프로젝트 가져오기
 
