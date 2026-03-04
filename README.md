@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 마음이음
 
-## Getting Started
+AI와 대화하며 일상·상태를 함께 살펴보는 서비스입니다.  
+(식사 여부, 일상 질문 등을 통해 참고 수준으로 상태를 살펴봅니다. 의료 진단·처방이 아닙니다.)
 
-First, run the development server:
+## 기술 스택
+
+- **프론트/백엔드**: Next.js 16 (App Router)
+- **DB**: PostgreSQL (로컬 또는 AWS RDS + pgvector 예정)
+- **인증**: NextAuth (Credentials + Prisma)
+- **AI**: Google Gemini (채팅), RAG 방식 예정
+- **스토리지**: AWS S3 예정 (가족 목소리 파일 등)
+
+## 로컬 실행
+
+### 1. 환경 변수
+
+`.env.example`을 복사해 `.env`를 만들고 값을 채웁니다.
+
+```bash
+cp .env.example .env
+```
+
+필수:
+
+- `DATABASE_URL`: PostgreSQL 연결 문자열
+- `NEXTAUTH_URL`: `http://localhost:3000`
+- `NEXTAUTH_SECRET`: 랜덤 시크릿 (예: `openssl rand -base64 32`)
+- `GEMINI_API_KEY`: Google AI Studio에서 발급
+
+### 2. DB 마이그레이션
+
+```bash
+npm install
+npx prisma generate
+npx prisma db push
+```
+
+### 3. 개발 서버
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 [http://localhost:3000](http://localhost:3000) 접속 후 회원가입 → 로그인 → **채팅** 페이지에서 AI와 대화할 수 있습니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 주요 기능 (현재)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 회원가입 / 로그인 (이메일·비밀번호)
+- 채팅 페이지: AI가 먼저 인사 (예: "안녕하세요, ○○님의 AI 손녀 민지예요")
+- 대화 시작하기 버튼 → 마이크 허용 → 음성 파형 시각화
+- AI 답변 시 출렁이는 파형 애니메이션
+- 사용자별 대화 저장 (Conversation / Message)
 
-## Learn More
+## 다음 단계 예정
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- RAG: pgvector로 과거 대화 검색 후 맥락 반영
+- 음성 입력 (STT) / 음성 출력 (TTS, 가족 목소리 학습)
+- AWS RDS, S3 연동
