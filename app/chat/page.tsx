@@ -8,7 +8,7 @@ type Message = { role: "user" | "assistant"; content: string };
 
 const SpeechRecognitionAPI =
   typeof window !== "undefined"
-    ? (window.SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition)
+    ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
     : undefined;
 
 export default function ChatPage() {
