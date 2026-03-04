@@ -18,8 +18,9 @@ export function AudioVisualizer({ stream, active, aiSpeaking }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const ctx = context;
 
     const dpr = window.devicePixelRatio ?? 1;
     const size = Math.min(280, window.innerWidth - 48);
@@ -46,8 +47,9 @@ export function AudioVisualizer({ stream, active, aiSpeaking }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const ctx = context;
 
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
