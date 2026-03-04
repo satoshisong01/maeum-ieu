@@ -16,12 +16,15 @@ model User {
   emailVerified DateTime?
   password      String?   // credentials 로그인용 해시
   image         String?
+  age           Int?      // 연령 (호칭 추론용)
+  gender        String?   // "male" | "female" | "other" (호칭 추론용)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   accounts      Account[]
   sessions      Session[]
   conversations Conversation[]
+  healthLogs    HealthLog[]
 }
 
 model Account {
@@ -66,8 +69,9 @@ model Conversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages Message[]
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  healthLogs HealthLog[]
 }
 
 model Message {
@@ -75,7 +79,23 @@ model Message {
   conversationId String
   role           String   // "user" | "assistant" | "system"
   content        String
+  isAnomaly      Boolean? @default(false) // AI가 감지한 인지/상황 이상 징후 여부
+  analysisNote   String?  // 이상 징후에 대한 AI 분석 메모 (참고용)
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+// 식사·기분·인지 등 참고용 건강/일상 로그 (의료 진단 아님)
+model HealthLog {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String?
+  type           String   // "meal" | "mood" | "cognitive" | "activity" | "etc"
+  value          String?  // 예: "아침 식사 함", "좋음", "날씨 인지 오류"
+  note           String?  // 추가 메모
+  createdAt      DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 }

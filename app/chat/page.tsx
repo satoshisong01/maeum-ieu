@@ -18,6 +18,12 @@ const blobToBase64 = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return String(e);
+}
+
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -33,6 +39,13 @@ export default function ChatPage() {
   const audioChunksRef = useRef<BlobPart[]>([]);
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
+  const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
+
+  /** API 호출 시 사용할 현재 시간·위치 컨텍스트 */
+  const getContext = useCallback(() => ({
+    currentTime: new Date().toISOString(),
+    ...locationRef.current,
+  }), []);
 
   const createId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -56,6 +69,21 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // 앱/채팅 진입 시 위치 수집 (날씨 기반 인사·인지 모니터링용, 권한 거부 시 무시)
+  useEffect(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        locationRef.current = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+    );
+  }, []);
+
   // 대화 시작 시 AI 선인사 + 대화 ID 생성
   useEffect(() => {
     if (status !== "authenticated" || conversationId !== null) return;
@@ -71,7 +99,11 @@ export default function ChatPage() {
       const chatRes = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: id, isInitialGreeting: true }),
+        body: JSON.stringify({
+          conversationId: id,
+          isInitialGreeting: true,
+          context: getContext(),
+        }),
       });
       if (!chatRes.ok || cancelled) return;
       const { text } = (await chatRes.json()) as { text: string };
@@ -87,7 +119,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, conversationId]);
+  }, [status, conversationId, getContext]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -111,6 +143,7 @@ export default function ChatPage() {
             messages: [...messagesRef.current, userMessage].map(
               ({ role, content }) => ({ role, content })
             ),
+            context: getContext(),
           }),
         });
         const data = await res.json();
@@ -120,13 +153,15 @@ export default function ChatPage() {
           { id: createId(), role: "assistant", content: data.text },
         ]);
         speak(data.text);
-    } catch (e) {
+      } catch (e) {
+        console.error("[chat] sendMessage error", e);
+        const msg = getErrorMessage(e);
         setMessages((prev) => [
           ...prev,
           {
             id: createId(),
             role: "assistant",
-            content: "잠시 후 다시 시도해 주세요.",
+            content: `오류: ${msg}`,
           },
         ]);
       } finally {
@@ -134,7 +169,7 @@ export default function ChatPage() {
         setAiSpeaking(false);
       }
     },
-    [loading, conversationId, messages, createId, speak]
+    [loading, conversationId, messages, createId, speak, getContext]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -176,6 +211,7 @@ export default function ChatPage() {
               role,
               content,
             })),
+            context: getContext(),
           }),
         });
         const data = await res.json();
@@ -198,13 +234,15 @@ export default function ChatPage() {
           ];
         });
         speak(answer);
-    } catch (e) {
+      } catch (e) {
+        console.error("[chat] sendAudioMessage error", e);
+        const msg = getErrorMessage(e);
         setMessages((prev) => [
           ...prev,
           {
             id: createId(),
             role: "assistant",
-            content: "잠시 후 다시 시도해 주세요.",
+            content: `오류: ${msg}`,
           },
         ]);
       } finally {
@@ -212,7 +250,7 @@ export default function ChatPage() {
         setAiSpeaking(false);
       }
     },
-    [conversationId, loading, speak]
+    [conversationId, loading, speak, getContext]
   );
 
   const startRecording = useCallback(() => {
@@ -242,13 +280,15 @@ export default function ChatPage() {
       try {
         const base64 = await blobToBase64(blob);
         await sendAudioMessage(base64, blob.type);
-      } catch {
+      } catch (e) {
+        console.error("[chat] recorder onstop error", e);
+        const msg = getErrorMessage(e);
         setMessages((prev) => [
           ...prev,
           {
             id: createId(),
             role: "assistant",
-            content: "음성 처리 중 오류가 발생했습니다.",
+            content: `음성 처리 오류: ${msg}`,
           },
         ]);
       }

@@ -389,7 +389,8 @@ export const ModelName = {
   Session: 'Session',
   VerificationToken: 'VerificationToken',
   Conversation: 'Conversation',
-  Message: 'Message'
+  Message: 'Message',
+  HealthLog: 'HealthLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -405,7 +406,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "account" | "session" | "verificationToken" | "conversation" | "message"
+    modelProps: "user" | "account" | "session" | "verificationToken" | "conversation" | "message" | "healthLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -853,6 +854,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    HealthLog: {
+      payload: Prisma.$HealthLogPayload<ExtArgs>
+      fields: Prisma.HealthLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HealthLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HealthLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        findFirst: {
+          args: Prisma.HealthLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HealthLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        findMany: {
+          args: Prisma.HealthLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>[]
+        }
+        create: {
+          args: Prisma.HealthLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        createMany: {
+          args: Prisma.HealthLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HealthLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>[]
+        }
+        delete: {
+          args: Prisma.HealthLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        update: {
+          args: Prisma.HealthLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.HealthLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HealthLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HealthLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.HealthLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HealthLogPayload>
+        }
+        aggregate: {
+          args: Prisma.HealthLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHealthLog>
+        }
+        groupBy: {
+          args: Prisma.HealthLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HealthLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HealthLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HealthLogCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -899,6 +974,8 @@ export const UserScalarFieldEnum = {
   emailVerified: 'emailVerified',
   password: 'password',
   image: 'image',
+  age: 'age',
+  gender: 'gender',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -957,10 +1034,25 @@ export const MessageScalarFieldEnum = {
   conversationId: 'conversationId',
   role: 'role',
   content: 'content',
+  isAnomaly: 'isAnomaly',
+  analysisNote: 'analysisNote',
   createdAt: 'createdAt'
 } as const
 
 export type MessageScalarFieldEnum = (typeof MessageScalarFieldEnum)[keyof typeof MessageScalarFieldEnum]
+
+
+export const HealthLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  conversationId: 'conversationId',
+  type: 'type',
+  value: 'value',
+  note: 'note',
+  createdAt: 'createdAt'
+} as const
+
+export type HealthLogScalarFieldEnum = (typeof HealthLogScalarFieldEnum)[keyof typeof HealthLogScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1032,6 +1124,13 @@ export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'In
  * Reference to a field of type 'Int[]'
  */
 export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Boolean'
+ */
+export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
     
 
 
@@ -1149,6 +1248,7 @@ export type GlobalOmitConfig = {
   verificationToken?: Prisma.VerificationTokenOmit
   conversation?: Prisma.ConversationOmit
   message?: Prisma.MessageOmit
+  healthLog?: Prisma.HealthLogOmit
 }
 
 /* Types for Logging */

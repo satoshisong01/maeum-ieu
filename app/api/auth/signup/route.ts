@@ -5,11 +5,25 @@ import bcrypt from "bcryptjs";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, password, name } = body as { email?: string; password?: string; name?: string };
+    const { email, password, passwordConfirm, name, age, gender } = body as {
+      email?: string;
+      password?: string;
+      passwordConfirm?: string;
+      name?: string;
+      age?: number;
+      gender?: string;
+    };
 
     if (!email || !password) {
       return NextResponse.json(
         { error: "이메일과 비밀번호를 입력해 주세요." },
+        { status: 400 }
+      );
+    }
+
+    if (password !== passwordConfirm) {
+      return NextResponse.json(
+        { error: "비밀번호가 일치하지 않습니다." },
         { status: 400 }
       );
     }
@@ -24,7 +38,14 @@ export async function POST(req: Request) {
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { email, password: hashed, name: name ?? null },
+      data: {
+        email,
+        password: hashed,
+        name: name ?? null,
+        age: age != null && Number.isInteger(age) && age >= 0 ? age : null,
+        gender:
+          gender === "male" || gender === "female" || gender === "other" ? gender : null,
+      },
     });
 
     return NextResponse.json({
