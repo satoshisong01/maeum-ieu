@@ -245,7 +245,11 @@ export default function ChatPage() {
       } catch {
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: "음성 처리 중 오류가 발생했습니다." },
+          {
+            id: createId(),
+            role: "assistant",
+            content: "음성 처리 중 오류가 발생했습니다.",
+          },
         ]);
       }
     };
