@@ -1,6 +1,7 @@
 // 마음이음 - PostgreSQL (AWS RDS + pgvector 예정)
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma/client"
 }
 
 datasource db {
