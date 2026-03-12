@@ -55,6 +55,15 @@ function extractJsonFromResponse(raw: string): { text: string; transcription: st
   }
 }
 
+/** 대화창에 표시할 때: ```json 또는 raw JSON이면 .text만 보여주기 (DB에 옛날 데이터가 남아있는 경우 대비) */
+function displayMessageContent(content: string): string {
+  if (!content || !content.trim()) return content;
+  if (!content.includes("```") && !content.trimStart().startsWith("{")) return content;
+  const extracted = extractJsonFromResponse(content);
+  if (extracted?.text) return extracted.text;
+  return content;
+}
+
 /** API 응답에서 TTS용 text와 받아쓰기용 transcription 안전 추출 (마크다운 JSON 대응) */
 function parseAudioResponse(data: unknown): { text: string; transcription: string } {
   const fallback = { text: "", transcription: "" };
@@ -445,7 +454,7 @@ export default function ChatPage() {
                     : "bg-zinc-100 text-zinc-800"
                 }`}
               >
-                <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+                <p className="whitespace-pre-wrap text-sm">{displayMessageContent(m.content)}</p>
               </div>
             </div>
           ))}

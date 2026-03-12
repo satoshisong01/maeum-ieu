@@ -95,6 +95,33 @@ function getHonorific(age: number | null, gender: string | null): string {
   return "회원님";
 }
 
+/** 응답에서 ```json ... ``` 또는 raw JSON을 제거하고 파싱. 대화창/DB에는 text만 남기기 위함 */
+function extractJsonFromModelResponse(raw: string): Record<string, unknown> | null {
+  try {
+    const codeBlock = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = codeBlock ? codeBlock[1].trim() : raw.trim();
+    const firstBrace = jsonStr.indexOf("{");
+    if (firstBrace === -1) return null;
+    const slice = jsonStr.slice(firstBrace);
+    let depth = 0;
+    let end = -1;
+    for (let i = 0; i < slice.length; i++) {
+      if (slice[i] === "{") depth++;
+      else if (slice[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    const toParse = end > 0 ? slice.slice(0, end) : slice;
+    return JSON.parse(toParse) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -218,25 +245,14 @@ JSON 이외의 텍스트(설명, 마크다운 등)는 절대 포함하지 마세
       let isAnomaly = false;
       let analysisNote: string | null = null;
 
-      try {
-        const parsed = JSON.parse(raw) as {
-          transcription?: string;
-          text?: string;
-          isAnomaly?: boolean;
-          analysisNote?: string;
-        };
-        if (parsed.transcription && typeof parsed.transcription === "string") {
-          transcription = parsed.transcription;
-        }
-        if (parsed.text && typeof parsed.text === "string") {
-          answerText = parsed.text;
-        }
-        if (parsed.isAnomaly === true && parsed.analysisNote) {
+      const parsed = extractJsonFromModelResponse(raw);
+      if (parsed) {
+        if (typeof parsed.transcription === "string") transcription = parsed.transcription;
+        if (typeof parsed.text === "string") answerText = parsed.text;
+        if (parsed.isAnomaly === true && typeof parsed.analysisNote === "string") {
           isAnomaly = true;
           analysisNote = String(parsed.analysisNote).slice(0, 500);
         }
-      } catch {
-        // JSON 파싱 실패 시 전체를 답변 텍스트로 사용
       }
 
       if (conversationId) {
@@ -301,21 +317,13 @@ JSON만 출력하세요.`;
     let isAnomaly = false;
     let analysisNote: string | null = null;
 
-    try {
-      const parsed = JSON.parse(rawText) as {
-        text?: string;
-        isAnomaly?: boolean;
-        analysisNote?: string;
-      };
-      if (parsed.text && typeof parsed.text === "string") {
-        text = parsed.text;
-      }
-      if (parsed.isAnomaly === true && parsed.analysisNote) {
+    const parsed = extractJsonFromModelResponse(rawText);
+    if (parsed && typeof parsed.text === "string") {
+      text = parsed.text;
+      if (parsed.isAnomaly === true && typeof parsed.analysisNote === "string") {
         isAnomaly = true;
         analysisNote = String(parsed.analysisNote).slice(0, 500);
       }
-    } catch {
-      // JSON 아님 → 전체를 답변으로 사용
     }
 
     if (conversationId) {
