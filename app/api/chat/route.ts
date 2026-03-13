@@ -22,13 +22,24 @@ function getTimeContext(clientTimeIso?: string) {
   const now = clientTimeIso ? new Date(clientTimeIso) : new Date();
   const kr = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const hour = kr.getHours();
-  const dateStr = kr.toLocaleDateString("ko-KR", { weekday: "long", month: "long", day: "numeric" });
+  const dateStr = kr.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", weekday: "long", month: "long", day: "numeric" });
   let timeLabel = "오후";
   if (hour >= 5 && hour < 10) timeLabel = "아침";
   else if (hour >= 10 && hour < 14) timeLabel = "오전";
   else if (hour >= 14 && hour < 17) timeLabel = "점심 시간대";
   else if (hour >= 17 && hour < 21) timeLabel = "저녁";
   return { timeLabel, hour, dateStr };
+}
+
+/** 한국 시간(KST) 기준 현재 시각을 DB 저장용 Date로 반환 (PostgreSQL timestamptz에 동일 시각 저장) */
+function getNowKst(): Date {
+  const s = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul" });
+  return new Date(s.replace(" ", "T") + "+09:00");
+}
+
+/** Date를 한국 날짜 문자열로 (YYYY-MM-DD) */
+function toKstDateString(d: Date): string {
+  return d.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 }
 
 type WeatherContext = { description: string; promptText: string };
@@ -77,6 +88,21 @@ function buildContextBlock(
 - ${weather.promptText}
 
 위 정보를 활용해 "점심 드셨나요?", "오늘 날씨가 좋은데 산책 어떠세요?"처럼 구체적인 선제적 질문을 해 주세요.`;
+}
+
+/** 마지막 대화가 오늘과 다른 날이면 true (오늘 식사·활동 재질문 지시용) */
+async function isLastMessageOnDifferentDay(
+  conversationId: string,
+  todayKst: string
+): Promise<{ different: boolean; lastDateStr?: string }> {
+  const last = await prisma.message.findFirst({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (!last) return { different: false };
+  const lastDateStr = toKstDateString(last.createdAt);
+  return { different: lastDateStr !== todayKst, lastDateStr };
 }
 
 /** 인지 오류 감지 지침 (SYSTEM_PROMPT에 추가) */
@@ -168,7 +194,20 @@ export async function POST(req: Request) {
       clientContext?.longitude
     );
     const contextBlock = buildContextBlock(timeCtx, weatherCtx);
-    const systemPromptWithContext = `${SYSTEM_PROMPT_BASE}\n\n${userBlock}\n\n${contextBlock}${COGNITIVE_DETECTION_RULE}`;
+
+    const todayKst = toKstDateString(new Date());
+    let dateAwareBlock = "";
+    if (conversationId) {
+      const { different, lastDateStr } = await isLastMessageOnDifferentDay(conversationId, todayKst);
+      if (different && lastDateStr) {
+        dateAwareBlock = `
+
+[날짜 안내]
+마지막 대화는 ${lastDateStr}이었고, 오늘은 ${todayKst}입니다. 새로운 날이므로 **오늘의** 식사(아침/점심/저녁), 산책·외부 활동 등을 새로 여쭤보세요. 어제 이전 대화는 기억하되, 식사·활동은 반드시 '오늘' 기준으로만 물어보세요.`;
+      }
+    }
+
+    const systemPromptWithContext = `${SYSTEM_PROMPT_BASE}\n\n${userBlock}\n\n${contextBlock}${dateAwareBlock}${COGNITIVE_DETECTION_RULE}`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -184,12 +223,13 @@ export async function POST(req: Request) {
       });
       const text = res.response.text();
       if (conversationId) {
+        const nowKst = getNowKst();
         await prisma.message.createMany({
-          data: [{ conversationId, role: "assistant", content: text }],
+          data: [{ conversationId, role: "assistant", content: text, createdAt: nowKst }],
         });
         await prisma.conversation.update({
           where: { id: conversationId },
-          data: { updatedAt: new Date() },
+          data: { updatedAt: nowKst },
         });
       }
       return NextResponse.json({ text, role: "assistant" });
@@ -265,11 +305,13 @@ JSON 이외의 텍스트(설명, 마크다운 등)는 절대 포함하지 마세
       }
 
       if (conversationId) {
+        const nowKst = getNowKst();
         const userMsg = await prisma.message.create({
           data: {
             conversationId,
             role: "user",
             content: transcription || "(음성 메시지)",
+            createdAt: nowKst,
           },
         });
         const assistantMsg = await prisma.message.create({
@@ -279,6 +321,7 @@ JSON 이외의 텍스트(설명, 마크다운 등)는 절대 포함하지 마세
             content: answerText,
             isAnomaly,
             analysisNote,
+            createdAt: nowKst,
           },
         });
         if (isAnomaly && analysisNote) {
@@ -301,7 +344,7 @@ JSON 이외의 텍스트(설명, 마크다운 등)는 절대 포함하지 마세
         );
         await prisma.conversation.update({
           where: { id: conversationId },
-          data: { updatedAt: new Date() },
+          data: { updatedAt: nowKst },
         });
       }
 
@@ -340,11 +383,12 @@ JSON만 출력하세요.`;
     }
 
     if (conversationId) {
+      const nowKst = getNowKst();
       const lastUser = messages?.filter((m: { role: string }) => m.role === "user").pop();
       let userMsg: { id: string; content: string } | null = null;
       if (lastUser) {
         userMsg = await prisma.message.create({
-          data: { conversationId, role: "user", content: lastUser.content },
+          data: { conversationId, role: "user", content: lastUser.content, createdAt: nowKst },
         });
       }
       const assistantMsg = await prisma.message.create({
@@ -354,6 +398,7 @@ JSON만 출력하세요.`;
           content: text,
           isAnomaly,
           analysisNote,
+          createdAt: nowKst,
         },
       });
       if (isAnomaly && analysisNote) {
@@ -378,7 +423,7 @@ JSON만 출력하세요.`;
       );
       await prisma.conversation.update({
         where: { id: conversationId },
-        data: { updatedAt: new Date() },
+        data: { updatedAt: nowKst },
       });
     }
 
