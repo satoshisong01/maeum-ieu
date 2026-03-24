@@ -483,23 +483,31 @@ export default function ChatPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f0f2f5]">
-      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold text-zinc-800">마음이음</h1>
-        <div className="flex items-center gap-3">
+      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-3 py-2">
+        <h1 className="text-base font-semibold leading-tight text-zinc-800">
+          마음<br />이음
+        </h1>
+        <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-lg bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-100"
+            className="rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-medium leading-tight text-orange-600 hover:bg-orange-100"
           >
-            건강 기록
+            건강<br />기록
           </Link>
-          <span className="text-sm text-zinc-400">|</span>
-          <span className="text-sm text-zinc-500">{session.user?.email}</span>
+          <span className="text-xs text-zinc-500">
+            {(session.user?.email ?? "").split("@")[0]}님
+          </span>
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="rounded-lg px-3 py-1 text-sm text-zinc-600 hover:bg-zinc-100"
+            title="로그아웃"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
           >
-            로그아웃
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
           </button>
         </div>
       </header>
@@ -571,15 +579,15 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-zinc-200 p-4">
-          <div className="flex gap-2">
+        <form onSubmit={handleSubmit} className="border-t border-zinc-200 px-3 py-3">
+          <div className="flex items-center gap-2">
             {micAllowed && (
               <button
                 type="button"
                 onClick={listening ? stopRecording : startRecording}
                 disabled={loading}
                 title={listening ? "멈추기" : "말하기"}
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl ${
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${
                   listening
                     ? "bg-red-500 text-white hover:bg-red-600"
                     : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
@@ -593,15 +601,18 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="메시지를 입력하세요."
-              className="flex-1 rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="rounded-xl bg-[#007bff] px-5 py-3 font-medium text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+              title="전송"
             >
-              전송
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
             </button>
           </div>
         </form>
