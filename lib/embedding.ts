@@ -3,7 +3,7 @@
  * RAG 검색·저장 시 사용. GEMINI_API_KEY 사용.
  */
 
-const EMBEDDING_MODEL = "text-embedding-004";
+const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSION = 768;
 const EMBED_API = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
 

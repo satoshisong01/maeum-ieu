@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/jungm/Desktop/projects/maeum-ieu -maxdepth 3 -type d ! -path */node_modules/* ! -path */.next/*)",
+      "Bash(npx next:*)"
+    ]
+  }
+}

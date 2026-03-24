@@ -2,6 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
 
 type Message = { id: string; role: "user" | "assistant"; content: string };
@@ -19,7 +20,7 @@ const blobToBase64 = (blob: Blob) =>
   });
 
 function getErrorMessage(e: unknown): string {
-  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : "";
   const isApiQuotaError =
     raw.includes("429") ||
     raw.includes("Too Many Requests") ||
@@ -27,7 +28,10 @@ function getErrorMessage(e: unknown): string {
     raw.includes("Quota exceeded") ||
     raw.includes("GoogleGenerativeAI") ||
     raw.includes("rate-limit");
-  return isApiQuotaError ? "오늘은 사용할 수 없습니다. 잠시 후 다시 시도해 주세요." : raw;
+  if (isApiQuotaError) return "오늘은 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+  // 서버에서 보낸 안전한 한국어 메시지만 그대로 표시, 그 외는 일반 메시지로 대체
+  if (raw && !raw.includes("Error") && !raw.includes("error") && !raw.includes("fetch")) return raw;
+  return "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
 }
 
 /** 마크다운(```json ... ```)이 섞인 응답에서 JSON만 추출해 파싱 */
@@ -230,6 +234,8 @@ export default function ChatPage() {
       setLoading(true);
       setAiSpeaking(true);
 
+      const assistantId = createId();
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -242,13 +248,60 @@ export default function ChatPage() {
             context: getContext(),
           }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "오류");
-        setMessages((prev) => [
-          ...prev,
-          { id: createId(), role: "assistant", content: data.text },
-        ]);
-        speak(data.text);
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error ?? "오류");
+        }
+
+        const contentType = res.headers.get("content-type") ?? "";
+
+        // SSE 스트리밍 응답 처리
+        if (contentType.includes("text/event-stream") && res.body) {
+          setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+          setLoading(false);
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let fullText = "";
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const payload = line.slice(6);
+              if (payload === "[DONE]") break;
+              try {
+                const { text, error } = JSON.parse(payload) as { text?: string; error?: string };
+                if (error) throw new Error(error);
+                if (text) {
+                  fullText += text;
+                  setMessages((prev) =>
+                    prev.map((m) => (m.id === assistantId ? { ...m, content: fullText } : m)),
+                  );
+                }
+              } catch {
+                // skip malformed chunk
+              }
+            }
+          }
+          speak(fullText);
+        } else {
+          // JSON 응답 (인사, 시간 질문 등 비스트리밍)
+          const data = await res.json();
+          setMessages((prev) => [
+            ...prev,
+            { id: assistantId, role: "assistant", content: data.text },
+          ]);
+          speak(data.text);
+        }
       } catch (e) {
         console.error("[chat] sendMessage error", e);
         const msg = getErrorMessage(e);
@@ -428,7 +481,14 @@ export default function ChatPage() {
     <div className="flex min-h-screen flex-col bg-[#f0f2f5]">
       <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
         <h1 className="text-lg font-semibold text-zinc-800">마음이음</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard"
+            className="rounded-lg bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-100"
+          >
+            건강 기록
+          </Link>
+          <span className="text-sm text-zinc-400">|</span>
           <span className="text-sm text-zinc-500">{session.user?.email}</span>
           <button
             type="button"
