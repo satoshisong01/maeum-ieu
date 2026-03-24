@@ -12,11 +12,36 @@ import { saveMessages, saveGreetingMessage } from "@/lib/chat/messages";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function getGeminiModel() {
+function getGeminiApiKey(): string {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({
+  return apiKey;
+}
+
+/** 일반 텍스트 응답용 모델 (인사, 텍스트 채팅) */
+function getTextModel(systemInstruction: string) {
+  return new GoogleGenerativeAI(getGeminiApiKey()).getGenerativeModel({
     model: "gemini-2.5-flash",
+    systemInstruction,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 300,
+    },
+    // @ts-expect-error -- googleSearch 도구는 REST API에서 지원하지만 SDK 타입에 아직 미반영
+    tools: [{ googleSearch: {} }],
+  });
+}
+
+/** JSON 응답 강제 모델 (음성 멀티모달 — transcription + isAnomaly 파싱 필요) */
+function getJsonModel(systemInstruction: string) {
+  return new GoogleGenerativeAI(getGeminiApiKey()).getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 300,
+      responseMimeType: "application/json",
+    },
     // @ts-expect-error -- googleSearch 도구는 REST API에서 지원하지만 SDK 타입에 아직 미반영
     tools: [{ googleSearch: {} }],
   });
@@ -58,16 +83,12 @@ async function handleGreeting(
   honorific: string,
   conversationId?: string,
 ) {
-  const model = getGeminiModel();
-  const prompt = `${systemPrompt}
-
-지금 ${userName}님이 대화를 시작하려고 합니다. AI 가족 역할은 '손녀/손자'로 하고, 이름은 '민지'로 해주세요.
+  const model = getTextModel(systemPrompt);
+  const prompt = `지금 ${userName}님이 대화를 시작하려고 합니다. AI 가족 역할은 '손녀/손자'로 하고, 이름은 '민지'로 해주세요.
 위 [사용자 정보]의 호칭(${honorific})으로 부르면서, [현재 환경 정보]를 반영해 현재 시각대에 맞는 구체적인 선제적 질문을 포함한 첫 인사 한 마디만 짧게 해주세요.
 예: 할아버지/할머니에게 "아침 식사는 하셨나요?", "점심 드셨나요?", "오늘 날씨가 맑은데 산책 어떠세요?" 등. (본인 소개 포함)`;
 
-  const res = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-  });
+  const res = await model.generateContent(prompt);
   const text = res.response.text();
 
   if (conversationId) {
@@ -112,7 +133,7 @@ async function handleAudioMessage(params: {
   memories: string;
 }) {
   const { systemPrompt, honorific, userName, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
-  const model = getGeminiModel();
+  const model = getJsonModel(systemPrompt);
 
   const parts: Part[] = [];
 
@@ -128,21 +149,16 @@ async function handleAudioMessage(params: {
   }
 
   parts.push({
-    text: `${systemPrompt}
-
-아래 음성은 ${honorific} ${userName}님이 방금 하신 말씀입니다. 음성을 듣고 상황을 이해한 뒤, 손녀 '민지'로서 ${honorific}을/를 부르며 따뜻하게 대답해 주세요.
+    text: `아래 음성은 ${honorific} ${userName}님이 방금 하신 말씀입니다. 음성을 듣고 상황을 이해한 뒤, 손녀 '민지'로서 ${honorific}을/를 부르며 따뜻하게 대답해 주세요.
 ${memories ? "[지시] 위 '과거 맥락'에 사용자가 예전에 말한 내용이 있으면, '기억나니?' 등으로 물어보면 그 내용을 활용해 답하세요.\n" : ""}[지시] 위 "지금까지의 대화 내역"에서 사용자가 이미 답한 내용(식사·수면·기분 등)은 다시 묻지 말고, 아직 안 물어본 주제로만 질문하세요.
-위 [현재 환경 정보]와 [인지 모니터링 지침]을 참고하세요. 날짜·시각·일반 사실 정정은 isAnomaly로 두지 마세요. 사용자 말이 제공된 "현재 날씨"와만 명백히 어긋날 때만 isAnomaly를 true로 하고 analysisNote에 짧게 사유를 적은 뒤, 부드럽게 재질문하는 답변을 text에 넣어 주세요.
 
-응답은 반드시 다음 JSON 형식의 문자열로만, 추가 설명 없이 반환해 주세요.
+JSON 응답 형식:
 {
   "transcription": "사용자의 음성을 한국어로 정확하게 받아 적은 문장",
   "text": "transcription을 기반으로 한 당신의 대답 문장",
   "isAnomaly": false,
   "analysisNote": ""
-}
-(인지 오류가 없으면 isAnomaly는 false, analysisNote는 빈 문자열로 두세요. 인지 오류가 있으면 isAnomaly true, analysisNote에 한 줄 요약)
-JSON 이외의 텍스트(설명, 마크다운 등)는 절대 포함하지 마세요.`,
+}`,
   });
 
   parts.push({ inlineData: { mimeType: audioMimeType, data: audioData } });
@@ -181,17 +197,14 @@ async function handleTextMessage(params: {
   memories: string;
 }) {
   const { systemPrompt, userId, conversationId, userContent, historyText, memories } = params;
-  const model = getGeminiModel();
+  const model = getTextModel(systemPrompt);
 
-  const prompt = `${systemPrompt}
-${memories ? `과거 맥락 (이 사용자가 예전 대화에서 말한 내용):\n${memories}\n[지시] 사용자가 "기억나니?", "아까 말한 거" 등으로 물어보면 위 과거 맥락에서 해당 정보를 찾아 답하세요. 예: 좋아하는 음식, 식사·수면·일정 등.\n` : ""}
-
+  const prompt = `${memories ? `과거 맥락 (이 사용자가 예전 대화에서 말한 내용):\n${memories}\n[지시] 사용자가 "기억나니?", "아까 말한 거" 등으로 물어보면 위 과거 맥락에서 해당 정보를 찾아 답하세요.\n` : ""}
 대화 내역:
 ${historyText}
 
 [지시] 위 대화 내역을 반드시 참고하세요. 사용자가 이미 답한 내용(식사·수면·기분 등)은 다시 묻지 말고, 아직 안 물어본 주제로만 질문하세요.
-위 [현재 환경 정보]와 [인지 모니터링 지침]을 참고하세요.
-사용자에게 따뜻하고 자연스러운 한국어로 답변해 주세요. JSON이 아닌 일반 텍스트로 답하세요.`;
+따뜻하고 자연스러운 한국어로 답변해 주세요.`;
 
   const streamResult = await model.generateContentStream(prompt);
 
