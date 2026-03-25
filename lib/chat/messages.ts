@@ -104,6 +104,31 @@ export async function saveMessages(params: {
   return { userMsg, assistantMsg };
 }
 
+/** 인지 분석 후 이상징후를 Message + HealthLog에 반영 */
+export async function markAnomaly(params: {
+  messageId: string;
+  userId: string;
+  conversationId: string;
+  analysisNote: string;
+}): Promise<void> {
+  const { messageId, userId, conversationId, analysisNote } = params;
+
+  await prisma.message.update({
+    where: { id: messageId },
+    data: { isAnomaly: true, analysisNote },
+  });
+
+  await prisma.healthLog.create({
+    data: {
+      userId,
+      conversationId,
+      type: "cognitive",
+      value: "인지 오류 감지",
+      note: analysisNote,
+    },
+  });
+}
+
 /** AI 인사 메시지만 저장 (초기 인사용) */
 export async function saveGreetingMessage(conversationId: string, text: string): Promise<void> {
   const nowKst = getNowKst();

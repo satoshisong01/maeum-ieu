@@ -8,7 +8,7 @@ import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion } from 
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { parseGeminiResponse } from "@/lib/chat/parser";
-import { saveMessages, saveGreetingMessage, saveCognitiveAssessments } from "@/lib/chat/messages";
+import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
 import { analyzeCognitive } from "@/lib/chat/cognitive-analyzer";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -277,11 +277,19 @@ ${historyText}
               assistantResponse: fullText,
               historyText,
               environmentInfo: systemPrompt.split("[인지 선별 프로토콜")[0].trim(),
-            }).then((checks) => {
-              if (checks.length > 0) {
-                saveCognitiveAssessments(userId, assistantMsg.id, conversationId, checks).catch((e) =>
-                  console.warn("Cognitive save failed:", e),
-                );
+            }).then(async (analysis) => {
+              // 인지 평가 저장
+              if (analysis.cognitiveChecks.length > 0) {
+                await saveCognitiveAssessments(userId, assistantMsg.id, conversationId, analysis.cognitiveChecks);
+              }
+              // 이상징후 감지 시 Message + HealthLog 업데이트
+              if (analysis.isAnomaly && analysis.analysisNote) {
+                await markAnomaly({
+                  messageId: assistantMsg.id,
+                  userId,
+                  conversationId,
+                  analysisNote: analysis.analysisNote,
+                });
               }
             }).catch((e) => console.warn("Cognitive analysis failed:", e));
           } catch (e) {
