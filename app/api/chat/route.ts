@@ -279,18 +279,18 @@ ${historyText}
               analysisNote: null,
             });
 
-            // 인지 분석은 저장 후 비동기로 (이건 늦어도 됨)
-            analyzeCognitive({
-              userMessage: userContent,
-              assistantResponse: fullText,
-              historyText,
-              environmentInfo: systemPrompt.split("[인지 선별 프로토콜")[0].trim(),
-            }).then(async (analysis) => {
-              // 인지 평가 저장
+            // 인지 분석 + 이상징후 기록도 [DONE] 전에 완료
+            try {
+              const analysis = await analyzeCognitive({
+                userMessage: userContent,
+                assistantResponse: fullText,
+                historyText,
+                environmentInfo: systemPrompt.split("[인지 선별 프로토콜")[0].trim(),
+              });
+
               if (analysis.cognitiveChecks.length > 0) {
                 await saveCognitiveAssessments(userId, assistantMsg.id, conversationId, analysis.cognitiveChecks);
               }
-              // 이상징후 감지 시 Message + HealthLog 업데이트
               if (analysis.isAnomaly && analysis.analysisNote) {
                 await markAnomaly({
                   messageId: assistantMsg.id,
@@ -299,7 +299,9 @@ ${historyText}
                   analysisNote: analysis.analysisNote,
                 });
               }
-            }).catch((e) => console.warn("Cognitive analysis failed:", e));
+            } catch (e) {
+              console.warn("Cognitive analysis failed:", e);
+            }
           } catch (e) {
             console.error("DB save after stream failed:", e);
           }
