@@ -26,7 +26,7 @@ function getTextModel(systemInstruction: string) {
     systemInstruction,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 300,
+      maxOutputTokens: 1024,
     },
     // @ts-expect-error -- googleSearch 도구는 REST API에서 지원하지만 SDK 타입에 아직 미반영
     tools: [{ googleSearch: {} }],
@@ -40,7 +40,7 @@ function getJsonModel(systemInstruction: string) {
     systemInstruction,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 300,
+      maxOutputTokens: 1024,
       responseMimeType: "application/json",
     },
     // @ts-expect-error -- googleSearch 도구는 REST API에서 지원하지만 SDK 타입에 아직 미반영
