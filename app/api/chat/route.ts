@@ -18,8 +18,10 @@ function getApiKey(): string {
   return key;
 }
 
-/** 텍스트 응답용 (googleSearch O, JSON 강제 X) */
+/** 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수) */
 function getTextModel(systemInstruction: string) {
+  // 대화 모델은 googleSearch가 필수이므로 항상 Gemini API 사용
+  // (파인튜닝 모델에는 googleSearch가 없어 실시간 정보를 가져오지 못함)
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction,
@@ -29,13 +31,25 @@ function getTextModel(systemInstruction: string) {
   });
 }
 
-/** 음성 JSON용 (googleSearch X, JSON 강제 O) */
+/** 음성 JSON용 (googleSearch X, JSON 강제 O) — 항상 Gemini API 사용 */
 function getJsonModel(systemInstruction: string) {
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction,
     generationConfig: { temperature: 0.7, maxOutputTokens: 2048, responseMimeType: "application/json" },
   });
+}
+
+// ─── 응답 텍스트 추출 (Gemini API / Vertex AI 공통) ──────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractText(res: any): string {
+  // Gemini API: res.response.text()
+  if (typeof res?.response?.text === "function") return res.response.text();
+  // Vertex AI: res.response.candidates[0].content.parts[0].text
+  const text = res?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof text === "string") return text;
+  return "";
 }
 
 // ─── 공통 유틸 ──────────────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
   const res = await model.generateContent(
     `지금 ${userName}님이 대화를 시작합니다. 손녀 '민지'로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
   );
-  const text = res.response.text();
+  const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
 }
@@ -112,7 +126,7 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
   const res = await model.generateContent(
     `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 와주셨네요" 스타일로 따뜻하게 반겨주세요. 시간대에 맞는 질문 하나 포함. 2~3문장.`,
   );
-  const text = res.response.text();
+  const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
 }
@@ -147,7 +161,7 @@ JSON: {"transcription": "받아쓰기", "text": "대답 2~3문장"}`,
   parts.push({ inlineData: { mimeType: audioMimeType, data: audioData } });
 
   const res = await model.generateContent({ contents: [{ role: "user", parts }] });
-  const raw = res.response.text().trim();
+  const raw = extractText(res).trim();
 
   let transcription = "";
   let answerText = raw;
@@ -186,7 +200,7 @@ ${historyText}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
   const res = await model.generateContent(prompt);
-  const text = res.response.text().trim();
+  const text = extractText(res).trim();
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
