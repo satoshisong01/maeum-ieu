@@ -508,9 +508,12 @@ export default function ChatPage() {
           >
             건강<br />기록
           </Link>
-          <span className="text-xs text-zinc-500">
+          <Link
+            href="/mypage"
+            className="text-xs text-zinc-500 hover:text-[#007bff] hover:underline"
+          >
             {session.user?.name ?? "사용자"}님
-          </span>
+          </Link>
           <button
             type="button"
             onClick={() => signOut({ callbackUrl: "/" })}
