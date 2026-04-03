@@ -529,47 +529,23 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="flex shrink-0 flex-col items-center justify-center gap-4 px-4 py-4">
-        <AudioVisualizer
-          stream={micAllowed ? streamRef.current : null}
-          active={listening || aiSpeaking}
-          aiSpeaking={aiSpeaking}
-        />
-        <p className="text-center text-zinc-600">
-          {!micAllowed
-            ? "대화를 시작하려면 아래 버튼을 누르고 마이크를 허용해 주세요."
-            : listening
-              ? "말씀하세요… (끝나면 자동으로 전송됩니다)"
-              : "말하기 버튼을 누르고 말하거나, 아래에서 글씨로 입력하세요."}
-        </p>
-        {!micAllowed ? (
-          <button
-            type="button"
-            onClick={startConversation}
-            className="rounded-full bg-[#007bff] px-8 py-4 text-lg font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
-          >
-            대화 시작하기
-          </button>
-        ) : (
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={listening ? stopRecording : startRecording}
-              disabled={loading}
-              className={`rounded-full px-8 py-4 text-lg font-medium text-white transition ${
-                listening
-                  ? "bg-red-500 hover:bg-red-600"
-                  : "bg-[#007bff] hover:bg-[#0069d9]"
-              } disabled:opacity-50`}
-            >
-              {listening ? "멈추기" : "말하기"}
-            </button>
-          </div>
-        )}
-      </div>
-
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="flex-1 overflow-y-auto px-4 py-4">
+          {/* 파동 + 안내 텍스트: 스크롤 영역 안 */}
+          <div className="mb-4 flex flex-col items-center gap-4">
+            <AudioVisualizer
+              stream={micAllowed ? streamRef.current : null}
+              active={listening || aiSpeaking}
+              aiSpeaking={aiSpeaking}
+            />
+            <p className="text-center text-zinc-600">
+              {!micAllowed
+                ? "대화를 시작하려면 아래 버튼을 누르고 마이크를 허용해 주세요."
+                : listening
+                  ? "말씀하세요… (끝나면 자동으로 전송됩니다)"
+                  : "말하기 버튼을 누르고 말하거나, 아래에서 글씨로 입력하세요."}
+            </p>
+          </div>
           {messages.map((m) => (
             <div
               key={m.id}
@@ -596,9 +572,17 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-zinc-200 px-3 py-3">
-          <div className="flex items-center gap-2">
-            {micAllowed && (
+        <div className="shrink-0 border-t border-zinc-200 px-3 py-3">
+          {!micAllowed ? (
+            <button
+              type="button"
+              onClick={startConversation}
+              className="w-full rounded-full bg-[#007bff] py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
+            >
+              대화 시작하기
+            </button>
+          ) : (
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={listening ? stopRecording : startRecording}
@@ -612,27 +596,27 @@ export default function ChatPage() {
               >
                 🎤
               </button>
-            )}
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="메시지를 입력하세요."
-              className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
-              disabled={loading}
-            />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
-              title="전송"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            </button>
-          </div>
-        </form>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="메시지를 입력하세요."
+                className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+                title="전송"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
