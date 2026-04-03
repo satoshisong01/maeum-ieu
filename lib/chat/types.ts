@@ -28,6 +28,7 @@ export interface TimeContext {
 
 export interface WeatherContext {
   description: string;
+  location: string;
   promptText: string;
 }
 
