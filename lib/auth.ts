@@ -32,12 +32,23 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) token.id = user.id;
+      // 프로필 수정 후 세션 갱신 또는 주기적 갱신 시 DB에서 최신 이름 반영
+      if (trigger === "update" || !token.name) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { name: true },
+        });
+        if (dbUser) token.name = dbUser.name;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) (session.user as { id: string }).id = token.id as string;
+      if (session.user) {
+        (session.user as { id: string }).id = token.id as string;
+        session.user.name = token.name as string | null;
+      }
       return session;
     },
   },

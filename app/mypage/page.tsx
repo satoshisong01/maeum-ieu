@@ -15,7 +15,7 @@ interface Profile {
 }
 
 export default function MyPage() {
-  const { status } = useSession();
+  const { status, update: updateSession } = useSession();
   const router = useRouter();
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -85,6 +85,8 @@ export default function MyPage() {
       setCurrentPassword("");
       setNewPassword("");
       setNewPasswordConfirm("");
+      // 세션 갱신 — 헤더의 이름 등이 즉시 반영됨
+      await updateSession({ name: data.name });
       setMessage("저장되었습니다.");
     } catch {
       setError("처리 중 오류가 발생했습니다.");
