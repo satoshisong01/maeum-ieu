@@ -31,14 +31,6 @@ function getTextModel(systemInstruction: string) {
   });
 }
 
-/** 음성 JSON용 (googleSearch X, JSON 강제 O) — 항상 Gemini API 사용 */
-function getJsonModel(systemInstruction: string) {
-  return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048, responseMimeType: "application/json" },
-  });
-}
 
 // ─── 응답 텍스트 추출 (Gemini API / Vertex AI 공통) ──────────────────────────
 
@@ -141,35 +133,51 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
   return NextResponse.json({ text: replyText, role: "assistant" });
 }
 
-/** 4) 음성 요청 (JSON 모델) */
+/** 음성 → 텍스트 변환 (STT 전용) */
+async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
+  const sttModel = new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+  });
+
+  const parts: Part[] = [
+    { text: "이 음성을 한국어로 정확하게 받아쓰기하세요. 받아쓰기한 텍스트만 출력하세요. 다른 설명이나 주석은 절대 포함하지 마세요." },
+    { inlineData: { mimeType: audioMimeType, data: audioData } },
+  ];
+
+  const res = await sttModel.generateContent({ contents: [{ role: "user", parts }] });
+  return extractText(res).trim();
+}
+
+/** 4) 음성 요청 — 2단계: STT → 대화 모델 */
 async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
   userId: string; conversationId?: string;
   audioData: string; audioMimeType: string; historyText: string; memories: string;
 }) {
-  const { systemPrompt, envBlock, honorific, userName, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
-  const model = getJsonModel(systemPrompt);
+  const { systemPrompt, envBlock, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
 
-  const parts: Part[] = [];
-  if (historyText || memories) {
-    parts.push({ text: [memories ? `과거 맥락:\n${memories}\n` : "", historyText ? `대화 내역:\n${historyText}\n` : ""].filter(Boolean).join("\n") });
-  }
-  parts.push({
-    text: `음성은 ${honorific} ${userName}님의 말씀입니다. 손녀 '민지'로서 따뜻하게 대답하세요.
-JSON: {"transcription": "받아쓰기", "text": "대답 2~3문장"}`,
-  });
-  parts.push({ inlineData: { mimeType: audioMimeType, data: audioData } });
-
-  const res = await model.generateContent({ contents: [{ role: "user", parts }] });
-  const raw = extractText(res).trim();
-
+  // 1단계: 음성 → 텍스트 변환
   let transcription = "";
-  let answerText = raw;
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.transcription === "string") transcription = parsed.transcription;
-    if (typeof parsed.text === "string") answerText = parsed.text;
-  } catch { /* raw text fallback */ }
+    transcription = await transcribeAudio(audioData, audioMimeType);
+  } catch (e) {
+    console.warn("[STT] transcription failed:", e);
+  }
+
+  // 2단계: 변환된 텍스트로 대화 모델 호출 (텍스트 모델 — googleSearch 포함)
+  const model = getTextModel(systemPrompt);
+  const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
+대화 내역:
+${historyText}
+
+사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.
+
+[이번 턴]
+사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
+
+  const res = await model.generateContent(prompt);
+  const answerText = extractText(res).trim();
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
