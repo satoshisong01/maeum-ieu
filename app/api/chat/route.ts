@@ -4,7 +4,7 @@ import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import { authOptions } from "@/lib/auth";
 import { searchMemories } from "@/lib/rag";
 import type { ChatRequestBody } from "@/lib/chat/types";
-import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion } from "@/lib/chat/time";
+import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
@@ -46,8 +46,24 @@ function extractText(res: any): string {
 
 // ─── 공통 유틸 ──────────────────────────────────────────────────────────────
 
-function buildHistoryText(messages: { role: string; content: string }[]): string {
-  return messages.map((m) => `${m.role === "user" ? "사용자" : "AI"}: ${m.content}`).join("\n");
+/**
+ * 대화 이력을 상대 시간 라벨과 함께 문자열로 조립.
+ * 예: "[3일 전] 사용자: 부산 친구 만나기로 했어"
+ * 마지막 N개만 유지 (너무 길어지면 오래된 건 RAG에서 가져오도록 분리).
+ */
+function buildHistoryText(
+  messages: { role: string; content: string; createdAt?: string }[],
+  now: Date = new Date(),
+  maxRecent: number = 20,
+): string {
+  const recent = messages.slice(-maxRecent);
+  return recent
+    .map((m) => {
+      const speaker = m.role === "user" ? "사용자" : "AI";
+      const timeLabel = m.createdAt ? `[${getRelativeTimeLabel(m.createdAt, now)}] ` : "";
+      return `${timeLabel}${speaker}: ${m.content}`;
+    })
+    .join("\n");
 }
 
 async function fetchMemories(userId: string, query: string): Promise<string> {

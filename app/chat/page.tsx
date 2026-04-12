@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
 
-type Message = { id: string; role: "user" | "assistant"; content: string };
+type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
 const blobToBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -288,6 +288,7 @@ export default function ChatPage() {
         id: createId(),
         role: "user",
         content: content.trim(),
+        createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
@@ -303,7 +304,7 @@ export default function ChatPage() {
           body: JSON.stringify({
             conversationId,
             messages: [...messagesRef.current, userMessage].map(
-              ({ role, content }) => ({ role, content })
+              ({ role, content, createdAt }) => ({ role, content, createdAt })
             ),
             context: getContext(),
           }),
@@ -375,9 +376,10 @@ export default function ChatPage() {
           body: JSON.stringify({
             conversationId,
             audio: { data: audioBase64, mimeType },
-            messages: messagesRef.current.map(({ role, content }) => ({
+            messages: messagesRef.current.map(({ role, content, createdAt }) => ({
               role,
               content,
+              createdAt,
             })),
             context: getContext(),
           }),

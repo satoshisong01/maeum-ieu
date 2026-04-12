@@ -5,6 +5,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { embedText } from "@/lib/embedding";
+import { getRelativeTimeLabel } from "@/lib/chat/time";
 
 const DEFAULT_LIMIT = 5;
 
@@ -25,15 +26,18 @@ export async function searchMemories(
   const vectorStr = `[${queryEmbedding.join(",")}]`;
 
   // pgvector: cosine distance (<=>). 파라미터는 $1, $2, $3로 바인딩 (SQL 인젝션 방지)
-  const rows = await prisma.$queryRawUnsafe<{ content_text: string }[]>(
-    `SELECT content_text FROM message_embeddings WHERE user_id = $1 ORDER BY embedding <=> $2::vector LIMIT $3`,
+  const rows = await prisma.$queryRawUnsafe<{ content_text: string; created_at: Date }[]>(
+    `SELECT content_text, created_at FROM message_embeddings WHERE user_id = $1 ORDER BY embedding <=> $2::vector LIMIT $3`,
     userId,
     vectorStr,
     limit
   );
 
   if (!rows?.length) return "";
-  return rows.map((r) => r.content_text).join("\n");
+  const now = new Date();
+  return rows
+    .map((r) => `[${getRelativeTimeLabel(r.created_at, now)}] ${r.content_text}`)
+    .join("\n");
 }
 
 /**
