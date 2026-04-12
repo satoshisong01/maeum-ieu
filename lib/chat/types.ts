@@ -12,7 +12,7 @@ export interface ClientContext {
 }
 
 export interface ChatRequestBody {
-  messages?: { role: string; content: string }[];
+  messages?: { role: string; content: string; createdAt?: string }[];
   conversationId?: string;
   isInitialGreeting?: boolean;
   isReturningGreeting?: boolean;

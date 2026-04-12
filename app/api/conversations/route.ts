@@ -23,7 +23,12 @@ export async function GET() {
 
   return NextResponse.json({
     conversation: { id: conv.id },
-    messages: conv.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })),
+    messages: conv.messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt.toISOString(),
+    })),
     lastMessageAt: lastMsg?.createdAt?.toISOString() ?? null,
   });
 }
