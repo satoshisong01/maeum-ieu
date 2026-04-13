@@ -33,17 +33,19 @@ export async function saveMessages(params: {
   assistantContent: string;
 }): Promise<{ userMsgId: string; assistantMsgId: string }> {
   const { conversationId, userId, userContent, assistantContent } = params;
-  const nowKst = getNowKst();
+  const userTime = getNowKst();
+  // assistant 메시지는 1초 뒤로 설정 → createdAt ASC 정렬 시 항상 user → assistant 순서 보장
+  const assistantTime = new Date(userTime.getTime() + 1000);
 
   const userMsg = await prisma.message.create({
-    data: { conversationId, role: "user", content: userContent, createdAt: nowKst },
+    data: { conversationId, role: "user", content: userContent, createdAt: userTime },
   });
   const assistantMsg = await prisma.message.create({
-    data: { conversationId, role: "assistant", content: assistantContent, createdAt: nowKst },
+    data: { conversationId, role: "assistant", content: assistantContent, createdAt: assistantTime },
   });
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: { updatedAt: nowKst },
+    data: { updatedAt: assistantTime },
   });
 
   // RAG 임베딩 (실패해도 무관)
