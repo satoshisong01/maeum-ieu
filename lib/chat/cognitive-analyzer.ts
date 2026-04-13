@@ -107,7 +107,11 @@ export async function analyzeCognitive(params: {
       generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json" },
     });
 
-    const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n대화:\n${params.historyText}\n\n[이번 턴]\n사용자: ${params.userMessage}\nAI: ${params.assistantResponse}`);
+    // 인지 분석에는 최근 5턴(10메시지)만 전달 — 너무 오래된 대화를 "반복"으로 오판하는 것 방지
+    const historyLines = params.historyText.split("\n");
+    const recentHistory = historyLines.slice(-10).join("\n");
+
+    const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${params.userMessage}\nAI: ${params.assistantResponse}`);
     return parseResult(res.response.text().trim());
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
