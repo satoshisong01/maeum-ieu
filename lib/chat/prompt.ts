@@ -71,11 +71,33 @@ export async function buildSystemPrompt(params: {
   const dateBlock = conversationId ? await getDateAwareBlock(conversationId, todayKst) : "";
 
   const assessed = await getTodayAssessedDomains(userId);
-  const allDomains = ["orientation_time", "orientation_place", "memory_immediate", "memory_delayed", "language", "judgment"];
+  const allDomains = ["orientation_time", "orientation_place", "memory_immediate", "memory_delayed", "language", "judgment", "attention_calculation"];
+
+  const DOMAIN_KO: Record<string, string> = {
+    orientation_time: "시간 지남력 (요일/날짜/계절)",
+    orientation_place: "장소 지남력 (현재 위치)",
+    memory_immediate: "즉시 기억력 (방금 한 말)",
+    memory_delayed: "지연 기억력 (과거 대화 내용)",
+    language: "언어 능력 (단어 찾기 게임 등)",
+    judgment: "판단력 (상황 판단 질문)",
+    attention_calculation: "주의력/계산 (암산, 숫자 게임)",
+  };
+
   const remaining = allDomains.filter((d) => !assessed.includes(d));
-  const guideBlock = remaining.length === 0
-    ? "\n[인지 선별] 오늘 6개 영역 모두 확인 완료. 편안한 대화만 이어가세요."
-    : `\n[인지 선별] 아직 확인 안 한 영역: ${remaining.join(", ")}. 1~2개를 자연스럽게 확인하세요.`;
+  const completedKo = assessed.map((d) => DOMAIN_KO[d] || d);
+  const remainingKo = remaining.map((d) => DOMAIN_KO[d] || d);
+
+  let guideBlock: string;
+  if (remaining.length === 0) {
+    guideBlock = "\n[인지 선별] 오늘 7개 영역 모두 확인 완료. 인지 질문을 더 이상 하지 말고 편안한 대화만 이어가세요.";
+  } else {
+    guideBlock = `\n[인지 선별 — 매우 중요, 반드시 읽으세요]
+이미 오늘 확인한 영역 (절대 다시 묻지 마세요!!!): ${completedKo.length > 0 ? completedKo.join(", ") : "없음"}
+아직 확인 안 한 영역: ${remainingKo.join(", ")}
+→ 위 "아직 확인 안 한 영역" 중에서만 1개를 골라 자연스럽게 질문하세요.
+→ "이미 확인한 영역"의 질문은 어떤 형태로든 절대 반복하지 마세요. 요일을 이미 물어봤으면 요일 관련 질문 금지.
+→ 질문 없이 호응/공감만 해도 됩니다. 매 턴마다 인지 질문을 할 필요 없습니다.`;
+  }
 
   const systemPrompt = [SYSTEM_PROMPT_BASE, userBlock, envBlock, dateBlock, COGNITIVE_SCREENING_PROTOCOL, guideBlock].filter(Boolean).join("\n\n");
 
