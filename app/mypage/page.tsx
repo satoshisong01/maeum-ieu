@@ -11,6 +11,9 @@ interface Profile {
   email: string;
   age: number | null;
   gender: string | null;
+  guardianName: string | null;
+  guardianPhone: string | null;
+  guardianRelation: string | null;
   createdAt: string;
 }
 
@@ -22,6 +25,9 @@ export default function MyPage() {
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
+  const [guardianRelation, setGuardianRelation] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -42,6 +48,9 @@ export default function MyPage() {
           setName(data.name ?? "");
           setAge(data.age != null ? String(data.age) : "");
           setGender(data.gender ?? "");
+          setGuardianName(data.guardianName ?? "");
+          setGuardianPhone(data.guardianPhone ?? "");
+          setGuardianRelation(data.guardianRelation ?? "");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -63,6 +72,9 @@ export default function MyPage() {
         name: name || null,
         age: age === "" ? null : parseInt(age, 10),
         gender: gender || null,
+        guardianName: guardianName || null,
+        guardianPhone: guardianPhone || null,
+        guardianRelation: guardianRelation || null,
       };
       if (newPassword) {
         body.currentPassword = currentPassword;
@@ -168,6 +180,37 @@ export default function MyPage() {
             </div>
 
             {/* 구분선 */}
+            <hr className="my-2 border-zinc-100" />
+
+            {/* 보호자 정보 */}
+            <p className="text-xs font-medium text-zinc-500">보호자 정보 (선택)</p>
+            <input
+              type="text"
+              placeholder="보호자 이름"
+              value={guardianName}
+              onChange={(e) => setGuardianName(e.target.value)}
+              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            />
+            <input
+              type="tel"
+              placeholder="보호자 연락처 (010-0000-0000)"
+              value={guardianPhone}
+              onChange={(e) => setGuardianPhone(e.target.value)}
+              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            />
+            <select
+              value={guardianRelation}
+              onChange={(e) => setGuardianRelation(e.target.value)}
+              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            >
+              <option value="">보호자 관계 (선택)</option>
+              <option value="son">아들</option>
+              <option value="daughter">딸</option>
+              <option value="spouse">배우자</option>
+              <option value="grandchild">손자/손녀</option>
+              <option value="other">기타</option>
+            </select>
+
             <hr className="my-2 border-zinc-100" />
 
             {/* 비밀번호 변경 */}
