@@ -128,11 +128,18 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
   return NextResponse.json({ text, role: "assistant" });
 }
 
-/** 2) 재접속 인사 */
+/** 2) 재접속 인사 — AI가 먼저 인지 질문을 자연스럽게 포함 */
 async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string) {
   const model = getTextModel(systemPrompt);
   const res = await model.generateContent(
-    `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 와주셨네요" 스타일로 따뜻하게 반겨주세요. 시간대에 맞는 질문 하나 포함. 2~3문장.`,
+    `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.
+
+[중요] 인사와 함께 아래 중 하나를 자연스럽게 물어보세요:
+- 시간대에 맞는 식사 질문 ("점심 맛있게 드셨어요?")
+- 오늘의 기분/컨디션 ("오늘 기분이 어떠세요?")
+- 인지 선별 프로토콜에서 아직 확인 안 한 영역의 질문 하나 (시험이 아닌 자연스러운 대화 형식으로)
+
+2~3문장 이내. 절대 자기소개 반복하지 마세요.`,
   );
   const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);

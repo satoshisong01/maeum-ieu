@@ -17,6 +17,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   orientation_time: "시간 지남력", orientation_place: "장소 지남력",
   memory_immediate: "즉시 기억력", memory_delayed: "지연 기억력",
   language: "언어 유창성", judgment: "판단력",
+  attention_calculation: "주의력/계산",
 };
 const SCORE_LABELS = ["정상", "경계", "주의"];
 const SCORE_COLORS = ["bg-green-500", "bg-yellow-500", "bg-red-500"];
@@ -54,6 +55,21 @@ export default function DashboardPage() {
   const overallAvg = totalChecks > 0 ? cognitive!.domainAverages.reduce((s, d) => s + d.avg_score * d.count, 0) / totalChecks : -1;
   const oi = overallAvg < 0 ? -1 : overallAvg < 0.5 ? 0 : overallAvg < 1.5 ? 1 : 2;
 
+  // CDR 기반 종합 위험도 등급
+  const getCdrLevel = (avg: number): { level: string; desc: string; color: string; bgColor: string } => {
+    if (avg < 0) return { level: "-", desc: "아직 평가 데이터가 부족합니다", color: "text-zinc-400", bgColor: "bg-zinc-50" };
+    if (avg < 0.3) return { level: "CDR 0", desc: "정상 — 인지 기능에 특이 사항이 없습니다", color: "text-green-700", bgColor: "bg-green-50" };
+    if (avg < 0.8) return { level: "CDR 0.5", desc: "치매 의심 — 경미한 인지 변화가 관찰됩니다. 정밀 검사를 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
+    if (avg < 1.5) return { level: "CDR 1", desc: "경도 치매 의심 — 일상생활에 영향을 줄 수 있는 인지 저하가 관찰됩니다. 전문의 상담을 강력히 권장합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
+    return { level: "CDR 2+", desc: "중등도 이상 치매 의심 — 즉시 전문의 상담이 필요합니다", color: "text-red-700", bgColor: "bg-red-50" };
+  };
+  const cdr = getCdrLevel(overallAvg);
+
+  // 영역별 취약 분석
+  const weakDomains = (cognitive?.domainAverages ?? [])
+    .filter((d) => d.avg_score >= 1.0 && d.count >= 2)
+    .sort((a, b) => b.avg_score - a.avg_score);
+
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
       <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
@@ -78,6 +94,36 @@ export default function DashboardPage() {
             <p className={`text-xl font-bold ${(summary?.recentAnomaly ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>{summary?.recentAnomaly ?? 0}건</p>
           </div>
         </div>
+
+        {/* CDR 종합 위험도 등급 */}
+        <div className={`mb-6 rounded-xl p-4 shadow-sm ${cdr.bgColor}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-zinc-500">종합 위험도 (CDR 기반)</p>
+              <p className={`text-2xl font-bold ${cdr.color}`}>{cdr.level}</p>
+            </div>
+            {totalChecks >= 5 && overallAvg >= 0.8 && (
+              <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">전문의 상담 권장</span>
+            )}
+          </div>
+          <p className={`mt-2 text-sm ${cdr.color}`}>{cdr.desc}</p>
+          {totalChecks < 10 && <p className="mt-1 text-xs text-zinc-400">* 평가 횟수가 적어 정확도가 낮을 수 있습니다 (현재 {totalChecks}회)</p>}
+        </div>
+
+        {/* 취약 영역 안내 */}
+        {weakDomains.length > 0 && (
+          <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700">주의가 필요한 영역</h2>
+            <div className="space-y-2">
+              {weakDomains.map((d) => (
+                <div key={d.domain} className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2">
+                  <span className="text-sm font-medium text-red-700">{DOMAIN_LABELS[d.domain] ?? d.domain}</span>
+                  <span className="text-xs text-red-600">평균 {d.avg_score.toFixed(1)} ({d.count}회 평가)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 영역별 점수 */}
         {cognitive && (
