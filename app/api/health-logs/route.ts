@@ -14,7 +14,7 @@ interface CognitiveRow {
 }
 
 interface DomainAvg { domain: string; avg_score: number; count: number; }
-interface DailyTrend { session_date: string; avg_score: number; check_count: number; }
+interface DailyTrend { session_date: string; avg_score: number; check_count: number; normal: number; borderline: number; warning: number; }
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -50,7 +50,12 @@ export async function GET() {
        FROM cognitive_assessments WHERE user_id = $1 GROUP BY domain ORDER BY avg_score DESC`, userId,
     );
     dailyTrend = await prisma.$queryRawUnsafe<DailyTrend[]>(
-      `SELECT session_date::text, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS check_count
+      `SELECT session_date::text,
+              ROUND(AVG(score)::numeric, 2)::float AS avg_score,
+              COUNT(*)::int AS check_count,
+              COUNT(*) FILTER (WHERE score < 1)::int AS normal,
+              COUNT(*) FILTER (WHERE score >= 1 AND score < 2)::int AS borderline,
+              COUNT(*) FILTER (WHERE score >= 2)::int AS warning
        FROM cognitive_assessments WHERE user_id = $1 AND session_date >= CURRENT_DATE - INTERVAL '14 days'
        GROUP BY session_date ORDER BY session_date ASC`, userId,
     );

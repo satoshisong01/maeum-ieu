@@ -9,7 +9,7 @@ interface CognitiveAssessment {
   evidence: string | null; note: string | null; session_date: string;
 }
 interface DomainAvg { domain: string; avg_score: number; count: number; }
-interface DailyTrend { session_date: string; avg_score: number; check_count: number; }
+interface DailyTrend { session_date: string; avg_score: number; check_count: number; normal: number; borderline: number; warning: number; }
 interface Summary { anomalyCount: number; recentAnomaly: number; }
 interface CognitiveData { assessments: CognitiveAssessment[]; domainAverages: DomainAvg[]; dailyTrend: DailyTrend[]; }
 
@@ -153,71 +153,57 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* 14일 추세 — SVG 라인 차트 */}
-        {cognitive && cognitive.dailyTrend.length > 0 && (() => {
-          const data = cognitive.dailyTrend;
-          const chartW = 100; // viewBox %
-          const chartH = 60;
-          const padX = 8;
-          const padY = 8;
-          const innerW = chartW - padX * 2;
-          const innerH = chartH - padY * 2;
-          const maxScore = 2.0;
-
-          const points = data.map((d, i) => ({
-            x: padX + (data.length === 1 ? innerW / 2 : (i / (data.length - 1)) * innerW),
-            y: padY + innerH - (d.avg_score / maxScore) * innerH,
-            ...d,
-          }));
-          const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-          const areaPath = `${linePath} L${points[points.length - 1].x},${padY + innerH} L${points[0].x},${padY + innerH} Z`;
-
-          return (
-            <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold text-zinc-700">최근 14일 추세</h2>
-              <svg viewBox={`0 0 ${chartW} ${chartH + 12}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-                {/* 배경 구역: 정상/경계/주의 */}
-                <rect x={padX} y={padY} width={innerW} height={innerH * 0.25} fill="#fef2f2" opacity="0.5" rx="1" />
-                <rect x={padX} y={padY + innerH * 0.25} width={innerW} height={innerH * 0.5} fill="#fefce8" opacity="0.3" rx="1" />
-                <rect x={padX} y={padY + innerH * 0.75} width={innerW} height={innerH * 0.25} fill="#f0fdf4" opacity="0.3" rx="1" />
-                {/* Y축 라벨 */}
-                <text x={padX - 1} y={padY + 2} fontSize="2.5" fill="#a1a1aa" textAnchor="end">2.0</text>
-                <text x={padX - 1} y={padY + innerH * 0.5 + 1} fontSize="2.5" fill="#a1a1aa" textAnchor="end">1.0</text>
-                <text x={padX - 1} y={padY + innerH + 1} fontSize="2.5" fill="#a1a1aa" textAnchor="end">0</text>
-                {/* 가로 기준선 */}
-                <line x1={padX} y1={padY + innerH * 0.5} x2={padX + innerW} y2={padY + innerH * 0.5} stroke="#e4e4e7" strokeWidth="0.3" strokeDasharray="1,1" />
-                <line x1={padX} y1={padY + innerH * 0.75} x2={padX + innerW} y2={padY + innerH * 0.75} stroke="#e4e4e7" strokeWidth="0.3" strokeDasharray="1,1" />
-                {/* 영역 채우기 */}
-                <path d={areaPath} fill="url(#trendGrad)" opacity="0.3" />
-                {/* 라인 */}
-                <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="0.8" strokeLinejoin="round" />
-                {/* 점 + 날짜 */}
-                {points.map((p, i) => {
-                  const ci = p.avg_score < 0.5 ? "#22c55e" : p.avg_score < 1.5 ? "#eab308" : "#ef4444";
-                  return (
-                    <g key={p.session_date}>
-                      <circle cx={p.x} cy={p.y} r="1.5" fill={ci} stroke="white" strokeWidth="0.4" />
-                      <text x={p.x} y={p.y - 2.5} fontSize="2.5" fill="#71717a" textAnchor="middle">{p.avg_score.toFixed(1)}</text>
-                      <text x={p.x} y={chartH + 10} fontSize="2.3" fill="#a1a1aa" textAnchor="middle">{formatShortDate(p.session_date)}</text>
-                      <text x={p.x} y={chartH + 5} fontSize="2" fill="#a1a1aa" textAnchor="middle">{p.check_count}건</text>
-                    </g>
-                  );
-                })}
-                <defs>
-                  <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" />
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <div className="mt-2 flex justify-center gap-4 text-[10px] text-zinc-400">
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-green-500" />정상</span>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-yellow-500" />경계</span>
-                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" />주의</span>
-              </div>
+        {/* 14일 추세 — 이상 비율 + 스택 바 */}
+        {cognitive && cognitive.dailyTrend.length > 0 && (
+          <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-sm font-semibold text-zinc-700">최근 14일 추세</h2>
+            <div className="space-y-4">
+              {cognitive.dailyTrend.map((d) => {
+                const total = d.check_count;
+                const normalPct = total > 0 ? Math.round((d.normal / total) * 100) : 0;
+                const borderPct = total > 0 ? Math.round((d.borderline / total) * 100) : 0;
+                const warningPct = total > 0 ? Math.round((d.warning / total) * 100) : 0;
+                const anomalyPct = borderPct + warningPct;
+                return (
+                  <div key={d.session_date}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-sm font-medium text-zinc-700">{formatShortDate(d.session_date)}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs font-semibold ${anomalyPct > 50 ? "text-red-600" : anomalyPct > 20 ? "text-yellow-600" : "text-green-600"}`}>
+                          이상 {anomalyPct}%
+                        </span>
+                        <span className="text-xs text-zinc-400">{total}건</span>
+                      </div>
+                    </div>
+                    {/* 스택 바 */}
+                    <div className="flex h-4 overflow-hidden rounded-full bg-zinc-100">
+                      {normalPct > 0 && (
+                        <div className="flex items-center justify-center bg-green-400" style={{ width: `${normalPct}%` }}>
+                          {normalPct >= 15 && <span className="text-[9px] font-medium text-white">{d.normal}</span>}
+                        </div>
+                      )}
+                      {borderPct > 0 && (
+                        <div className="flex items-center justify-center bg-yellow-400" style={{ width: `${borderPct}%` }}>
+                          {borderPct >= 15 && <span className="text-[9px] font-medium text-white">{d.borderline}</span>}
+                        </div>
+                      )}
+                      {warningPct > 0 && (
+                        <div className="flex items-center justify-center bg-red-400" style={{ width: `${warningPct}%` }}>
+                          {warningPct >= 15 && <span className="text-[9px] font-medium text-white">{d.warning}</span>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })()}
+            <div className="mt-4 flex justify-center gap-4 text-[10px] text-zinc-400">
+              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-green-400" />정상</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />경계</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-400" />주의</span>
+            </div>
+          </div>
+        )}
 
         {/* 최근 기록 */}
         <div className="rounded-xl bg-white shadow-sm">
