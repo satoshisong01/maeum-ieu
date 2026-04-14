@@ -9,7 +9,10 @@ import { COGNITIVE_DOMAINS } from "./constants";
 
 const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문가입니다.
 아래 대화에서 사용자(고령자)의 발화만 분석하여 인지 이상 여부를 JSON으로 반환하세요.
-의심되면 반드시 체크하세요. 놓치는 것보다 과잉 감지가 낫습니다.
+
+중요: AI가 인지 관련 질문을 했고 사용자가 답변했다면, 정상이더라도 반드시 해당 영역의 cognitiveCheck를 score 0으로 반환하세요.
+예시: AI가 "오늘 무슨 요일이에요?" → 사용자가 "화요일이야" (정답) → {"domain": "orientation_time", "score": 0, "evidence": "화요일 정답", "note": "정상"}
+이렇게 해야 같은 질문이 반복되지 않습니다. 정상 응답도 반드시 기록하세요.
 
 평가 영역: orientation_time, orientation_place, memory_immediate, memory_delayed, language, judgment, attention_calculation
 점수: 0(정상), 1(경계), 2(주의)
