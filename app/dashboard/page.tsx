@@ -71,13 +71,18 @@ export default function DashboardPage() {
   const overallAvg = totalChecks > 0 ? cognitive!.domainAverages.reduce((s, d) => s + d.avg_score * d.count, 0) / totalChecks : -1;
   const oi = overallAvg < 0 ? -1 : overallAvg < 0.5 ? 0 : overallAvg < 1.5 ? 1 : 2;
 
+  // 평가된 영역 수 (최소 3개 영역에서 각 2회 이상 평가되어야 신뢰할 수 있음)
+  const evaluatedDomains = (cognitive?.domainAverages ?? []).filter((d) => d.count >= 2).length;
+  const isReliable = totalChecks >= 10 && evaluatedDomains >= 3;
+
   // CDR 기반 종합 위험도 등급
   const getCdrLevel = (avg: number): { level: string; desc: string; color: string; bgColor: string } => {
-    if (avg < 0) return { level: "-", desc: "아직 평가 데이터가 부족합니다", color: "text-zinc-400", bgColor: "bg-zinc-50" };
+    if (avg < 0) return { level: "-", desc: "아직 평가 데이터가 부족합니다. 대화를 더 진행해주세요.", color: "text-zinc-400", bgColor: "bg-zinc-50" };
+    if (!isReliable) return { level: "판정 보류", desc: `데이터가 부족하여 정확한 판정이 어렵습니다. 최소 3개 이상 영역에서 충분한 대화가 필요합니다. (현재 ${evaluatedDomains}개 영역, ${totalChecks}회 평가)`, color: "text-zinc-500", bgColor: "bg-zinc-50" };
     if (avg < 0.3) return { level: "CDR 0", desc: "정상 — 인지 기능에 특이 사항이 없습니다", color: "text-green-700", bgColor: "bg-green-50" };
-    if (avg < 0.8) return { level: "CDR 0.5", desc: "치매 의심 — 경미한 인지 변화가 관찰됩니다. 정밀 검사를 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
-    if (avg < 1.5) return { level: "CDR 1", desc: "경도 치매 의심 — 일상생활에 영향을 줄 수 있는 인지 저하가 관찰됩니다. 전문의 상담을 강력히 권장합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
-    return { level: "CDR 2+", desc: "중등도 이상 치매 의심 — 즉시 전문의 상담이 필요합니다", color: "text-red-700", bgColor: "bg-red-50" };
+    if (avg < 0.8) return { level: "CDR 0.5", desc: "관찰 필요 — 경미한 인지 변화가 관찰됩니다. 지속적인 모니터링을 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
+    if (avg < 1.5) return { level: "CDR 1", desc: "경도 인지 저하 의심 — 전문의 상담을 권장합니다. 단, AI 분석은 참고용이며 정확한 진단은 전문의만 가능합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
+    return { level: "CDR 2+", desc: "인지 저하 가능성 높음 — 전문의 상담을 강력히 권장합니다. 본 결과는 AI 기반 선별 검사이며, 최종 진단은 반드시 전문의 상담이 필요합니다", color: "text-red-700", bgColor: "bg-red-50" };
   };
   const cdr = getCdrLevel(overallAvg);
 
@@ -119,8 +124,10 @@ export default function DashboardPage() {
         <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <p className="text-xs text-zinc-500">인지 종합</p>
-            <p className={`text-xl font-bold ${oi < 0 ? "text-zinc-400" : SCORE_TEXT[oi]}`}>{oi < 0 ? "미평가" : SCORE_LABELS[oi]}</p>
-            {overallAvg >= 0 && <p className="text-xs text-zinc-400">{overallAvg.toFixed(1)} / 2.0</p>}
+            <p className={`text-xl font-bold ${oi < 0 || !isReliable ? "text-zinc-400" : SCORE_TEXT[oi]}`}>
+              {oi < 0 ? "미평가" : !isReliable ? "수집 중" : SCORE_LABELS[oi]}
+            </p>
+            {overallAvg >= 0 && <p className="text-xs text-zinc-400">{overallAvg.toFixed(1)} / 2.0{!isReliable ? " (데이터 부족)" : ""}</p>}
           </div>
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <p className="text-xs text-zinc-500">총 평가</p>
@@ -139,12 +146,22 @@ export default function DashboardPage() {
               <p className="text-xs text-zinc-500">종합 위험도 (CDR 기반)</p>
               <p className={`text-2xl font-bold ${cdr.color}`}>{cdr.level}</p>
             </div>
-            {totalChecks >= 5 && overallAvg >= 0.8 && (
+            {isReliable && overallAvg >= 0.8 && (
               <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">전문의 상담 권장</span>
             )}
           </div>
           <p className={`mt-2 text-sm ${cdr.color}`}>{cdr.desc}</p>
-          {totalChecks < 10 && <p className="mt-1 text-xs text-zinc-400">* 평가 횟수가 적어 정확도가 낮을 수 있습니다 (현재 {totalChecks}회)</p>}
+          {!isReliable && totalChecks > 0 && (
+            <div className="mt-2 rounded-lg bg-zinc-100 px-3 py-2">
+              <p className="text-xs text-zinc-500">
+                신뢰도 조건: 최소 10회 평가 + 3개 이상 영역 (현재 {totalChecks}회, {evaluatedDomains}개 영역)
+              </p>
+              <div className="mt-1 h-1.5 rounded-full bg-zinc-200">
+                <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.min(100, (totalChecks / 10) * 100)}%` }} />
+              </div>
+            </div>
+          )}
+          <p className="mt-2 text-[10px] text-zinc-400">* 본 결과는 AI 기반 선별 검사이며 의료 진단이 아닙니다</p>
         </div>
 
         {/* 취약 영역 안내 */}
