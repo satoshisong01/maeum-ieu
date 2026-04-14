@@ -32,6 +32,14 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [cognitive, setCognitive] = useState<CognitiveData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showExport, setShowExport] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<"week" | "month">("week");
+  const [report, setReport] = useState<{
+    period: string; activeDays: number; userMessages: number; anomalyCount: number;
+    overallAvg: number | null; totalAssessments: number; summaryText: string;
+    riskDomains: { label: string; avgScore: number; count: number }[];
+    normalDomains: { label: string; avgScore: number; count: number }[];
+  } | null>(null);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -46,6 +54,14 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     })();
   }, [status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch(`/api/summary?period=${reportPeriod}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setReport(d); })
+      .catch(() => {});
+  }, [status, reportPeriod]);
 
   if (status === "loading" || loading) {
     return <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5]"><p className="text-zinc-500">로딩 중...</p></div>;
@@ -74,12 +90,33 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#f0f2f5]">
       <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
         <h1 className="text-lg font-semibold text-zinc-800">건강 모니터링</h1>
-        <Link href="/chat" className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100">대화로 돌아가기</Link>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowExport((v) => !v)}
+              className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-200"
+            >
+              내보내기
+            </button>
+            {showExport && (
+              <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
+                <a href="/api/export?type=chat" className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50" onClick={() => setShowExport(false)}>
+                  대화 기록 (CSV)
+                </a>
+                <a href="/api/export?type=assessment" className="block px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50" onClick={() => setShowExport(false)}>
+                  인지 평가 (CSV)
+                </a>
+              </div>
+            )}
+          </div>
+          <Link href="/chat" className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100">대화로 돌아가기</Link>
+        </div>
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-6">
         {/* 요약 카드 */}
-        <div className="mb-6 grid grid-cols-3 gap-3">
+        <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <p className="text-xs text-zinc-500">인지 종합</p>
             <p className={`text-xl font-bold ${oi < 0 ? "text-zinc-400" : SCORE_TEXT[oi]}`}>{oi < 0 ? "미평가" : SCORE_LABELS[oi]}</p>
@@ -202,6 +239,58 @@ export default function DashboardPage() {
               <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />경계</span>
               <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-400" />주의</span>
             </div>
+          </div>
+        )}
+
+        {/* 요약 리포트 */}
+        {report && (
+          <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-700">요약 리포트</h2>
+              <div className="flex rounded-lg bg-zinc-100 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setReportPeriod("week")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition ${reportPeriod === "week" ? "bg-white text-zinc-800 shadow-sm" : "text-zinc-500"}`}
+                >
+                  7일
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportPeriod("month")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition ${reportPeriod === "month" ? "bg-white text-zinc-800 shadow-sm" : "text-zinc-500"}`}
+                >
+                  30일
+                </button>
+              </div>
+            </div>
+            <p className="mb-3 text-sm leading-relaxed text-zinc-700">{report.summaryText}</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-zinc-50 px-2 py-2">
+                <p className="text-lg font-bold text-zinc-800">{report.activeDays}일</p>
+                <p className="text-[10px] text-zinc-400">대화 일수</p>
+              </div>
+              <div className="rounded-lg bg-zinc-50 px-2 py-2">
+                <p className="text-lg font-bold text-zinc-800">{report.userMessages}건</p>
+                <p className="text-[10px] text-zinc-400">사용자 발화</p>
+              </div>
+              <div className="rounded-lg bg-zinc-50 px-2 py-2">
+                <p className={`text-lg font-bold ${report.anomalyCount > 0 ? "text-red-600" : "text-green-600"}`}>{report.anomalyCount}건</p>
+                <p className="text-[10px] text-zinc-400">이상 징후</p>
+              </div>
+            </div>
+            {report.riskDomains.length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-red-600">주의 영역</p>
+                <div className="flex flex-wrap gap-1">
+                  {report.riskDomains.map((d) => (
+                    <span key={d.label} className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                      {d.label} ({d.avgScore.toFixed(1)})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
