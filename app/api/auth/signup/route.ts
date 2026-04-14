@@ -5,13 +5,16 @@ import bcrypt from "bcryptjs";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, password, passwordConfirm, name, age, gender } = body as {
+    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation } = body as {
       email?: string;
       password?: string;
       passwordConfirm?: string;
       name?: string;
       age?: number;
       gender?: string;
+      guardianName?: string;
+      guardianPhone?: string;
+      guardianRelation?: string;
     };
 
     if (!email || !password) {
@@ -43,8 +46,10 @@ export async function POST(req: Request) {
         password: hashed,
         name: name ?? null,
         age: age != null && Number.isInteger(age) && age >= 0 ? age : null,
-        gender:
-          gender === "male" || gender === "female" || gender === "other" ? gender : null,
+        gender: gender === "male" || gender === "female" || gender === "other" ? gender : null,
+        guardianName: guardianName?.trim() || null,
+        guardianPhone: guardianPhone?.trim() || null,
+        guardianRelation: guardianRelation?.trim() || null,
       },
     });
 

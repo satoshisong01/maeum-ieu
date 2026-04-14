@@ -12,6 +12,9 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [age, setAge] = useState<string>("");
   const [gender, setGender] = useState<string>("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
+  const [guardianRelation, setGuardianRelation] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -34,6 +37,9 @@ export default function SignupPage() {
           name: name || undefined,
           age: age === "" ? undefined : parseInt(age, 10),
           gender: gender || undefined,
+          guardianName: guardianName || undefined,
+          guardianPhone: guardianPhone || undefined,
+          guardianRelation: guardianRelation || undefined,
         }),
       });
       const data = await res.json();
@@ -109,6 +115,34 @@ export default function SignupPage() {
               <option value="other">기타</option>
             </select>
           </div>
+          <hr className="border-zinc-100" />
+          <p className="text-xs text-zinc-500">보호자 정보 (선택)</p>
+          <input
+            type="text"
+            placeholder="보호자 이름"
+            value={guardianName}
+            onChange={(e) => setGuardianName(e.target.value)}
+            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+          />
+          <input
+            type="tel"
+            placeholder="보호자 연락처 (010-0000-0000)"
+            value={guardianPhone}
+            onChange={(e) => setGuardianPhone(e.target.value)}
+            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+          />
+          <select
+            value={guardianRelation}
+            onChange={(e) => setGuardianRelation(e.target.value)}
+            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+          >
+            <option value="">보호자 관계 (선택)</option>
+            <option value="son">아들</option>
+            <option value="daughter">딸</option>
+            <option value="spouse">배우자</option>
+            <option value="grandchild">손자/손녀</option>
+            <option value="other">기타</option>
+          </select>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"

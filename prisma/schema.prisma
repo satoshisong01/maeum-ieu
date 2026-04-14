@@ -18,6 +18,9 @@ model User {
   image         String?
   age           Int?
   gender        String?
+  guardianName  String?   // 보호자 이름
+  guardianPhone String?   // 보호자 연락처
+  guardianRelation String? // 보호자 관계 (아들, 딸, 배우자 등)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
