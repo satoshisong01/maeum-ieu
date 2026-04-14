@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "마음이음",
   description: "AI와 대화하며 일상과 상태를 함께 살펴보는 서비스",
+  viewport: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1",
 };
 
 export default function RootLayout({

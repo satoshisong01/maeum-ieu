@@ -499,20 +499,20 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f0f2f5]">
-      <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-3 py-2">
-        <h1 className="text-base font-semibold leading-tight text-zinc-800">
+      <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3">
+        <h1 className="text-sm font-semibold leading-tight text-zinc-800 sm:text-base">
           마음<br />이음
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <Link
             href="/dashboard"
-            className="rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-medium leading-tight text-orange-600 hover:bg-orange-100"
+            className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs"
           >
             건강<br />기록
           </Link>
           <Link
             href="/mypage"
-            className="text-xs text-zinc-500 hover:text-[#007bff] hover:underline"
+            className="max-w-[60px] truncate text-[10px] text-zinc-500 hover:text-[#007bff] hover:underline sm:max-w-none sm:text-xs"
           >
             {session.user?.name ?? "사용자"}님
           </Link>
@@ -520,9 +520,9 @@ export default function ChatPage() {
             type="button"
             onClick={() => signOut({ callbackUrl: "/" })}
             title="로그아웃"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-8 sm:w-8"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
