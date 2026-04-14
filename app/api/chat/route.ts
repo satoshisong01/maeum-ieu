@@ -100,6 +100,7 @@ async function runCognitiveAnalysis(params: {
       checks: analysis.cognitiveChecks.length,
     }));
 
+    // 정상(score 0) 포함 모든 체크를 저장 — 같은 영역 질문 반복 방지에 필요
     if (analysis.cognitiveChecks.length > 0) {
       await saveCognitiveAssessments(userId, userMsgId, conversationId, analysis.cognitiveChecks);
     }
