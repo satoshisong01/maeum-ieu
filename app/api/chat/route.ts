@@ -44,6 +44,25 @@ function extractText(res: any): string {
   return "";
 }
 
+/** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
+function trimIncomplete(text: string): string {
+  const trimmed = text.trim();
+  // 마지막 문자가 문장 종결 부호면 정상
+  if (/[.!?~요죠네다까세에어지만해야죠돼]$/.test(trimmed)) return trimmed;
+  // 마지막 완성 문장 찾기
+  const lastEnd = Math.max(
+    trimmed.lastIndexOf("."),
+    trimmed.lastIndexOf("!"),
+    trimmed.lastIndexOf("?"),
+    trimmed.lastIndexOf("~"),
+    trimmed.lastIndexOf("요"),
+    trimmed.lastIndexOf("죠"),
+    trimmed.lastIndexOf("네요"),
+  );
+  if (lastEnd > trimmed.length * 0.5) return trimmed.slice(0, lastEnd + 1);
+  return trimmed;
+}
+
 // ─── 공통 유틸 ──────────────────────────────────────────────────────────────
 
 /**
@@ -201,7 +220,7 @@ ${historyText}
 사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
 
   const res = await model.generateContent(prompt);
-  const answerText = extractText(res).trim();
+  const answerText = trimIncomplete(extractText(res));
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -232,7 +251,7 @@ ${historyText}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
   const res = await model.generateContent(prompt);
-  const text = extractText(res).trim();
+  const text = trimIncomplete(extractText(res));
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
