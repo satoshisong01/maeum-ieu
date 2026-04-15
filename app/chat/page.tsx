@@ -350,13 +350,16 @@ export default function ChatPage() {
     sendMessage(input);
   };
 
+  const [micDenied, setMicDenied] = useState(false);
+
   const startConversation = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       setMicAllowed(true);
+      setMicDenied(false);
     } catch {
-      alert("마이크 사용 권한을 허용해 주세요.");
+      setMicDenied(true);
     }
   }, []);
 
@@ -654,6 +657,7 @@ export default function ChatPage() {
 
         <div className="shrink-0 border-t border-zinc-200 px-3 py-3">
           {!micAllowed ? (
+            <>
             <button
               type="button"
               onClick={startConversation}
@@ -661,6 +665,49 @@ export default function ChatPage() {
             >
               대화 시작하기
             </button>
+            {micDenied && (
+              <div className="mt-3 rounded-xl bg-red-50 p-4 text-sm">
+                <p className="mb-2 font-semibold text-red-700">마이크 권한이 차단되어 있어요</p>
+                <p className="mb-3 text-red-600">마이크를 허용하려면 아래 방법을 따라주세요:</p>
+                <div className="space-y-2 text-xs text-zinc-700">
+                  <div className="rounded-lg bg-white p-2">
+                    <p className="font-medium">Chrome / Edge</p>
+                    <p>주소창 왼쪽 🔒 자물쇠 클릭 → &quot;마이크&quot; → &quot;허용&quot; → 새로고침</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-2">
+                    <p className="font-medium">Safari (iPhone/Mac)</p>
+                    <p>설정 → Safari → 웹사이트 → 마이크 → 이 사이트 &quot;허용&quot;</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-2">
+                    <p className="font-medium">Samsung Internet</p>
+                    <p>주소창 왼쪽 자물쇠 → 사이트 설정 → 마이크 → 허용</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-zinc-400">설정 변경 후 페이지를 새로고침하고 다시 &quot;대화 시작하기&quot;를 눌러주세요.</p>
+                <p className="mt-2 text-xs text-zinc-500">또는 아래에서 글씨로 대화할 수도 있어요.</p>
+                <form onSubmit={handleSubmit} className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="글씨로 입력하세요."
+                    className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                    disabled={loading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !input.trim()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+                    title="전송"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                  </button>
+                </form>
+              </div>
+            )}
+            </>
           ) : (
             <div className="space-y-2">
               {/* 항상 듣기 모드 토글 */}
