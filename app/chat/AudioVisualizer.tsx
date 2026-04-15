@@ -6,13 +6,14 @@ type Props = {
   stream: MediaStream | null;
   active: boolean;
   aiSpeaking: boolean;
+  size?: number; // 지정하면 해당 크기, 미지정 시 기본 280
 };
 
-export function AudioVisualizer({ stream, active, aiSpeaking }: Props) {
+export function AudioVisualizer({ stream, active, aiSpeaking, size: propSize }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number>(0);
-  const [dim, setDim] = useState(280);
+  const [dim, setDim] = useState(propSize ?? 280);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -23,14 +24,14 @@ export function AudioVisualizer({ stream, active, aiSpeaking }: Props) {
     const ctx = context;
 
     const dpr = window.devicePixelRatio ?? 1;
-    const size = Math.min(280, window.innerWidth - 48);
+    const size = propSize ?? Math.min(280, window.innerWidth - 48);
     setDim(size);
     canvas.width = size * dpr;
     canvas.height = size * dpr;
     canvas.style.width = `${size}px`;
     canvas.style.height = `${size}px`;
     ctx.scale(dpr, dpr);
-  }, []);
+  }, [propSize]);
 
   // 마이크 스트림 → 실시간 주파수 시각화
   useEffect(() => {

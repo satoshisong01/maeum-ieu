@@ -581,16 +581,15 @@ export default function ChatPage() {
 
       {/* 파동 + 상태 텍스트: 헤더 아래 고정, 항상 보임 */}
       {micAllowed && (listening || aiSpeaking) && (
-        <div className="flex shrink-0 items-center gap-3 border-b border-zinc-100 bg-white px-4 py-2">
-          <div className="h-8 w-16">
-            <AudioVisualizer
-              stream={streamRef.current}
-              active={listening || aiSpeaking}
-              aiSpeaking={aiSpeaking}
-            />
-          </div>
-          <p className="text-xs text-zinc-500">
-            {listening ? "말씀하세요… (끝나면 자동 전송)" : "AI가 응답 중..."}
+        <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3">
+          <AudioVisualizer
+            stream={streamRef.current}
+            active={listening || aiSpeaking}
+            aiSpeaking={aiSpeaking}
+            size={120}
+          />
+          <p className={`text-sm font-semibold ${listening ? "text-red-500" : "text-[#007bff]"}`}>
+            {listening ? "말씀하세요… (끝나면 자동 전송됩니다)" : "AI가 응답하고 있어요..."}
           </p>
         </div>
       )}
