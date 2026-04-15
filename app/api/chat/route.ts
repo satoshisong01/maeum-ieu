@@ -228,8 +228,8 @@ ${historyText}
       userContent: transcription || "(음성 메시지)",
       assistantContent: answerText,
     });
-    // 인지 분석 (await — 완료 후 응답)
-    await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock });
+    // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
+    runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }
 
   return NextResponse.json({ text: answerText, transcription, role: "assistant" });
@@ -255,8 +255,8 @@ ${historyText}
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
-    // 인지 분석 (await — 완료 후 응답)
-    await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock });
+    // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
+    runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }
 
   return NextResponse.json({ text, role: "assistant" });
