@@ -112,6 +112,7 @@ export default function ChatPage() {
   const [micAllowed, setMicAllowed] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [listening, setListening] = useState(false); // 녹음 중 여부
+  const [alwaysOn, setAlwaysOn] = useState(true); // 항상 듣기 모드 (기본 ON)
   const bottomRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -451,6 +452,12 @@ export default function ChatPage() {
     recorder.onstop = async () => {
       setListening(false);
       const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+      // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우
+      if (blob.size < 5000) {
+        // alwaysOn이면 바로 다시 녹음 시작
+        if (alwaysOn && !loading) setTimeout(() => startRecording(), 500);
+        return;
+      }
       try {
         const base64 = await blobToBase64(blob);
         await sendAudioMessage(base64, blob.type);
@@ -467,6 +474,8 @@ export default function ChatPage() {
           },
         ]);
       }
+      // alwaysOn 모드: AI 응답 완료 후 자동으로 다시 녹음 시작
+      if (alwaysOn) setTimeout(() => startRecording(), 1000);
     };
     mediaRecorderRef.current = recorder;
     try {
@@ -532,6 +541,14 @@ export default function ChatPage() {
     }
     setListening(false);
   }, []);
+
+  // alwaysOn 모드: 마이크 허용 후 자동으로 첫 녹음 시작
+  useEffect(() => {
+    if (micAllowed && alwaysOn && !listening && !loading && conversationId) {
+      const timer = setTimeout(() => startRecording(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [micAllowed, alwaysOn, listening, loading, conversationId, startRecording]);
 
   if (status === "loading") {
     return (
@@ -645,39 +662,53 @@ export default function ChatPage() {
               대화 시작하기
             </button>
           ) : (
-            <form onSubmit={handleSubmit} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={listening ? stopRecording : startRecording}
-                disabled={loading}
-                title={listening ? "멈추기" : "말하기"}
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${
-                  listening
-                    ? "bg-red-500 text-white hover:bg-red-600"
-                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                } disabled:opacity-50`}
-              >
-                🎤
-              </button>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="메시지를 입력하세요."
-                className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
-                title="전송"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                </svg>
-              </button>
-            </form>
+            <div className="space-y-2">
+              {/* 항상 듣기 모드 토글 */}
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !alwaysOn;
+                    setAlwaysOn(next);
+                    if (!next && listening) stopRecording();
+                  }}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                    alwaysOn
+                      ? "bg-red-500 text-white hover:bg-red-600"
+                      : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                  }`}
+                >
+                  🎤 {alwaysOn ? "음성 대화 ON" : "음성 대화 OFF"}
+                </button>
+                {listening && (
+                  <span className="flex items-center gap-1 text-xs text-red-500">
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                    듣는 중
+                  </span>
+                )}
+              </div>
+              {/* 텍스트 입력 */}
+              <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="또는 글씨로 입력하세요."
+                  className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+                  title="전송"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
+                </button>
+              </form>
+            </div>
           )}
         </div>
       </div>
