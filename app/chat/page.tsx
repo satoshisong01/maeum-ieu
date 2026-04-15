@@ -351,6 +351,8 @@ export default function ChatPage() {
   };
 
   const [micDenied, setMicDenied] = useState(false);
+  const [textOnly, setTextOnly] = useState(false); // 텍스트 전용 모드
+  const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
 
   const startConversation = useCallback(async () => {
     try {
@@ -358,9 +360,16 @@ export default function ChatPage() {
       streamRef.current = stream;
       setMicAllowed(true);
       setMicDenied(false);
+      setModeSelected(true);
+      setTextOnly(false);
     } catch {
       setMicDenied(true);
     }
+  }, []);
+
+  const startTextMode = useCallback(() => {
+    setTextOnly(true);
+    setModeSelected(true);
   }, []);
 
   const sendAudioMessage = useCallback(
@@ -616,8 +625,8 @@ export default function ChatPage() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="flex-1 overflow-y-auto px-4 py-4">
-          {/* 초기 안내 (마이크 미허용 시에만) */}
-          {!micAllowed && (
+          {/* 초기 안내 (모드 미선택 시) */}
+          {!modeSelected && (
             <div className="mb-4 flex flex-col items-center gap-4">
               <AudioVisualizer
                 stream={null}
@@ -625,7 +634,7 @@ export default function ChatPage() {
                 aiSpeaking={false}
               />
               <p className="text-center text-zinc-600">
-                대화를 시작하려면 아래 버튼을 누르고 마이크를 허용해 주세요.
+                아래에서 대화 방식을 선택해주세요.
               </p>
             </div>
           )}
@@ -656,58 +665,67 @@ export default function ChatPage() {
         </div>
 
         <div className="shrink-0 border-t border-zinc-200 px-3 py-3">
-          {!micAllowed ? (
-            <>
-            <button
-              type="button"
-              onClick={startConversation}
-              className="w-full rounded-full bg-[#007bff] py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
-            >
-              대화 시작하기
-            </button>
-            {micDenied && (
-              <div className="mt-3 rounded-xl bg-red-50 p-4 text-sm">
-                <p className="mb-2 font-semibold text-red-700">마이크 권한이 차단되어 있어요</p>
-                <p className="mb-3 text-red-600">마이크를 허용하려면 아래 방법을 따라주세요:</p>
-                <div className="space-y-2 text-xs text-zinc-700">
-                  <div className="rounded-lg bg-white p-2">
-                    <p className="font-medium">Chrome / Edge</p>
-                    <p>주소창 왼쪽 🔒 자물쇠 클릭 → &quot;마이크&quot; → &quot;허용&quot; → 새로고침</p>
+          {!modeSelected ? (
+            /* 모드 선택 화면 */
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={startConversation}
+                className="w-full rounded-full bg-[#007bff] py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
+              >
+                🎤 음성으로 대화하기
+              </button>
+              <button
+                type="button"
+                onClick={startTextMode}
+                className="w-full rounded-full bg-zinc-200 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300"
+              >
+                ⌨️ 글씨로 대화하기
+              </button>
+              {micDenied && (
+                <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
+                  <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
+                  <p className="text-xs text-red-600">마이크가 없거나 권한이 차단되어 있습니다.</p>
+                  <div className="mt-2 space-y-1 text-xs text-zinc-600">
+                    <p><b>Chrome / Edge:</b> 주소창 🔒 → 마이크 → 허용 → 새로고침</p>
+                    <p><b>Safari:</b> 설정 → Safari → 마이크 → 허용</p>
                   </div>
-                  <div className="rounded-lg bg-white p-2">
-                    <p className="font-medium">Safari (iPhone/Mac)</p>
-                    <p>설정 → Safari → 웹사이트 → 마이크 → 이 사이트 &quot;허용&quot;</p>
-                  </div>
-                  <div className="rounded-lg bg-white p-2">
-                    <p className="font-medium">Samsung Internet</p>
-                    <p>주소창 왼쪽 자물쇠 → 사이트 설정 → 마이크 → 허용</p>
-                  </div>
+                  <p className="mt-2 text-xs text-zinc-500">&quot;글씨로 대화하기&quot;를 눌러 텍스트로 대화할 수도 있어요.</p>
                 </div>
-                <p className="mt-3 text-xs text-zinc-400">설정 변경 후 페이지를 새로고침하고 다시 &quot;대화 시작하기&quot;를 눌러주세요.</p>
-                <p className="mt-2 text-xs text-zinc-500">또는 아래에서 글씨로 대화할 수도 있어요.</p>
-                <form onSubmit={handleSubmit} className="mt-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="글씨로 입력하세요."
-                    className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
-                    disabled={loading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading || !input.trim()}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
-                    title="전송"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                    </svg>
-                  </button>
-                </form>
-              </div>
-            )}
-            </>
+              )}
+            </div>
+          ) : textOnly ? (
+            /* 텍스트 전용 모드 */
+            <div className="space-y-2">
+              <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="메시지를 입력하세요."
+                  className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                  disabled={loading}
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#007bff] text-white transition hover:bg-[#0069d9] disabled:opacity-50"
+                  title="전송"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
+                </button>
+              </form>
+              <button
+                type="button"
+                onClick={() => { setModeSelected(false); setTextOnly(false); }}
+                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600"
+              >
+                음성 대화로 전환
+              </button>
+            </div>
           ) : (
             <div className="space-y-2">
               {/* 항상 듣기 모드 토글 */}
@@ -755,6 +773,13 @@ export default function ChatPage() {
                   </svg>
                 </button>
               </form>
+              <button
+                type="button"
+                onClick={() => { stopRecording(); setAlwaysOn(false); setModeSelected(false); setMicAllowed(false); }}
+                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600"
+              >
+                텍스트 대화로 전환
+              </button>
             </div>
           )}
         </div>
