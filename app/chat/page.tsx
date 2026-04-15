@@ -116,6 +116,9 @@ export default function ChatPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const vadFrameRef = useRef<number>(0);
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
   const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
@@ -468,6 +471,47 @@ export default function ChatPage() {
     mediaRecorderRef.current = recorder;
     try {
       recorder.start();
+
+      // VAD: 음량 모니터링 → 2초 침묵 시 자동 전송
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(streamRef.current!);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const SILENCE_THRESHOLD = 15; // 음량 기준 (0~255)
+      const SILENCE_DURATION = 2000; // 침묵 지속 시간 (ms)
+      let speechDetected = false;
+
+      const checkSilence = () => {
+        if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== "recording") {
+          audioCtx.close().catch(() => {});
+          return;
+        }
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+        if (avg > SILENCE_THRESHOLD) {
+          speechDetected = true;
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+        } else if (speechDetected && !silenceTimerRef.current) {
+          // 말을 했다가 조용해짐 → 타이머 시작
+          silenceTimerRef.current = setTimeout(() => {
+            if (mediaRecorderRef.current?.state === "recording") {
+              mediaRecorderRef.current.stop();
+            }
+            audioCtx.close().catch(() => {});
+          }, SILENCE_DURATION);
+        }
+
+        vadFrameRef.current = requestAnimationFrame(checkSilence);
+      };
+      vadFrameRef.current = requestAnimationFrame(checkSilence);
     } catch {
       setListening(false);
       alert("음성 녹음을 시작할 수 없습니다. Chrome 또는 Edge에서 시도해 주세요.");
@@ -475,6 +519,10 @@ export default function ChatPage() {
   }, [conversationId, loading, sendAudioMessage]);
 
   const stopRecording = useCallback(() => {
+    // VAD 정리
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    if (vadFrameRef.current) { cancelAnimationFrame(vadFrameRef.current); vadFrameRef.current = 0; }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       try {
         mediaRecorderRef.current.stop();
@@ -531,23 +579,37 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {/* 파동 + 안내 텍스트: 스크롤 영역 안 */}
-          <div className="mb-4 flex flex-col items-center gap-4">
+      {/* 파동 + 상태 텍스트: 헤더 아래 고정, 항상 보임 */}
+      {micAllowed && (listening || aiSpeaking) && (
+        <div className="flex shrink-0 items-center gap-3 border-b border-zinc-100 bg-white px-4 py-2">
+          <div className="h-8 w-16">
             <AudioVisualizer
-              stream={micAllowed ? streamRef.current : null}
+              stream={streamRef.current}
               active={listening || aiSpeaking}
               aiSpeaking={aiSpeaking}
             />
-            <p className="text-center text-zinc-600">
-              {!micAllowed
-                ? "대화를 시작하려면 아래 버튼을 누르고 마이크를 허용해 주세요."
-                : listening
-                  ? "말씀하세요… (끝나면 자동으로 전송됩니다)"
-                  : "말하기 버튼을 누르고 말하거나, 아래에서 글씨로 입력하세요."}
-            </p>
           </div>
+          <p className="text-xs text-zinc-500">
+            {listening ? "말씀하세요… (끝나면 자동 전송)" : "AI가 응답 중..."}
+          </p>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {/* 초기 안내 (마이크 미허용 시에만) */}
+          {!micAllowed && (
+            <div className="mb-4 flex flex-col items-center gap-4">
+              <AudioVisualizer
+                stream={null}
+                active={false}
+                aiSpeaking={false}
+              />
+              <p className="text-center text-zinc-600">
+                대화를 시작하려면 아래 버튼을 누르고 마이크를 허용해 주세요.
+              </p>
+            </div>
+          )}
           {messages.map((m) => (
             <div
               key={m.id}
