@@ -1,7 +1,7 @@
 /** KST 시간 관련 유틸리티 */
 
 import type { TimeContext } from "./types";
-import { DATE_TIME_PATTERNS } from "./constants";
+import { DATE_TIME_PATTERNS, RELATIVE_TIME_EXCLUDE_PATTERNS } from "./constants";
 
 export function getTimeContext(clientTimeIso?: string): TimeContext {
   const now = clientTimeIso ? new Date(clientTimeIso) : new Date();
@@ -51,6 +51,8 @@ export function toKstDateString(d: Date): string {
 
 export function isDateTimeQuestion(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
+  // "몇일전", "며칠 후" 같은 상대 시점 표현은 날짜 질문이 아님
+  if (RELATIVE_TIME_EXCLUDE_PATTERNS.some((p) => p.test(t))) return false;
   return DATE_TIME_PATTERNS.some((p) => p.test(t));
 }
 
