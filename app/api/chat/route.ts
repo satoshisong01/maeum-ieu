@@ -44,6 +44,46 @@ function extractText(res: any): string {
   return "";
 }
 
+/**
+ * 앵무새 반응 제거 — AI 응답의 첫 문장이 사용자 발화 핵심 단어를 과도하게 반복하면 그 문장 삭제.
+ * 예: 사용자 "된장찌개에 무랑 두부 넣어서" → AI 첫 문장 "된장찌개에 무랑 두부까지 넣어서 끓이셨다니..." → 제거
+ */
+function removeParrot(aiText: string, userText: string): string {
+  if (!aiText || !userText) return aiText;
+  const stopWords = new Set(["할아버지", "할머니", "엄마", "아빠", "아버님", "어머님", "회원님", "민지", "저는", "나는", "그리고", "그래서", "정말", "오늘", "하루", "근데", "그런데", "있어", "있지", "맞아", "응"]);
+  // 사용자 발화의 핵심 명사/형용사/동사 (2자 이상)
+  const userTokens = userText.split(/[\s,.!?~]+/).filter((w) => w.length >= 2 && !stopWords.has(w));
+  if (userTokens.length === 0) return aiText;
+
+  const sentences = aiText.split(/(?<=[.!?~])\s+/);
+  const filtered: string[] = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i];
+    // 각 문장이 사용자 발화 단어를 몇 개 포함하는지
+    const hits = userTokens.filter((t) => s.includes(t)).length;
+    // 사용자 단어를 3개 이상 포함 + 앵무새 정형 표현 포함 → 제거
+    const isParrotPhrase = /다니\s+정말|까지\s+넣|까지\s+드|까지\s+주무|하셨다니|이라고\s+말씀|말씀해주셔서\s+고마워|셨다니/.test(s);
+    if (hits >= 3 && isParrotPhrase) {
+      continue; // 이 문장 제거
+    }
+    filtered.push(s);
+  }
+  const result = filtered.join(" ").trim();
+  return result || aiText; // 모두 제거되면 원본 유지
+}
+
+/** 시간 라벨 누출 제거 — [방금], [3일 전], [15시간 전] 등 내부 메타데이터가 응답에 포함되면 제거 */
+function removeTimeLabels(text: string): string {
+  if (!text) return text;
+  // [숫자+단위 전] 또는 [방금], [어제] 등 제거
+  return text
+    .replace(/\[\s*(방금|어제|오늘)\s*\]/g, "")
+    .replace(/\[\s*\d+\s*(분|시간|일|주|주일|개월|달|년)\s*전\s*\]/g, "")
+    .replace(/\[\s*오래\s*전\s*\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
 function trimIncomplete(text: string): string {
   const trimmed = text.trim();
@@ -220,7 +260,7 @@ ${historyText}
 사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
 
   const res = await model.generateContent(prompt);
-  const answerText = trimIncomplete(extractText(res));
+  const answerText = removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), transcription);
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -251,7 +291,7 @@ ${historyText}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
   const res = await model.generateContent(prompt);
-  const text = trimIncomplete(extractText(res));
+  const text = removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), userContent);
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
