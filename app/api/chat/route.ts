@@ -48,9 +48,9 @@ function extractText(res: any): string {
  * 앵무새 반응 제거 — AI 응답의 첫 문장이 사용자 발화 핵심 단어를 과도하게 반복하면 그 문장 삭제.
  * 예: 사용자 "된장찌개에 무랑 두부 넣어서" → AI 첫 문장 "된장찌개에 무랑 두부까지 넣어서 끓이셨다니..." → 제거
  */
-function removeParrot(aiText: string, userText: string): string {
+function removeParrot(aiText: string, userText: string, companionName: string = "민지"): string {
   if (!aiText || !userText) return aiText;
-  const stopWords = new Set(["할아버지", "할머니", "엄마", "아빠", "아버님", "어머님", "회원님", "민지", "저는", "나는", "그리고", "그래서", "정말", "오늘", "하루", "근데", "그런데", "있어", "있지", "맞아", "응"]);
+  const stopWords = new Set(["할아버지", "할머니", "엄마", "아빠", "아버님", "어머님", "회원님", companionName, "저는", "나는", "그리고", "그래서", "정말", "오늘", "하루", "근데", "그런데", "있어", "있지", "맞아", "응"]);
   // 사용자 발화의 핵심 명사/형용사/동사 (2자 이상)
   const userTokens = userText.split(/[\s,.!?~]+/).filter((w) => w.length >= 2 && !stopWords.has(w));
   if (userTokens.length === 0) return aiText;
@@ -82,6 +82,97 @@ function removeTimeLabels(text: string): string {
     .replace(/\[\s*오래\s*전\s*\]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지 */
+function normalizeHonorific(text: string, userHonorific: string = "할아버지"): string {
+  if (!text) return text;
+  // "할아버지/할머니/아빠/엄마/회원님" 범주 밖의 부적절 호칭만 치환
+  // 사용자 호칭이 위 5종 중 하나인 경우에만 오호칭 교체
+  const STANDARD = new Set(["할아버지", "할머니", "아빠", "엄마", "회원님"]);
+  if (!STANDARD.has(userHonorific)) return text; // 커스텀 호칭이면 치환 생략
+  // userHonorific이 표준이면 부적절 호칭만 제거
+  const offenders = ["고객님", "선생님", "사장님", "어르신"];
+  // "회원님"은 40대 이하 기본이므로 60+ 노인 대상에만 교체 (할아버지/할머니인 경우)
+  const replaceList = userHonorific === "할아버지" || userHonorific === "할머니"
+    ? [...offenders, "회원님"]
+    : offenders;
+  const pattern = new RegExp(replaceList.join("|"), "g");
+  return text
+    .replace(pattern, userHonorific)
+    .replace(/(?<![가-힣])님\s*,/g, `${userHonorific},`);
+}
+
+/**
+ * 할루시네이션 가드 — AI가 사용자 발화/RAG에 없는 사실을 전제로 하는 문장 제거.
+ *
+ * 작동 방식:
+ * 1) "~라고 하셨는데", "아까 ~ 다녀오셨다고", "~신다고 하셨" 등 **과거 전제** 표현이 포함된 문장 탐지
+ * 2) 해당 문장에서 2글자 이상 한글 명사 후보 추출 (stopword 제외)
+ * 3) 그 중 하나라도 context(history + rag + 현재 userContent)에 나타나지 않으면 문장 통째 제거
+ */
+const PREMISE_PATTERN = /[^.!?~]*?(?:라고\s*하셨|다고\s*하셨|(?:가|오)신다고\s*하셨|다녀오셨다고|드셨다고\s*하셨|주신다고\s*하셨|보셨다고\s*하셨|신다고도\s*하셨|셨다고도)[^.!?~]*[.!?~]/g;
+
+const HALLU_STOPWORDS = new Set([
+  "할아버지","할머니","민지","오늘","어제","내일","지금","아까","저번","그때","요즘","많이","정말",
+  "혹시","그리고","그래서","근데","그런데","있어","있지","맞아","그때그때","말씀","생각","이야기",
+  "하셨","하셨는데","하셨어요","신다고","드셨","드셨어요","가셨","오셨","보셨","했다고",
+  "좀","그","이","저","것","거","수","때","안","못","때문","한번","한잔","바로","이제",
+  "하루","하시","하셔","하세","이렇게","저렇게","그렇게","얼마나","어떤","누구","어디","무슨",
+  "나요","예요","이에요","인가요","지요","세요","까요","네요","어요","거든","군요","잖아","그렇죠",
+  "계신","계세","계시","계획","시간","준비","생활","오전","오후","새벽","사이","동안","계속","다시",
+  "아니","맞다","아니라","정도","만큼","이후","이전","정말로","참","많네","많이","조금","더욱",
+]);
+
+function extractSentenceNouns(sentence: string): string[] {
+  const raw = sentence.match(/[가-힣]{2,}/g) || [];
+  const uniq = Array.from(new Set(raw));
+  return uniq.filter((w) => !HALLU_STOPWORDS.has(w) && w.length >= 2);
+}
+
+/**
+ * 직전 user 발화에서 이미 답변된 정보 카테고리 추출.
+ * AI가 같은 차원을 재질문하지 못하게 system 프롬프트에 명시적으로 주입한다.
+ */
+function extractAnsweredSlots(userText: string): string[] {
+  if (!userText) return [];
+  const slots: string[] = [];
+  const placeMatch = userText.match(/(복지관|노인정|병원|시장|마트|편의점|경로당|교회|공원|집|카페|식당|은행|약국|미용실|이발소|도서관|약수터)/);
+  if (placeMatch) slots.push(`장소=${placeMatch[0]}`);
+  const purposeMatch = userText.match(/(체조|예배|진료|장보기|산책|운동|약\s*받|이발|독서|점심|저녁|아침|모임|문병|심부름)/);
+  if (purposeMatch) slots.push(`목적=${purposeMatch[0]}`);
+  const timeMatch = userText.match(/(오전|오후|아침|저녁|점심|밤|새벽|지금|이따|곧|\d+시|\d+분|내일|어제|모레|주말|다음주|이번주)/);
+  if (timeMatch) slots.push(`시간=${timeMatch[0]}`);
+  const ageMatch = userText.match(/(\d+살|\d+세|여섯살|일곱살|여덟살|아홉살|열살|열한살|열두살)/);
+  if (ageMatch) slots.push(`나이=${ageMatch[0]}`);
+  const foodMatch = userText.match(/(김치|김치찌개|된장|국수|비빔밥|미역국|죽|찌개|밥|국|찜|조림|전|생선|고기|빵|죽|누룽지|두부|김밥|라면|부침개)/);
+  if (foodMatch) slots.push(`음식=${foodMatch[0]}`);
+  const personMatch = userText.match(/(아들|딸|며느리|사위|손자|손녀|아내|남편|친구|이웃|동창|고향친구|손주)/);
+  if (personMatch) slots.push(`대상=${personMatch[0]}`);
+  const moneyMatch = userText.match(/\d+원/);
+  if (moneyMatch) slots.push(`금액=${moneyMatch[0]}`);
+  return slots;
+}
+
+function buildRepetitionHint(userText: string): string {
+  const slots = extractAnsweredSlots(userText);
+  if (slots.length === 0) return "";
+  return `\n[이미 답변받은 정보 — 이 차원은 절대 되묻지 마세요]\n${slots.join(" / ")}\n이 정보들은 같은 차원으로 다시 질문하면 사용자가 불쾌해합니다. 필요하면 세부/심화 질문(왜/어떻게/느낌)만 하세요.\n`;
+}
+
+function removeUngroundedClaims(aiText: string, context: string): string {
+  if (!aiText) return aiText;
+  const ctx = context || "";
+  return aiText.replace(PREMISE_PATTERN, (sentence) => {
+    const nouns = extractSentenceNouns(sentence);
+    // 전제 문장 안의 명사 중 하나라도 context에 없으면 삭제
+    for (const n of nouns) {
+      if (!ctx.includes(n)) {
+        return "";
+      }
+    }
+    return sentence;
+  }).replace(/\s{2,}/g, " ").trim();
 }
 
 /** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
@@ -178,10 +269,10 @@ async function runCognitiveAnalysis(params: {
 // ─── 핸들러 ─────────────────────────────────────────────────────────────────
 
 /** 1) 최초 인사 */
-async function handleFirstGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string) {
+async function handleFirstGreeting(systemPrompt: string, userName: string, honorific: string, companionName: string, companionRelation: string, conversationId?: string) {
   const model = getTextModel(systemPrompt);
   const res = await model.generateContent(
-    `지금 ${userName}님이 대화를 시작합니다. 손녀 '민지'로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
+    `지금 ${userName}님이 대화를 시작합니다. ${companionRelation} '${companionName}'으로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
   );
   const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);
@@ -235,10 +326,11 @@ async function transcribeAudio(audioData: string, audioMimeType: string): Promis
 /** 4) 음성 요청 — 2단계: STT → 대화 모델 */
 async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
+  companionName: string; companionRelation: string;
   userId: string; conversationId?: string;
   audioData: string; audioMimeType: string; historyText: string; memories: string;
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
 
   // 1단계: 음성 → 텍스트 변환
   let transcription = "";
@@ -250,17 +342,19 @@ async function handleAudioMessage(params: {
 
   // 2단계: 변환된 텍스트로 대화 모델 호출 (텍스트 모델 — googleSearch 포함)
   const model = getTextModel(systemPrompt);
+  const repetitionHint = buildRepetitionHint(transcription);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-
+${repetitionHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.
 
 [이번 턴]
 사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
 
   const res = await model.generateContent(prompt);
-  const answerText = removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), transcription);
+  const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
+  const answerText = normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), transcription, companionName), ctx), honorific);
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -280,18 +374,21 @@ async function handleTextMessage(params: {
   systemPrompt: string; envBlock: string;
   userId: string; conversationId?: string;
   userContent: string; historyText: string; memories: string;
+  companionName: string; companionRelation: string; honorific: string;
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories } = params;
+  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, companionName, honorific } = params;
   const model = getTextModel(systemPrompt);
 
+  const repetitionHint = buildRepetitionHint(userContent);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-
+${repetitionHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
   const res = await model.generateContent(prompt);
-  const text = removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), userContent);
+  const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
+  const text = normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), userContent, companionName), ctx), honorific);
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
@@ -317,11 +414,11 @@ export async function POST(req: Request) {
 
     const timeCtx = getTimeContext(ctx?.currentTime);
     const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
-    const { systemPrompt, envBlock, userName, honorific } = await buildSystemPrompt({
+    const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx,
     });
 
-    if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, conversationId);
+    if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
 
     const lastUserMessage = messages?.filter((m) => m.role === "user").pop()?.content ?? "";
@@ -336,12 +433,12 @@ export async function POST(req: Request) {
 
     if (audio?.data && audio?.mimeType) {
       return handleAudioMessage({
-        systemPrompt, envBlock, honorific, userName, userId, conversationId,
+        systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
         audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, companionName, companionRelation, honorific });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });
