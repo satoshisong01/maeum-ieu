@@ -14,6 +14,8 @@ interface Profile {
   guardianName: string | null;
   guardianPhone: string | null;
   guardianRelation: string | null;
+  companionName: string | null;
+  companionRelation: string | null;
   createdAt: string;
 }
 
@@ -28,6 +30,8 @@ export default function MyPage() {
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [guardianRelation, setGuardianRelation] = useState("");
+  const [companionName, setCompanionName] = useState("");
+  const [companionRelation, setCompanionRelation] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -51,6 +55,8 @@ export default function MyPage() {
           setGuardianName(data.guardianName ?? "");
           setGuardianPhone(data.guardianPhone ?? "");
           setGuardianRelation(data.guardianRelation ?? "");
+          setCompanionName(data.companionName ?? "");
+          setCompanionRelation(data.companionRelation ?? "");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -75,6 +81,8 @@ export default function MyPage() {
         guardianName: guardianName || null,
         guardianPhone: guardianPhone || null,
         guardianRelation: guardianRelation || null,
+        companionName: companionName || null,
+        companionRelation: companionRelation || null,
       };
       if (newPassword) {
         body.currentPassword = currentPassword;
@@ -210,6 +218,35 @@ export default function MyPage() {
               <option value="grandchild">손자/손녀</option>
               <option value="other">기타</option>
             </select>
+
+            <hr className="my-2 border-zinc-100" />
+
+            {/* AI 동반자 설정 */}
+            <p className="text-xs font-medium text-zinc-500">AI 동반자 설정 (비우면 "민지 / 손녀")</p>
+            <input
+              type="text"
+              placeholder="AI 이름 (예: 민지, 수진, 지훈)"
+              value={companionName}
+              onChange={(e) => setCompanionName(e.target.value)}
+              maxLength={10}
+              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            />
+            <select
+              value={companionRelation}
+              onChange={(e) => setCompanionRelation(e.target.value)}
+              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            >
+              <option value="">AI 관계 선택</option>
+              <option value="손녀">손녀</option>
+              <option value="손자">손자</option>
+              <option value="딸">딸</option>
+              <option value="아들">아들</option>
+              <option value="며느리">며느리</option>
+              <option value="사위">사위</option>
+              <option value="조카">조카</option>
+              <option value="친구">친구</option>
+            </select>
+            <p className="text-[11px] text-zinc-400">* 변경 후 첫 1~2턴은 이전 호칭이 유지될 수 있어요.</p>
 
             <hr className="my-2 border-zinc-100" />
 

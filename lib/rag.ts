@@ -26,8 +26,16 @@ export async function searchMemories(
   const vectorStr = `[${queryEmbedding.join(",")}]`;
 
   // pgvector: cosine distance (<=>). 파라미터는 $1, $2, $3로 바인딩 (SQL 인젝션 방지)
+  // 이상 발화(isAnomaly=true)와 AI 응답은 제외 — 과거 이상 진술을 현재 사실처럼 재소환하는 것을 방지
   const rows = await prisma.$queryRawUnsafe<{ content_text: string; created_at: Date }[]>(
-    `SELECT content_text, created_at FROM message_embeddings WHERE user_id = $1 ORDER BY embedding <=> $2::vector LIMIT $3`,
+    `SELECT me.content_text, me.created_at
+     FROM message_embeddings me
+     LEFT JOIN "Message" m ON m.id = me.message_id
+     WHERE me.user_id = $1
+       AND (m."isAnomaly" IS DISTINCT FROM true)
+       AND (m.role IS NULL OR m.role = 'user')
+     ORDER BY me.embedding <=> $2::vector
+     LIMIT $3`,
     userId,
     vectorStr,
     limit

@@ -15,6 +15,8 @@ export default function SignupPage() {
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [guardianRelation, setGuardianRelation] = useState("");
+  const [companionName, setCompanionName] = useState("");
+  const [companionRelation, setCompanionRelation] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -40,6 +42,8 @@ export default function SignupPage() {
           guardianName: guardianName || undefined,
           guardianPhone: guardianPhone || undefined,
           guardianRelation: guardianRelation || undefined,
+          companionName: companionName || undefined,
+          companionRelation: companionRelation || undefined,
         }),
       });
       const data = await res.json();
@@ -142,6 +146,31 @@ export default function SignupPage() {
             <option value="spouse">배우자</option>
             <option value="grandchild">손자/손녀</option>
             <option value="other">기타</option>
+          </select>
+          <hr className="border-zinc-100" />
+          <p className="text-xs text-zinc-500">AI 동반자 설정 (선택 — 비우면 기본값 "민지 / 손녀")</p>
+          <input
+            type="text"
+            placeholder="AI 이름 (예: 민지, 수진, 지훈)"
+            value={companionName}
+            onChange={(e) => setCompanionName(e.target.value)}
+            maxLength={10}
+            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+          />
+          <select
+            value={companionRelation}
+            onChange={(e) => setCompanionRelation(e.target.value)}
+            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+          >
+            <option value="">AI 관계 (선택)</option>
+            <option value="손녀">손녀</option>
+            <option value="손자">손자</option>
+            <option value="딸">딸</option>
+            <option value="아들">아들</option>
+            <option value="며느리">며느리</option>
+            <option value="사위">사위</option>
+            <option value="조카">조카</option>
+            <option value="친구">친구</option>
           </select>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button

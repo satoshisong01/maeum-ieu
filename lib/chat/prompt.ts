@@ -1,7 +1,7 @@
 /** 프롬프트 조립 */
 
 import type { TimeContext, WeatherContext } from "./types";
-import { SYSTEM_PROMPT_BASE, COGNITIVE_SCREENING_PROTOCOL } from "./constants";
+import { renderSystemPrompt, COMPANION_DEFAULTS } from "./constants";
 import { prisma } from "@/lib/prisma";
 import { toKstDateString } from "./time";
 
@@ -48,6 +48,8 @@ export interface PromptParts {
   envBlock: string;
   userName: string;
   honorific: string;
+  companionName: string;
+  companionRelation: string;
 }
 
 export async function buildSystemPrompt(params: {
@@ -60,12 +62,14 @@ export async function buildSystemPrompt(params: {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { name: true, age: true, gender: true },
+    select: { name: true, age: true, gender: true, companionName: true, companionRelation: true, userHonorific: true },
   });
   const userName = user?.name?.trim() || "사용자";
-  const honorific = getHonorific(user?.age ?? null, user?.gender ?? null);
+  const honorific = user?.userHonorific?.trim() || getHonorific(user?.age ?? null, user?.gender ?? null);
+  const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
+  const companionRelation = user?.companionRelation?.trim() || COMPANION_DEFAULTS.relation;
 
-  const userBlock = `[사용자 정보]\n- 이름: ${userName}\n- 호칭: ${honorific}`;
+  const userBlock = `[사용자 정보]\n- 이름: ${userName}\n- 호칭: ${honorific}\n- AI 동반자: ${companionName} (${companionRelation})`;
   const envBlock = buildEnvBlock(timeCtx, weather);
   const todayKst = toKstDateString(new Date());
   const dateBlock = conversationId ? await getDateAwareBlock(conversationId, todayKst) : "";
@@ -99,7 +103,8 @@ export async function buildSystemPrompt(params: {
 → 질문 없이 호응/공감만 해도 됩니다. 매 턴마다 인지 질문을 할 필요 없습니다.`;
   }
 
-  const systemPrompt = [SYSTEM_PROMPT_BASE, userBlock, envBlock, dateBlock, COGNITIVE_SCREENING_PROTOCOL, guideBlock].filter(Boolean).join("\n\n");
+  const { systemPromptBase, cognitiveProtocol } = renderSystemPrompt({ companionName, companionRelation });
+  const systemPrompt = [systemPromptBase, userBlock, envBlock, dateBlock, cognitiveProtocol, guideBlock].filter(Boolean).join("\n\n");
 
-  return { systemPrompt, envBlock: `${userBlock}\n${envBlock}`, userName, honorific };
+  return { systemPrompt, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation };
 }

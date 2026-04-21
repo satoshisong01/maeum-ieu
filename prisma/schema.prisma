@@ -21,6 +21,9 @@ model User {
   guardianName  String?   // 보호자 이름
   guardianPhone String?   // 보호자 연락처
   guardianRelation String? // 보호자 관계 (아들, 딸, 배우자 등)
+  companionName     String?  @default("민지") // AI 동반자 이름
+  companionRelation String?  @default("손녀") // AI 동반자 관계 (손녀/손자/딸/아들/며느리/친구 등)
+  userHonorific     String?                   // 사용자 호칭 override (null이면 성별 자동 추론)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
