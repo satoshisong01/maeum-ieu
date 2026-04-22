@@ -35,6 +35,28 @@ function getTextModel(systemInstruction: string) {
 // ─── 응답 텍스트 추출 (Gemini API / Vertex AI 공통) ──────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+/**
+ * generateContent 결과가 비어있으면 1회 재시도. 여전히 비면 폴백 멘트 반환.
+ * 빈 응답 원인: Gemini 안전 필터 차단, thinking-only output, 네트워크 순간 장애 등.
+ */
+async function generateWithFallback(
+  model: { generateContent: (p: any) => Promise<any> },
+  prompt: any,
+  fallback: string = "할아버지, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?",
+): Promise<{ text: string; fallbackUsed: boolean }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await model.generateContent(prompt);
+      const text = extractText(res);
+      if (text && text.trim().length >= 2) return { text, fallbackUsed: false };
+      console.warn(`[chat] empty response attempt ${attempt + 1}`);
+    } catch (e) {
+      console.warn(`[chat] generate attempt ${attempt + 1} error:`, (e as Error).message);
+    }
+  }
+  return { text: fallback, fallbackUsed: true };
+}
+
 function extractText(res: any): string {
   let raw = "";
   if (typeof res?.response?.text === "function") raw = res.response.text();
@@ -313,10 +335,11 @@ async function runCognitiveAnalysis(params: {
 /** 1) 최초 인사 */
 async function handleFirstGreeting(systemPrompt: string, userName: string, honorific: string, companionName: string, companionRelation: string, conversationId?: string) {
   const model = getTextModel(systemPrompt);
-  const res = await model.generateContent(
+  const { text } = await generateWithFallback(
+    model,
     `지금 ${userName}님이 대화를 시작합니다. ${companionRelation} '${companionName}'으로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
+    `${honorific}, 안녕하세요! ${companionName}예요. 오늘 하루 어떻게 보내고 계세요?`,
   );
-  const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
 }
@@ -324,7 +347,8 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
 /** 2) 재접속 인사 — AI가 먼저 인지 질문을 자연스럽게 포함 */
 async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string) {
   const model = getTextModel(systemPrompt);
-  const res = await model.generateContent(
+  const { text } = await generateWithFallback(
+    model,
     `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.
 
 [중요] 인사와 함께 아래 중 하나를 자연스럽게 물어보세요:
@@ -333,8 +357,8 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
 - 인지 선별 프로토콜에서 아직 확인 안 한 영역의 질문 하나 (시험이 아닌 자연스러운 대화 형식으로)
 
 2~3문장 이내. 절대 자기소개 반복하지 마세요.`,
+    `${honorific}, 다시 오셨네요! 오늘 하루 어떻게 보내고 계세요?`,
   );
-  const text = extractText(res);
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
 }
@@ -394,9 +418,10 @@ ${repetitionHint}
 [이번 턴]
 사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
 
-  const res = await model.generateContent(prompt);
+  const fallback = `${honorific}, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
+  const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
-  const answerText = normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), transcription, companionName), ctx), honorific);
+  const answerText = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific);
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -428,9 +453,10 @@ ${historyText}
 ${repetitionHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
-  const res = await model.generateContent(prompt);
+  const fallback = `${honorific}, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
+  const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
-  const text = normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(extractText(res))), userContent, companionName), ctx), honorific);
+  const text = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific);
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
