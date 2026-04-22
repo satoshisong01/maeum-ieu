@@ -36,12 +36,54 @@ function getTextModel(systemInstruction: string) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractText(res: any): string {
-  // Gemini API: res.response.text()
-  if (typeof res?.response?.text === "function") return res.response.text();
-  // Vertex AI: res.response.candidates[0].content.parts[0].text
-  const text = res?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text === "string") return text;
-  return "";
+  let raw = "";
+  if (typeof res?.response?.text === "function") raw = res.response.text();
+  else {
+    const t = res?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof t === "string") raw = t;
+  }
+  return stripReasoningTrace(raw);
+}
+
+/**
+ * Gemini thinking/reasoning 트레이스를 응답에서 제거.
+ * 증상: AI 응답이 "thought The user ...", "Thought:", "**Thinking...**", 영문 reasoning 단락으로 시작.
+ * 전략: 응답을 문장/줄 단위로 쪼개고 "한글 비율 40% 미만"인 선두 세그먼트는 reasoning으로 간주해 버린다.
+ *       첫 한글 비율 40% 이상 세그먼트부터를 최종 응답으로 사용.
+ */
+function stripReasoningTrace(text: string): string {
+  if (!text) return text;
+  let t = text.trim();
+  if (!t) return t;
+
+  // 1) 명시적 reasoning 라벨 라인 제거
+  t = t.replace(/^\s*(?:```(?:thinking|thought)?\s*)?(?:thought|thinking|reasoning|analysis|plan|scratchpad)\s*:?\s*/i, "");
+  t = t.replace(/^\s*\*{2,}\s*(?:thought|thinking|reasoning|analysis)[^*\n]*\*{2,}\s*/gi, "");
+
+  // 2) 줄 + 문장 단위로 분리. 한글 비율이 낮은 선두 세그먼트 제거.
+  //    세그먼트 경계: 줄바꿈 또는 문장 종결 (.!?) 뒤 공백.
+  const segments = t.split(/(?<=[.!?])\s+|\n+/).filter((s) => s.trim().length > 0);
+  if (segments.length === 0) return t;
+
+  const hasHangul = (s: string) => /[가-힣]/.test(s);
+  const hangulRatio = (s: string) => {
+    const han = (s.match(/[가-힣]/g) || []).length;
+    const letters = (s.match(/[a-zA-Z가-힣]/g) || []).length;
+    return letters === 0 ? 0 : han / letters;
+  };
+
+  // 응답 전체가 한글이 하나도 없으면 그대로 반환 (영문 주소 등 특수 케이스)
+  if (!hasHangul(t)) return t;
+
+  // 선두에서 한글 비율 40% 미만인 세그먼트들을 스킵
+  let startIdx = 0;
+  for (let i = 0; i < segments.length; i++) {
+    if (hangulRatio(segments[i]) >= 0.4) { startIdx = i; break; }
+    // 마지막 세그먼트까지 낮으면 전체 유지 (영문 응답으로 취급)
+    if (i === segments.length - 1) startIdx = 0;
+  }
+
+  return segments.slice(startIdx).join(" ").trim();
 }
 
 /**

@@ -112,7 +112,10 @@ export default function ChatPage() {
   const [micAllowed, setMicAllowed] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [listening, setListening] = useState(false); // 녹음 중 여부
-  const [alwaysOn, setAlwaysOn] = useState(true); // 항상 듣기 모드 (기본 ON)
+  const [alwaysOn, setAlwaysOn] = useState(false); // 음성 전원 (기본 꺼짐 — 사용자가 명시적으로 켜야 함)
+  const alwaysOnRef = useRef(false);
+  alwaysOnRef.current = alwaysOn; // stale closure 방지
+  const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const bottomRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -442,6 +445,8 @@ export default function ChatPage() {
 
   const startRecording = useCallback(() => {
     if (loading || !conversationId) return;
+    // 전원 OFF면 절대 녹음 시작하지 않음
+    if (!alwaysOnRef.current) return;
     if (!streamRef.current) {
       alert("먼저 '대화 시작하기' 버튼으로 마이크를 허용해 주세요.");
       return;
@@ -464,10 +469,17 @@ export default function ChatPage() {
     recorder.onstop = async () => {
       setListening(false);
       const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+      audioChunksRef.current = [];
+
+      // OFF 직후 중단된 녹음은 전송 금지 (전원 OFF 시 어떤 경우에도 음성 전달 안 됨)
+      if (discardNextRef.current || !alwaysOnRef.current) {
+        discardNextRef.current = false;
+        return;
+      }
+
       // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우
       if (blob.size < 5000) {
-        // alwaysOn이면 바로 다시 녹음 시작
-        if (alwaysOn && !loading) setTimeout(() => startRecording(), 500);
+        if (alwaysOnRef.current && !loading) setTimeout(() => startRecording(), 500);
         return;
       }
       try {
@@ -479,15 +491,11 @@ export default function ChatPage() {
         const displayMsg = msg.startsWith("오늘은 사용할 수 없습니다") ? msg : `음성 처리 오류: ${msg}`;
         setMessages((prev) => [
           ...prev,
-          {
-            id: createId(),
-            role: "assistant",
-            content: displayMsg,
-          },
+          { id: createId(), role: "assistant", content: displayMsg },
         ]);
       }
-      // alwaysOn 모드: AI 응답 완료 후 자동으로 다시 녹음 시작
-      if (alwaysOn) setTimeout(() => startRecording(), 1000);
+      // alwaysOn 모드: AI 응답 완료 후 자동으로 다시 녹음 시작 (ref로 최신 상태 참조)
+      if (alwaysOnRef.current) setTimeout(() => startRecording(), 1000);
     };
     mediaRecorderRef.current = recorder;
     try {
@@ -511,6 +519,13 @@ export default function ChatPage() {
           audioCtx.close().catch(() => {});
           return;
         }
+        // OFF 상태에서 잔존 녹음이 있으면 즉시 버리고 중단
+        if (!alwaysOnRef.current) {
+          discardNextRef.current = true;
+          try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+          audioCtx.close().catch(() => {});
+          return;
+        }
         analyser.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
 
@@ -521,7 +536,6 @@ export default function ChatPage() {
             silenceTimerRef.current = null;
           }
         } else if (speechDetected && !silenceTimerRef.current) {
-          // 말을 했다가 조용해짐 → 타이머 시작
           silenceTimerRef.current = setTimeout(() => {
             if (mediaRecorderRef.current?.state === "recording") {
               mediaRecorderRef.current.stop();
@@ -539,10 +553,13 @@ export default function ChatPage() {
     }
   }, [conversationId, loading, sendAudioMessage]);
 
-  const stopRecording = useCallback(() => {
+  /** 녹음 중지. discard=true면 진행 중이던 녹음 블롭을 서버로 전송하지 않고 버림. */
+  const stopRecording = useCallback((opts?: { discard?: boolean }) => {
     // VAD 정리
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
     if (vadFrameRef.current) { cancelAnimationFrame(vadFrameRef.current); vadFrameRef.current = 0; }
+
+    if (opts?.discard) discardNextRef.current = true;
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       try {
@@ -728,27 +745,39 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {/* 항상 듣기 모드 토글 */}
-              <div className="flex items-center justify-center gap-2">
+              {/* 음성 전원 토글 — 버튼 = 현재 상태 표시 (클릭 = 전환) */}
+              <div className="flex flex-col items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
                     const next = !alwaysOn;
                     setAlwaysOn(next);
-                    if (!next && listening) stopRecording();
+                    alwaysOnRef.current = next;
+                    if (next) {
+                      // OFF → ON: 녹음 시작은 useEffect가 처리
+                    } else {
+                      // ON → OFF: 녹음 중이던 블롭 버리고 즉시 중지
+                      stopRecording({ discard: true });
+                    }
                   }}
-                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                  aria-pressed={alwaysOn}
+                  title={alwaysOn ? "눌러서 끄기" : "눌러서 켜기"}
+                  className={`flex min-w-[180px] items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition ${
                     alwaysOn
-                      ? "bg-red-500 text-white hover:bg-red-600"
-                      : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                      ? "bg-red-500 text-white shadow-md hover:bg-red-600"
+                      : "bg-zinc-300 text-zinc-700 hover:bg-zinc-400"
                   }`}
                 >
-                  🎤 {alwaysOn ? "음성 대화 ON" : "음성 대화 OFF"}
+                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${alwaysOn ? "bg-white animate-pulse" : "bg-zinc-500"}`} />
+                  🎤 음성 대화 {alwaysOn ? "켜짐" : "꺼짐"}
                 </button>
-                {listening && (
+                <span className="text-[11px] text-zinc-400">
+                  {alwaysOn ? "(눌러서 끌 수 있어요)" : "(눌러서 켤 수 있어요)"}
+                </span>
+                {alwaysOn && listening && (
                   <span className="flex items-center gap-1 text-xs text-red-500">
                     <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                    듣는 중
+                    듣는 중…
                   </span>
                 )}
               </div>
@@ -775,7 +804,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { stopRecording(); setAlwaysOn(false); setModeSelected(false); setMicAllowed(false); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; stopRecording({ discard: true }); setModeSelected(false); setMicAllowed(false); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600"
               >
                 텍스트 대화로 전환
