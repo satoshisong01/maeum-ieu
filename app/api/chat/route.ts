@@ -9,6 +9,7 @@ import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
 import { analyzeCognitive } from "@/lib/chat/cognitive-analyzer";
+import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
 
@@ -39,10 +40,20 @@ function getTextModel(systemInstruction: string) {
  * generateContent 결과가 비어있으면 1회 재시도. 여전히 비면 폴백 멘트 반환.
  * 빈 응답 원인: Gemini 안전 필터 차단, thinking-only output, 네트워크 순간 장애 등.
  */
+function buildFallbackMessage(honorific: string, companionName: string): string {
+  const variants = [
+    `${honorific}, ${companionName}가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실래요?`,
+    `어? ${companionName}가 제대로 못 들었나 봐요. 한 번만 더 얘기해주실 수 있으세요?`,
+    `아이고 ${honorific}, ${companionName}가 생각이 꼬였네요. 다시 말씀해주시면 잘 들을게요!`,
+    `${honorific}, 잠깐 정신이 흐릿했어요. 방금 하신 말씀 한 번 더 부탁드려도 될까요?`,
+  ];
+  return variants[Math.floor(Math.random() * variants.length)];
+}
+
 async function generateWithFallback(
   model: { generateContent: (p: any) => Promise<any> },
   prompt: any,
-  fallback: string = "할아버지, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?",
+  fallback: string,
 ): Promise<{ text: string; fallbackUsed: boolean }> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -216,6 +227,20 @@ function extractAnsweredSlots(userText: string): string[] {
   const moneyMatch = userText.match(/\d+원/);
   if (moneyMatch) slots.push(`금액=${moneyMatch[0]}`);
   return slots;
+}
+
+/**
+ * 단어 게임이 활성화된 맥락인지 판별 → WORD_GAME_GUARDRAIL 동적 주입.
+ * 시그널: 최근 AI가 "X로 시작하는 Y" 질문을 했거나, 사용자가 게임 답변 중.
+ */
+function detectWordGameContext(historyText: string, userText: string): boolean {
+  const combined = `${historyText}\n${userText}`;
+  return /['"‘][가-힣]['"’]\s*(?:로|으로)\s*시작하는|로 시작하는 동물|로 시작하는 음식|끝말잇기|받아쓰기/.test(combined);
+}
+
+function buildWordGameHint(historyText: string, userText: string): string {
+  if (!detectWordGameContext(historyText, userText)) return "";
+  return `\n${WORD_GAME_GUARDRAIL}\n`;
 }
 
 function buildRepetitionHint(userText: string): string {
@@ -409,16 +434,17 @@ async function handleAudioMessage(params: {
   // 2단계: 변환된 텍스트로 대화 모델 호출 (텍스트 모델 — googleSearch 포함)
   const model = getTextModel(systemPrompt);
   const repetitionHint = buildRepetitionHint(transcription);
+  const wordGameHint = buildWordGameHint(historyText, transcription);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-${repetitionHint}
+${repetitionHint}${wordGameHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.
 
 [이번 턴]
 사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
 
-  const fallback = `${honorific}, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
+  const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const answerText = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific);
@@ -447,13 +473,14 @@ async function handleTextMessage(params: {
   const model = getTextModel(systemPrompt);
 
   const repetitionHint = buildRepetitionHint(userContent);
+  const wordGameHint = buildWordGameHint(historyText, userContent);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-${repetitionHint}
+${repetitionHint}${wordGameHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
-  const fallback = `${honorific}, 민지가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
+  const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const text = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific);
