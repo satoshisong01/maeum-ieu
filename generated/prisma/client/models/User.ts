@@ -43,6 +43,12 @@ export type UserMinAggregateOutputType = {
   image: string | null
   age: number | null
   gender: string | null
+  guardianName: string | null
+  guardianPhone: string | null
+  guardianRelation: string | null
+  companionName: string | null
+  companionRelation: string | null
+  userHonorific: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -56,6 +62,12 @@ export type UserMaxAggregateOutputType = {
   image: string | null
   age: number | null
   gender: string | null
+  guardianName: string | null
+  guardianPhone: string | null
+  guardianRelation: string | null
+  companionName: string | null
+  companionRelation: string | null
+  userHonorific: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -69,6 +81,12 @@ export type UserCountAggregateOutputType = {
   image: number
   age: number
   gender: number
+  guardianName: number
+  guardianPhone: number
+  guardianRelation: number
+  companionName: number
+  companionRelation: number
+  userHonorific: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -92,6 +110,12 @@ export type UserMinAggregateInputType = {
   image?: true
   age?: true
   gender?: true
+  guardianName?: true
+  guardianPhone?: true
+  guardianRelation?: true
+  companionName?: true
+  companionRelation?: true
+  userHonorific?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -105,6 +129,12 @@ export type UserMaxAggregateInputType = {
   image?: true
   age?: true
   gender?: true
+  guardianName?: true
+  guardianPhone?: true
+  guardianRelation?: true
+  companionName?: true
+  companionRelation?: true
+  userHonorific?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -118,6 +148,12 @@ export type UserCountAggregateInputType = {
   image?: true
   age?: true
   gender?: true
+  guardianName?: true
+  guardianPhone?: true
+  guardianRelation?: true
+  companionName?: true
+  companionRelation?: true
+  userHonorific?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -218,6 +254,12 @@ export type UserGroupByOutputType = {
   image: string | null
   age: number | null
   gender: string | null
+  guardianName: string | null
+  guardianPhone: string | null
+  guardianRelation: string | null
+  companionName: string | null
+  companionRelation: string | null
+  userHonorific: string | null
   createdAt: Date
   updatedAt: Date
   _count: UserCountAggregateOutputType | null
@@ -254,6 +296,12 @@ export type UserWhereInput = {
   image?: Prisma.StringNullableFilter<"User"> | string | null
   age?: Prisma.IntNullableFilter<"User"> | number | null
   gender?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianName?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianPhone?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  companionName?: Prisma.StringNullableFilter<"User"> | string | null
+  companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -270,6 +318,12 @@ export type UserOrderByWithRelationInput = {
   image?: Prisma.SortOrderInput | Prisma.SortOrder
   age?: Prisma.SortOrderInput | Prisma.SortOrder
   gender?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianName?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianPhone?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  companionName?: Prisma.SortOrderInput | Prisma.SortOrder
+  companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   accounts?: Prisma.AccountOrderByRelationAggregateInput
@@ -289,6 +343,12 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   image?: Prisma.StringNullableFilter<"User"> | string | null
   age?: Prisma.IntNullableFilter<"User"> | number | null
   gender?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianName?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianPhone?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  companionName?: Prisma.StringNullableFilter<"User"> | string | null
+  companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -305,6 +365,12 @@ export type UserOrderByWithAggregationInput = {
   image?: Prisma.SortOrderInput | Prisma.SortOrder
   age?: Prisma.SortOrderInput | Prisma.SortOrder
   gender?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianName?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianPhone?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  companionName?: Prisma.SortOrderInput | Prisma.SortOrder
+  companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
@@ -326,6 +392,12 @@ export type UserScalarWhereWithAggregatesInput = {
   image?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   age?: Prisma.IntNullableWithAggregatesFilter<"User"> | number | null
   gender?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  guardianName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  guardianPhone?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  guardianRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  companionName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  companionRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  userHonorific?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
@@ -339,6 +411,12 @@ export type UserCreateInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -355,6 +433,12 @@ export type UserUncheckedCreateInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -371,6 +455,12 @@ export type UserUpdateInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -387,6 +477,12 @@ export type UserUncheckedUpdateInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -403,6 +499,12 @@ export type UserCreateManyInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -416,6 +518,12 @@ export type UserUpdateManyMutationInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -429,6 +537,12 @@ export type UserUncheckedUpdateManyInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -442,6 +556,12 @@ export type UserCountOrderByAggregateInput = {
   image?: Prisma.SortOrder
   age?: Prisma.SortOrder
   gender?: Prisma.SortOrder
+  guardianName?: Prisma.SortOrder
+  guardianPhone?: Prisma.SortOrder
+  guardianRelation?: Prisma.SortOrder
+  companionName?: Prisma.SortOrder
+  companionRelation?: Prisma.SortOrder
+  userHonorific?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -459,6 +579,12 @@ export type UserMaxOrderByAggregateInput = {
   image?: Prisma.SortOrder
   age?: Prisma.SortOrder
   gender?: Prisma.SortOrder
+  guardianName?: Prisma.SortOrder
+  guardianPhone?: Prisma.SortOrder
+  guardianRelation?: Prisma.SortOrder
+  companionName?: Prisma.SortOrder
+  companionRelation?: Prisma.SortOrder
+  userHonorific?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -472,6 +598,12 @@ export type UserMinOrderByAggregateInput = {
   image?: Prisma.SortOrder
   age?: Prisma.SortOrder
   gender?: Prisma.SortOrder
+  guardianName?: Prisma.SortOrder
+  guardianPhone?: Prisma.SortOrder
+  guardianRelation?: Prisma.SortOrder
+  companionName?: Prisma.SortOrder
+  companionRelation?: Prisma.SortOrder
+  userHonorific?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -560,6 +692,12 @@ export type UserCreateWithoutAccountsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -575,6 +713,12 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -606,6 +750,12 @@ export type UserUpdateWithoutAccountsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -621,6 +771,12 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -636,6 +792,12 @@ export type UserCreateWithoutSessionsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -651,6 +813,12 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -682,6 +850,12 @@ export type UserUpdateWithoutSessionsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -697,6 +871,12 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -712,6 +892,12 @@ export type UserCreateWithoutConversationsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -727,6 +913,12 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   image?: string | null
   age?: number | null
   gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -758,6 +950,12 @@ export type UserUpdateWithoutConversationsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -773,6 +971,12 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -837,6 +1041,12 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   image?: boolean
   age?: boolean
   gender?: boolean
+  guardianName?: boolean
+  guardianPhone?: boolean
+  guardianRelation?: boolean
+  companionName?: boolean
+  companionRelation?: boolean
+  userHonorific?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
@@ -854,6 +1064,12 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   image?: boolean
   age?: boolean
   gender?: boolean
+  guardianName?: boolean
+  guardianPhone?: boolean
+  guardianRelation?: boolean
+  companionName?: boolean
+  companionRelation?: boolean
+  userHonorific?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -867,6 +1083,12 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   image?: boolean
   age?: boolean
   gender?: boolean
+  guardianName?: boolean
+  guardianPhone?: boolean
+  guardianRelation?: boolean
+  companionName?: boolean
+  companionRelation?: boolean
+  userHonorific?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -880,11 +1102,17 @@ export type UserSelectScalar = {
   image?: boolean
   age?: boolean
   gender?: boolean
+  guardianName?: boolean
+  guardianPhone?: boolean
+  guardianRelation?: boolean
+  companionName?: boolean
+  companionRelation?: boolean
+  userHonorific?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "companionName" | "companionRelation" | "userHonorific" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
@@ -910,6 +1138,12 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     image: string | null
     age: number | null
     gender: string | null
+    guardianName: string | null
+    guardianPhone: string | null
+    guardianRelation: string | null
+    companionName: string | null
+    companionRelation: string | null
+    userHonorific: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["user"]>
@@ -1346,6 +1580,12 @@ export interface UserFieldRefs {
   readonly image: Prisma.FieldRef<"User", 'String'>
   readonly age: Prisma.FieldRef<"User", 'Int'>
   readonly gender: Prisma.FieldRef<"User", 'String'>
+  readonly guardianName: Prisma.FieldRef<"User", 'String'>
+  readonly guardianPhone: Prisma.FieldRef<"User", 'String'>
+  readonly guardianRelation: Prisma.FieldRef<"User", 'String'>
+  readonly companionName: Prisma.FieldRef<"User", 'String'>
+  readonly companionRelation: Prisma.FieldRef<"User", 'String'>
+  readonly userHonorific: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }

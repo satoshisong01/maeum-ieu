@@ -901,6 +901,12 @@ export const UserScalarFieldEnum = {
   image: 'image',
   age: 'age',
   gender: 'gender',
+  guardianName: 'guardianName',
+  guardianPhone: 'guardianPhone',
+  guardianRelation: 'guardianRelation',
+  companionName: 'companionName',
+  companionRelation: 'companionRelation',
+  userHonorific: 'userHonorific',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
