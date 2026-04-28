@@ -159,20 +159,18 @@ function removeTimeLabels(text: string): string {
     .trim();
 }
 
-/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지 */
+/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지. 사용자가 명시한 호칭 외 모든 친족·존칭 변형 제거. */
 function normalizeHonorific(text: string, userHonorific: string = "할아버지"): string {
   if (!text) return text;
-  // "할아버지/할머니/아빠/엄마/회원님" 범주 밖의 부적절 호칭만 치환
-  // 사용자 호칭이 위 5종 중 하나인 경우에만 오호칭 교체
-  const STANDARD = new Set(["할아버지", "할머니", "아빠", "엄마", "회원님"]);
-  if (!STANDARD.has(userHonorific)) return text; // 커스텀 호칭이면 치환 생략
-  // userHonorific이 표준이면 부적절 호칭만 제거
-  const offenders = ["고객님", "선생님", "사장님", "어르신"];
-  // "회원님"은 40대 이하 기본이므로 60+ 노인 대상에만 교체 (할아버지/할머니인 경우)
-  const replaceList = userHonorific === "할아버지" || userHonorific === "할머니"
-    ? [...offenders, "회원님"]
-    : offenders;
-  const pattern = new RegExp(replaceList.join("|"), "g");
+  // 모든 가능 호칭 후보를 모아두고, 사용자 선택값을 제외한 나머지가 등장하면 사용자 선택으로 치환.
+  const ALL = ["할아버지", "할머니", "아버지", "어머니", "아빠", "엄마",
+    "아저씨", "이모", "삼촌", "고모", "이모님", "삼촌님",
+    "회원님", "고객님", "선생님", "사장님", "어르신", "아버님", "어머님"];
+  const offenders = ALL.filter((h) => h !== userHonorific);
+  if (offenders.length === 0) return text;
+  // 길이 긴 후보부터 매칭 (예: "어르신"이 "어"보다 먼저)
+  offenders.sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(offenders.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
   return text
     .replace(pattern, userHonorific)
     .replace(/(?<![가-힣])님\s*,/g, `${userHonorific},`);

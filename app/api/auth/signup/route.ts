@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation } = body as {
+    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific } = body as {
       email?: string;
       password?: string;
       passwordConfirm?: string;
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       guardianRelation?: string;
       companionName?: string;
       companionRelation?: string;
+      userHonorific?: string;
     };
 
     if (!email || !password) {
@@ -52,8 +53,9 @@ export async function POST(req: Request) {
         guardianName: guardianName?.trim() || null,
         guardianPhone: guardianPhone?.trim() || null,
         guardianRelation: guardianRelation?.trim() || null,
-        companionName: companionName?.trim() || undefined, // undefined → default "민지"
-        companionRelation: companionRelation?.trim() || undefined, // undefined → default "손녀"
+        companionName: companionName?.trim() || undefined,
+        companionRelation: companionRelation?.trim() || undefined,
+        userHonorific: userHonorific?.trim() || null,
       },
     });
 
