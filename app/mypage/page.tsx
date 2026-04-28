@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ThemeToggle } from "../theme-toggle";
 
 interface Profile {
   id: string;
@@ -117,51 +118,54 @@ export default function MyPage() {
 
   if (status === "loading" || !profile) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5]">
-        <p className="text-zinc-500">불러오는 중...</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5] dark:bg-[#0b0d10]">
+        <p className="text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-[#f0f2f5] px-4 py-8">
+    <div className="flex min-h-screen flex-col items-center bg-[#f0f2f5] px-4 py-8 dark:bg-[#0b0d10]">
       <div className="w-full max-w-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-800">마이페이지</h1>
-          <Link href="/chat" className="text-sm text-[#007bff] hover:underline">
-            ← 대화로 돌아가기
-          </Link>
+          <h1 className="text-xl font-semibold text-zinc-800 dark:text-zinc-100">마이페이지</h1>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link href="/chat" className="text-sm text-[#007bff] hover:underline dark:text-blue-400">
+              ← 대화
+            </Link>
+          </div>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-lg">
+        <div className="rounded-2xl bg-white p-6 shadow-lg dark:bg-zinc-900 dark:shadow-black/40">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {/* 이메일 (수정 불가) */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">이메일</label>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">이메일</label>
               <input
                 type="email"
                 value={profile.email}
                 disabled
-                className="w-full rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-zinc-400"
+                className="w-full rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
               />
             </div>
 
             {/* 이름 */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">이름</label>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">이름</label>
               <input
                 type="text"
                 placeholder="이름"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
             </div>
 
             {/* 나이, 성별 */}
             <div className="flex gap-2">
               <div className="w-24">
-                <label className="mb-1 block text-xs font-medium text-zinc-500">나이</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">나이</label>
                 <input
                   type="number"
                   placeholder="나이"
@@ -169,15 +173,15 @@ export default function MyPage() {
                   max={120}
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div className="flex-1">
-                <label className="mb-1 block text-xs font-medium text-zinc-500">성별</label>
+                <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">성별</label>
                 <select
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 >
                   <option value="">선택 안 함</option>
                   <option value="male">남성</option>
@@ -188,28 +192,28 @@ export default function MyPage() {
             </div>
 
             {/* 구분선 */}
-            <hr className="my-2 border-zinc-100" />
+            <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 
             {/* 보호자 정보 */}
-            <p className="text-xs font-medium text-zinc-500">보호자 정보 (선택)</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">보호자 정보 (선택)</p>
             <input
               type="text"
               placeholder="보호자 이름"
               value={guardianName}
               onChange={(e) => setGuardianName(e.target.value)}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <input
               type="tel"
               placeholder="보호자 연락처 (010-0000-0000)"
               value={guardianPhone}
               onChange={(e) => setGuardianPhone(e.target.value)}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <select
               value={guardianRelation}
               onChange={(e) => setGuardianRelation(e.target.value)}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             >
               <option value="">보호자 관계 (선택)</option>
               <option value="son">아들</option>
@@ -219,22 +223,22 @@ export default function MyPage() {
               <option value="other">기타</option>
             </select>
 
-            <hr className="my-2 border-zinc-100" />
+            <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 
             {/* AI 동반자 설정 */}
-            <p className="text-xs font-medium text-zinc-500">AI 동반자 설정 (비우면 "민지 / 손녀")</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (비우면 "민지 / 손녀")</p>
             <input
               type="text"
               placeholder="AI 이름 (예: 민지, 수진, 지훈)"
               value={companionName}
               onChange={(e) => setCompanionName(e.target.value)}
               maxLength={10}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <select
               value={companionRelation}
               onChange={(e) => setCompanionRelation(e.target.value)}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             >
               <option value="">AI 관계 선택</option>
               <option value="손녀">손녀</option>
@@ -246,18 +250,18 @@ export default function MyPage() {
               <option value="조카">조카</option>
               <option value="친구">친구</option>
             </select>
-            <p className="text-[11px] text-zinc-400">* 변경 후 첫 1~2턴은 이전 호칭이 유지될 수 있어요.</p>
+            <p className="text-[11px] text-zinc-400 dark:text-zinc-500">* 변경 후 첫 1~2턴은 이전 호칭이 유지될 수 있어요.</p>
 
-            <hr className="my-2 border-zinc-100" />
+            <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 
             {/* 비밀번호 변경 */}
-            <p className="text-xs font-medium text-zinc-500">비밀번호 변경 (선택)</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">비밀번호 변경 (선택)</p>
             <input
               type="password"
               placeholder="현재 비밀번호"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <input
               type="password"
@@ -265,7 +269,7 @@ export default function MyPage() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               minLength={6}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <input
               type="password"
@@ -273,7 +277,7 @@ export default function MyPage() {
               value={newPasswordConfirm}
               onChange={(e) => setNewPasswordConfirm(e.target.value)}
               minLength={6}
-              className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
 
             {error && <p className="text-sm text-red-500">{error}</p>}

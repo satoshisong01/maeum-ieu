@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
+import { ThemeToggle } from "../theme-toggle";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -629,8 +630,8 @@ export default function ChatPage() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5]">
-        <p className="text-zinc-500">로딩 중...</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5] dark:bg-[#0b0d10]">
+        <p className="text-zinc-500 dark:text-zinc-400">로딩 중...</p>
       </div>
     );
   }
@@ -640,21 +641,22 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#f0f2f5]">
-      <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3">
-        <h1 className="text-sm font-semibold leading-tight text-zinc-800 sm:text-base">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b0d10]">
+      <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <h1 className="text-sm font-semibold leading-tight text-zinc-800 sm:text-base dark:text-zinc-100">
           마음<br />이음
         </h1>
         <div className="flex items-center gap-1.5 sm:gap-2">
+          <ThemeToggle />
           <Link
             href="/dashboard"
-            className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs"
+            className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
           >
             건강<br />기록
           </Link>
           <Link
             href="/mypage"
-            className="max-w-[60px] truncate text-[10px] text-zinc-500 hover:text-[#007bff] hover:underline sm:max-w-none sm:text-xs"
+            className="max-w-[60px] truncate text-[10px] text-zinc-500 hover:text-[#007bff] hover:underline sm:max-w-none sm:text-xs dark:text-zinc-400 dark:hover:text-blue-400"
           >
             {session.user?.name ?? "사용자"}님
           </Link>
@@ -662,7 +664,7 @@ export default function ChatPage() {
             type="button"
             onClick={() => signOut({ callbackUrl: "/" })}
             title="로그아웃"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-8 sm:w-8"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-8 sm:w-8 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -675,7 +677,7 @@ export default function ChatPage() {
 
       {/* 파동 + 상태 텍스트: 헤더 아래 고정, 항상 보임 */}
       {micAllowed && (listening || aiSpeaking) && (
-        <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3">
+        <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
           <AudioVisualizer
             stream={streamRef.current}
             active={listening || aiSpeaking}
@@ -688,7 +690,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {/* 초기 안내 (모드 미선택 시) */}
           {!modeSelected && (
@@ -698,7 +700,7 @@ export default function ChatPage() {
                 active={false}
                 aiSpeaking={false}
               />
-              <p className="text-center text-zinc-600">
+              <p className="text-center text-zinc-600 dark:text-zinc-300">
                 아래에서 대화 방식을 선택해주세요.
               </p>
             </div>
@@ -712,7 +714,7 @@ export default function ChatPage() {
                 className={`max-w-[85%] rounded-2xl px-4 py-2 ${
                   m.role === "user"
                     ? "bg-[#007bff] text-white"
-                    : "bg-zinc-100 text-zinc-800"
+                    : "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm">{displayMessageContent(m.content)}</p>
@@ -721,17 +723,17 @@ export default function ChatPage() {
           ))}
           {loading && (
             <div className="mb-3 flex justify-start">
-              <div className="flex items-center gap-1.5 rounded-2xl bg-zinc-100 px-4 py-3 text-zinc-500">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:200ms]" />
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:400ms]" />
+              <div className="flex items-center gap-1.5 rounded-2xl bg-zinc-100 px-4 py-3 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:0ms] dark:bg-zinc-500" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:200ms] dark:bg-zinc-500" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:400ms] dark:bg-zinc-500" />
               </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <div className="shrink-0 border-t border-zinc-200 px-3 py-3">
+        <div className="shrink-0 border-t border-zinc-200 px-3 py-3 dark:border-zinc-700">
           {!modeSelected ? (
             /* 모드 선택 화면 */
             <div className="space-y-2">
@@ -745,7 +747,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={startTextMode}
-                className="w-full rounded-full bg-zinc-200 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300"
+                className="w-full rounded-full bg-zinc-200 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
               >
                 ⌨️ 글씨로 대화하기
               </button>
@@ -770,7 +772,7 @@ export default function ChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="메시지를 입력하세요."
-                  className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                  className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   disabled={loading}
                   autoFocus
                 />
@@ -788,7 +790,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => { setModeSelected(false); setTextOnly(false); }}
-                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600"
+                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 음성 대화로 전환
               </button>
@@ -838,7 +840,7 @@ export default function ChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="또는 글씨로 입력하세요."
-                  className="min-w-0 flex-1 rounded-full border border-zinc-200 px-4 py-2.5 text-sm outline-none focus:border-[#007bff]"
+                  className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   disabled={loading}
                 />
                 <button
@@ -855,7 +857,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; stopRecording({ discard: true }); setModeSelected(false); setMicAllowed(false); }}
-                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600"
+                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 텍스트 대화로 전환
               </button>

@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/* Tailwind v4: 사용자가 명시적으로 .dark 클래스를 토글할 때만 dark variant 적용
+ * (OS prefers-color-scheme 자동 따라가기 OFF — placeholder 흐림 문제 방지) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+.dark {
+  --background: #0b0d10;
+  --foreground: #e6e8eb;
 }
 
 @theme inline {
@@ -12,15 +21,31 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* placeholder 가독성 보장 (모바일 OS 자동 다크모드에서도 일관) */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af; /* zinc-400 */
+  opacity: 1;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280; /* zinc-500 — 다크에선 약간 더 어둡게 */
+}
+
+/* 모바일 사파리 입력 필드 자동 색 보정 방지 */
+input,
+textarea,
+select {
+  color-scheme: light;
+}
+.dark input,
+.dark textarea,
+.dark select {
+  color-scheme: dark;
 }
