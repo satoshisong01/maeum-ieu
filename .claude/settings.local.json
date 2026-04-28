@@ -2,7 +2,35 @@
   "permissions": {
     "allow": [
       "Bash(find /c/Users/jungm/Desktop/projects/maeum-ieu -maxdepth 3 -type d ! -path */node_modules/* ! -path */.next/*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(awk '{print $NF}')",
+      "Bash(node -e ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(awk '{print $1}')",
+      "Bash(xargs -I {} kill {})",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(wmic process *)",
+      "Bash(taskkill //PID 43896 //F)",
+      "Bash(taskkill //PID 43164 //F)",
+      "Bash(taskkill //PID 26336 //F)",
+      "Bash(taskkill //PID 42004 //F)",
+      "Bash(taskkill //PID 42500 //F)",
+      "Bash(cd c:\\\\\\\\Users\\\\\\\\jungm\\\\\\\\Desktop\\\\\\\\projects\\\\\\\\maeum-ieu)",
+      "Bash(timeout 60 npx tsx scripts/check-notes.ts)",
+      "Read(//tmp/**)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=27680' | Select-Object ProcessId, ParentProcessId, Name, CommandLine | Format-List\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=44392' | Select-Object ProcessId, ParentProcessId, Name, CommandLine | Format-List\")",
+      "Bash(powershell.exe -NoProfile -Command \"Stop-Process -Id 27680,44392 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500; Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count\")",
+      "Bash(powershell.exe -NoProfile -Command '& { $pids = \\(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue\\).OwningProcess; if \\($pids\\) { $pids | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }; Start-Sleep -Milliseconds 800; \\(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Measure-Object\\).Count }')",
+      "Bash(powershell.exe -NoProfile -Command \"\\(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Measure-Object\\).Count\")",
+      "Bash(powershell.exe -NoProfile -Command '& { $pids = \\(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue\\).OwningProcess; if \\($pids\\) { $pids | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } } }')",
+      "Bash(npm run *)",
+      "Bash(awk 'BEGIN{c=0; chars=0} {c++; chars+=length\\($0\\)+1} END{printf \"constants.ts: %d lines, %d chars\\\\n\", c, chars}' lib/chat/constants.ts)",
+      "Bash(awk 'BEGIN{c=0} {c+=length\\($0\\)+1} END{printf \"%d chars\\\\n\", c}' lib/chat/constants.ts)"
     ]
   }
 }

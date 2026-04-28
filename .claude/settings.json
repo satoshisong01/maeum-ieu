@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/jungm/.claude/projects/c--Users-jungm-Desktop-projects-maeum-ieu/**)"
+      "Read(//c/Users/jungm/.claude/projects/c--Users-jungm-Desktop-projects-maeum-ieu/**)",
+      "Bash(netstat -ano)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_click",
+      "Bash(node -e ':*)",
+      "mcp__playwright__browser_evaluate",
+      "Read(//c/Users/jungm/Desktop/projects/maeum-ieu/**)",
+      "Bash(xargs -I {} taskkill //PID {} //F)",
+      "mcp__playwright__browser_close",
+      "Bash(npx tsx:*)",
+      "WebSearch",
+      "Bash(npx prisma:*)"
     ]
   }
 }
