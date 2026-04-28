@@ -164,12 +164,14 @@ export default function ChatPage() {
 
   /**
    * Gemini 3.1 Flash TTS Preview로 음성 생성 시도. 실패 시 Web Speech API 폴백.
-   * 같은 발화가 여러 번 호출되어도 직전 재생을 멈추고 새로 시작.
+   *
+   * onReady: 오디오가 준비되어 재생 직전에 호출되는 훅.
+   *          호출자는 여기서 화면에 텍스트를 표시해 음성·텍스트 노출 타이밍을 맞춘다.
    */
-  const speak = useCallback(async (text: string) => {
-    if (typeof window === "undefined") return;
+  const speak = useCallback(async (text: string, onReady?: () => void) => {
+    if (typeof window === "undefined") { onReady?.(); return; }
     const ttsText = cleanForTTS(text);
-    if (!ttsText) return;
+    if (!ttsText) { onReady?.(); return; }
 
     // 직전 재생 정리
     if (audioElRef.current) {
@@ -188,9 +190,11 @@ export default function ChatPage() {
       const data = (await res.json()) as { audioBase64: string; mimeType: string };
       const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
       audioElRef.current = audio;
+      onReady?.();
       await audio.play();
     } catch (e) {
       console.warn("[chat] TTS fallback to Web Speech:", (e as Error).message);
+      onReady?.();
       speakWithWebSpeech(ttsText);
     }
   }, [speakWithWebSpeech]);
@@ -266,11 +270,15 @@ export default function ChatPage() {
           if (!chatRes.ok || cancelled) return;
           const { text } = (await chatRes.json()) as { text: string };
           if (cancelled) return;
-          setMessages((prev) => [
-            ...prev,
-            { id: createId(), role: "assistant", content: text },
-          ]);
-          speak(text);
+          setLoading(true);
+          await speak(text, () => {
+            if (cancelled) return;
+            setMessages((prev) => [
+              ...prev,
+              { id: createId(), role: "assistant", content: text },
+            ]);
+            setLoading(false);
+          });
           setAiSpeaking(true);
           setTimeout(() => setAiSpeaking(false), 3000);
         }
@@ -303,11 +311,15 @@ export default function ChatPage() {
       if (!chatRes.ok || cancelled) return;
       const { text } = (await chatRes.json()) as { text: string };
       if (cancelled) return;
-      setMessages((prev) => [
-        ...prev,
-        { id: createId(), role: "assistant", content: text },
-      ]);
-      speak(text);
+      setLoading(true);
+      await speak(text, () => {
+        if (cancelled) return;
+        setMessages((prev) => [
+          ...prev,
+          { id: createId(), role: "assistant", content: text },
+        ]);
+        setLoading(false);
+      });
       setAiSpeaking(true);
       setTimeout(() => setAiSpeaking(false), 3000);
     })();
@@ -351,11 +363,16 @@ export default function ChatPage() {
         }
 
         const data = await res.json();
-        setMessages((prev) => [
-          ...prev,
-          { id: assistantId, role: "assistant", content: data.text },
-        ]);
-        speak(data.text);
+        // 음성이 준비되는 시점에 텍스트도 동시 노출 (시각/청각 타이밍 동기화)
+        await speak(data.text, () => {
+          setMessages((prev) => [
+            ...prev,
+            { id: assistantId, role: "assistant", content: data.text },
+          ]);
+          setLoading(false);
+        });
+        setAiSpeaking(false);
+        return;
       } catch (e) {
         console.error("[chat] sendMessage error", e);
         const msg = getErrorMessage(e);
@@ -368,10 +385,9 @@ export default function ChatPage() {
             content: displayMsg,
           },
         ]);
-      } finally {
-        setLoading(false);
-        setAiSpeaking(false);
       }
+      setLoading(false);
+      setAiSpeaking(false);
     },
     [loading, conversationId, messages, createId, speak, getContext]
   );
@@ -436,21 +452,25 @@ export default function ChatPage() {
 
         const { text: textToSpeak, transcription: transcriptionText } = parseAudioResponse(data);
 
-        setMessages((prev) => {
-          const updatedUser = prev.map((m) =>
+        // 사용자 transcription은 즉시 화면 갱신 (placeholder 대체)
+        setMessages((prev) =>
+          prev.map((m) =>
             m.id === placeholderId
-              ? {
-                  ...m,
-                  content: transcriptionText || "(음성 메시지)",
-                }
+              ? { ...m, content: transcriptionText || "(음성 메시지)" }
               : m
-          );
-          return [
-            ...updatedUser,
-            { id: createId(), role: "assistant", content: textToSpeak || "(답변 없음)" },
-          ];
+          )
+        );
+
+        const aiText = textToSpeak || "(답변 없음)";
+        await speak(aiText, () => {
+          setMessages((prev) => [
+            ...prev,
+            { id: createId(), role: "assistant", content: aiText },
+          ]);
+          setLoading(false);
         });
-        if (textToSpeak) speak(textToSpeak);
+        setAiSpeaking(false);
+        return;
       } catch (e) {
         console.error("[chat] sendAudioMessage error", e);
         const msg = getErrorMessage(e);
@@ -700,9 +720,11 @@ export default function ChatPage() {
             </div>
           ))}
           {loading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-zinc-100 px-4 py-2 text-zinc-500">
-                답변 중...
+            <div className="mb-3 flex justify-start">
+              <div className="flex items-center gap-1.5 rounded-2xl bg-zinc-100 px-4 py-3 text-zinc-500">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:200ms]" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 [animation-delay:400ms]" />
               </div>
             </div>
           )}
