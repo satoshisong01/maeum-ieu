@@ -117,6 +117,7 @@ export default function ChatPage() {
   const alwaysOnRef = useRef(false);
   alwaysOnRef.current = alwaysOn; // stale closure 방지
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
+  const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
   const bottomRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -181,6 +182,11 @@ export default function ChatPage() {
     }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 
+    // 한 턴씩 주고받기: 사용자 발화 전송 직후부터 AI 음성 종료까지 마이크 입력 차단
+    turnLockRef.current = true;
+
+    const releaseLock = () => { turnLockRef.current = false; };
+
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
@@ -190,15 +196,31 @@ export default function ChatPage() {
       if (!res.ok) throw new Error(`tts ${res.status}`);
       const data = (await res.json()) as { audioBase64: string; mimeType: string };
       const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      audio.onended = releaseLock;
+      audio.onerror = releaseLock;
       audioElRef.current = audio;
       onReady?.();
-      await audio.play();
+      try {
+        await audio.play();
+      } catch {
+        releaseLock();
+      }
     } catch (e) {
       console.warn("[chat] TTS fallback to Web Speech:", (e as Error).message);
       onReady?.();
-      speakWithWebSpeech(ttsText);
+      // Web Speech 폴백: utterance.onend / onerror로 락 해제
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        const utter = new SpeechSynthesisUtterance(ttsText);
+        utter.lang = "ko-KR";
+        utter.onend = releaseLock;
+        utter.onerror = releaseLock;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      } else {
+        releaseLock();
+      }
     }
-  }, [speakWithWebSpeech]);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -496,6 +518,11 @@ export default function ChatPage() {
     if (loading || !conversationId) return;
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
+    // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링
+    if (turnLockRef.current) {
+      setTimeout(() => startRecording(), 500);
+      return;
+    }
     if (!streamRef.current) {
       alert("먼저 '대화 시작하기' 버튼으로 마이크를 허용해 주세요.");
       return;
@@ -528,7 +555,7 @@ export default function ChatPage() {
 
       // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우
       if (blob.size < 5000) {
-        if (alwaysOnRef.current && !loading) setTimeout(() => startRecording(), 500);
+        if (alwaysOnRef.current && !loading && !turnLockRef.current) setTimeout(() => startRecording(), 500);
         return;
       }
       try {
@@ -570,6 +597,13 @@ export default function ChatPage() {
         }
         // OFF 상태에서 잔존 녹음이 있으면 즉시 버리고 중단
         if (!alwaysOnRef.current) {
+          discardNextRef.current = true;
+          try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+          audioCtx.close().catch(() => {});
+          return;
+        }
+        // AI 응답 진행 중(턴 락) — 사용자 추가 발화는 버리고 녹음 중단
+        if (turnLockRef.current) {
           discardNextRef.current = true;
           try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
           audioCtx.close().catch(() => {});

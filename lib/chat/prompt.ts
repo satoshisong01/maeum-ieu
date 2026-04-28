@@ -69,7 +69,11 @@ export async function buildSystemPrompt(params: {
   const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
   const companionRelation = user?.companionRelation?.trim() || COMPANION_DEFAULTS.relation;
 
-  const userBlock = `[사용자 정보]\n- 이름: ${userName}\n- 호칭: ${honorific}\n- AI 동반자: ${companionName} (${companionRelation})`;
+  const userBlock = `[사용자 정보 — 호칭 절대 규칙]
+- 이름: ${userName}
+- **사용자 호칭: ${honorific}** (이 호칭만 사용. "회원님/고객님/선생님/사장님/어르신" 절대 금지. 한 대화 안에서 호칭을 바꾸지 말 것.)
+- AI 동반자: ${companionName} (${companionRelation})
+- AI는 자기 자신을 ${companionName}이라고만 부르고, 사용자는 항상 ${honorific}으로만 부른다.`;
   const envBlock = buildEnvBlock(timeCtx, weather);
   const todayKst = toKstDateString(new Date());
   const dateBlock = conversationId ? await getDateAwareBlock(conversationId, todayKst) : "";

@@ -17,6 +17,7 @@ interface Profile {
   guardianRelation: string | null;
   companionName: string | null;
   companionRelation: string | null;
+  userHonorific: string | null;
   createdAt: string;
 }
 
@@ -33,6 +34,7 @@ export default function MyPage() {
   const [guardianRelation, setGuardianRelation] = useState("");
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
+  const [userHonorific, setUserHonorific] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -58,6 +60,7 @@ export default function MyPage() {
           setGuardianRelation(data.guardianRelation ?? "");
           setCompanionName(data.companionName ?? "");
           setCompanionRelation(data.companionRelation ?? "");
+          setUserHonorific(data.userHonorific ?? "");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -84,6 +87,7 @@ export default function MyPage() {
         guardianRelation: guardianRelation || null,
         companionName: companionName || null,
         companionRelation: companionRelation || null,
+        userHonorific: userHonorific || null,
       };
       if (newPassword) {
         body.currentPassword = currentPassword;
@@ -227,6 +231,26 @@ export default function MyPage() {
 
             {/* AI 동반자 설정 */}
             <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (비우면 "민지 / 손녀")</p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">AI가 나를 부를 호칭</label>
+              <select
+                value={userHonorific}
+                onChange={(e) => setUserHonorific(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              >
+                <option value="">자동 (나이/성별로 추천)</option>
+                <option value="할아버지">할아버지</option>
+                <option value="할머니">할머니</option>
+                <option value="아버지">아버지</option>
+                <option value="어머니">어머니</option>
+                <option value="아빠">아빠</option>
+                <option value="엄마">엄마</option>
+                <option value="아저씨">아저씨</option>
+                <option value="이모">이모</option>
+                <option value="삼촌">삼촌</option>
+                <option value="고모">고모</option>
+              </select>
+            </div>
             <input
               type="text"
               placeholder="AI 이름 (예: 민지, 수진, 지훈)"

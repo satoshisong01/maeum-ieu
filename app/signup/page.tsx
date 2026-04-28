@@ -18,6 +18,7 @@ export default function SignupPage() {
   const [guardianRelation, setGuardianRelation] = useState("");
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
+  const [userHonorific, setUserHonorific] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -45,6 +46,7 @@ export default function SignupPage() {
           guardianRelation: guardianRelation || undefined,
           companionName: companionName || undefined,
           companionRelation: companionRelation || undefined,
+          userHonorific: userHonorific || undefined,
         }),
       });
       const data = await res.json();
@@ -161,6 +163,23 @@ export default function SignupPage() {
             maxLength={10}
             className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
+          <select
+            value={userHonorific}
+            onChange={(e) => setUserHonorific(e.target.value)}
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+          >
+            <option value="">AI가 나를 부를 호칭 (선택, 비우면 자동)</option>
+            <option value="할아버지">할아버지</option>
+            <option value="할머니">할머니</option>
+            <option value="아버지">아버지</option>
+            <option value="어머니">어머니</option>
+            <option value="아빠">아빠</option>
+            <option value="엄마">엄마</option>
+            <option value="아저씨">아저씨</option>
+            <option value="이모">이모</option>
+            <option value="삼촌">삼촌</option>
+            <option value="고모">고모</option>
+          </select>
           <select
             value={companionRelation}
             onChange={(e) => setCompanionRelation(e.target.value)}

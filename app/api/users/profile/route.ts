@@ -13,7 +13,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, companionName: true, companionRelation: true, createdAt: true },
+    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, companionName: true, companionRelation: true, userHonorific: true, createdAt: true },
   });
 
   if (!user) {
@@ -31,7 +31,7 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json();
-  const { name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, currentPassword, newPassword } = body as {
+  const { name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, currentPassword, newPassword } = body as {
     name?: string;
     age?: number | null;
     gender?: string | null;
@@ -40,6 +40,7 @@ export async function PATCH(req: Request) {
     guardianRelation?: string | null;
     companionName?: string | null;
     companionRelation?: string | null;
+    userHonorific?: string | null;
     currentPassword?: string;
     newPassword?: string;
   };
@@ -89,6 +90,7 @@ export async function PATCH(req: Request) {
   if (guardianRelation !== undefined) updateData.guardianRelation = guardianRelation || null;
   if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
   if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
+  if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
   if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
 
   const updated = await prisma.user.update({
