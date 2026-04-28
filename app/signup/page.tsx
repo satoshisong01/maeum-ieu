@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ThemeToggle } from "../theme-toggle";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -60,24 +61,27 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0f2f5] px-4 py-8">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="text-center text-2xl font-semibold text-zinc-800">마음이음</h1>
-        <p className="mt-2 text-center text-sm text-zinc-500">회원가입</p>
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#f0f2f5] px-4 py-8 dark:bg-[#0b0d10]">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg dark:bg-zinc-900 dark:shadow-black/40">
+        <h1 className="text-center text-2xl font-semibold text-zinc-800 dark:text-zinc-100">마음이음</h1>
+        <p className="mt-2 text-center text-sm text-zinc-500 dark:text-zinc-400">회원가입</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           <input
             type="text"
             placeholder="이름 (선택)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <input
             type="email"
             placeholder="이메일"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
           />
           <input
@@ -85,7 +89,7 @@ export default function SignupPage() {
             placeholder="비밀번호"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
             minLength={6}
           />
@@ -94,7 +98,7 @@ export default function SignupPage() {
             placeholder="비밀번호 재확인"
             value={passwordConfirm}
             onChange={(e) => setPasswordConfirm(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
             minLength={6}
           />
@@ -119,26 +123,26 @@ export default function SignupPage() {
               <option value="other">기타</option>
             </select>
           </div>
-          <hr className="border-zinc-100" />
-          <p className="text-xs text-zinc-500">보호자 정보 (선택)</p>
+          <hr className="border-zinc-100 dark:border-zinc-700" />
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">보호자 정보 (선택)</p>
           <input
             type="text"
             placeholder="보호자 이름"
             value={guardianName}
             onChange={(e) => setGuardianName(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <input
             type="tel"
             placeholder="보호자 연락처 (010-0000-0000)"
             value={guardianPhone}
             onChange={(e) => setGuardianPhone(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <select
             value={guardianRelation}
             onChange={(e) => setGuardianRelation(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           >
             <option value="">보호자 관계 (선택)</option>
             <option value="son">아들</option>
@@ -147,20 +151,20 @@ export default function SignupPage() {
             <option value="grandchild">손자/손녀</option>
             <option value="other">기타</option>
           </select>
-          <hr className="border-zinc-100" />
-          <p className="text-xs text-zinc-500">AI 동반자 설정 (선택 — 비우면 기본값 "민지 / 손녀")</p>
+          <hr className="border-zinc-100 dark:border-zinc-700" />
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (선택 — 비우면 기본값 "민지 / 손녀")</p>
           <input
             type="text"
             placeholder="AI 이름 (예: 민지, 수진, 지훈)"
             value={companionName}
             onChange={(e) => setCompanionName(e.target.value)}
             maxLength={10}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <select
             value={companionRelation}
             onChange={(e) => setCompanionRelation(e.target.value)}
-            className="rounded-xl border border-zinc-200 px-4 py-3 outline-none focus:border-[#007bff]"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           >
             <option value="">AI 관계 (선택)</option>
             <option value="손녀">손녀</option>
@@ -181,9 +185,9 @@ export default function SignupPage() {
             {loading ? "가입 중..." : "회원가입"}
           </button>
         </form>
-        <p className="mt-6 text-center text-sm text-zinc-500">
+        <p className="mt-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
           이미 계정이 있으신가요?{" "}
-          <Link href="/login" className="font-medium text-[#007bff]">
+          <Link href="/login" className="font-medium text-[#007bff] dark:text-blue-400">
             로그인
           </Link>
         </p>
