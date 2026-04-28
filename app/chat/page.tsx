@@ -138,34 +138,62 @@ export default function ChatPage() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  const speak = useCallback((text: string) => {
-    if (typeof window === "undefined") return;
-    if (!("speechSynthesis" in window)) return;
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
 
-    // TTS가 읽기 좋도록 텍스트 전처리
-    let ttsText = text
-      // AI가 실수로 포함한 JSON/기술 데이터 제거
+  const cleanForTTS = (text: string): string =>
+    text
       .replace(/cognitiveChecks\s*:\s*\[[\s\S]*?\]/g, "")
       .replace(/isAnomaly\s*:\s*(true|false)/g, "")
       .replace(/analysisNote\s*:\s*"[^"]*"/g, "")
       .replace(/```[\s\S]*?```/g, "")
       .replace(/\{[\s\S]*?"domain"[\s\S]*?\}/g, "")
-      // "12-3-30" → "12, 3, 30" (숫자-하이픈 패턴을 쉼표 구분으로)
       .replace(/(\d+)-(\d+)-(\d+)/g, "$1, $2, $3")
-      // "4.8km" → "4.8 킬로미터"
       .replace(/(\d+(?:\.\d+)?)\s*km\/h/gi, "$1 킬로미터퍼아워")
       .replace(/(\d+(?:\.\d+)?)\s*km/gi, "$1 킬로미터")
-      // URL이나 이메일 제거 (읽으면 이상함)
       .replace(/https?:\/\/\S+/g, "링크")
-      // 괄호 안 영문 약어 제거
       .replace(/\([A-Za-z0-9./%]+\)/g, "")
       .trim();
 
+  const speakWithWebSpeech = useCallback((ttsText: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const utter = new SpeechSynthesisUtterance(ttsText);
     utter.lang = "ko-KR";
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
   }, []);
+
+  /**
+   * Gemini 3.1 Flash TTS Preview로 음성 생성 시도. 실패 시 Web Speech API 폴백.
+   * 같은 발화가 여러 번 호출되어도 직전 재생을 멈추고 새로 시작.
+   */
+  const speak = useCallback(async (text: string) => {
+    if (typeof window === "undefined") return;
+    const ttsText = cleanForTTS(text);
+    if (!ttsText) return;
+
+    // 직전 재생 정리
+    if (audioElRef.current) {
+      try { audioElRef.current.pause(); } catch { /* ignore */ }
+      audioElRef.current = null;
+    }
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: ttsText }),
+      });
+      if (!res.ok) throw new Error(`tts ${res.status}`);
+      const data = (await res.json()) as { audioBase64: string; mimeType: string };
+      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      audioElRef.current = audio;
+      await audio.play();
+    } catch (e) {
+      console.warn("[chat] TTS fallback to Web Speech:", (e as Error).message);
+      speakWithWebSpeech(ttsText);
+    }
+  }, [speakWithWebSpeech]);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
