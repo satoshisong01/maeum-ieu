@@ -262,6 +262,28 @@ function removeUngroundedClaims(aiText: string, context: string): string {
   }).replace(/\s{2,}/g, " ").trim();
 }
 
+/**
+ * 끝말잇기 자동 교정 — AI가 자기 단어 X를 제시하고 사용자에게 "Y로 시작하는 단어"를 요청할 때
+ * Y가 X의 마지막 글자가 아닌 경우 (예: X="가방", Y="가") 자동으로 X 마지막 글자로 교정.
+ * 이는 LLM이 자주 범하는 끝말잇기 규칙 혼동을 코드 레벨에서 보정한다.
+ */
+const WORDCHAIN_PROPOSED = /(이번엔|이번에는|이번에)\s*'([가-힣]{1,5})'(?:이?라고)/;
+const WORDCHAIN_REQUEST = /'([가-힣])'(?:로|으로)\s*시작하는\s*단어/g;
+
+function fixWordChainStart(text: string): string {
+  if (!text) return text;
+  const proposed = text.match(WORDCHAIN_PROPOSED);
+  if (!proposed) return text;
+  const word = proposed[2];
+  if (!word) return text;
+  const lastChar = word[word.length - 1];
+  return text.replace(WORDCHAIN_REQUEST, (full, asked: string) => {
+    if (asked === lastChar) return full;
+    // 잘못된 시작글자 발견 → 끝글자로 교정
+    return full.replace(`'${asked}'`, `'${lastChar}'`);
+  });
+}
+
 /** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
 function trimIncomplete(text: string): string {
   const trimmed = text.trim();
@@ -445,7 +467,7 @@ ${repetitionHint}${wordGameHint}
   const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
-  const answerText = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific);
+  const answerText = fallbackUsed ? rawText : fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific));
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -481,7 +503,7 @@ ${repetitionHint}${wordGameHint}
   const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
-  const text = fallbackUsed ? rawText : normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific);
+  const text = fallbackUsed ? rawText : fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific));
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
