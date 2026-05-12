@@ -80,14 +80,28 @@ export function AudioVisualizer({ stream, active, aiSpeaking, size: propSize }: 
     };
   }, [stream, aiSpeaking]);
 
-  // 스트림 없고 AI 말할 때: 출렁이는 파형 애니메이션
+  // 스트림 없고 AI 말할 때만 출렁이는 파형 애니메이션. 그 외에는 정적(미동).
   useEffect(() => {
     if (stream) return;
-    if (!active && !aiSpeaking) return;
+    // wake 대기 중(active=true, aiSpeaking=false, stream=null)에는 정적 표시
+    if (!aiSpeaking) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const c = canvas.getContext("2d");
+        if (c) {
+          const w = canvas.width / (window.devicePixelRatio ?? 1);
+          const h = canvas.height / (window.devicePixelRatio ?? 1);
+          c.clearRect(0, 0, w, h);
+          // 마이크 입력 대기 상태: 얇은 베이스라인 한 줄만
+          c.fillStyle = "#cbd5e1";
+          c.fillRect(0, h / 2 - 1, w, 2);
+        }
+      }
+      return;
+    }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const context = canvas.getContext("2d");
     if (!context) return;
     const ctx = context;
