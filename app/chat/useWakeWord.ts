@@ -43,8 +43,11 @@ function getSpeechRecognitionCtor(): { new(): SpeechRecognitionInstance } | null
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
-// 한국어 STT 결과는 띄어쓰기/철자가 흔들리므로 "마음" 어근 매칭 + 짧은 발음 변형 허용
-const WAKE_PATTERN = /(?:^|[^가-힣])(마음|마음[아야이이야]|마으마음|마음마음)(?:[^가-힣]|$)/;
+// 한국어 STT 결과는 띄어쓰기/철자가 흔들리므로 "마음" 어근을 단순 포함 매칭
+// 예: "마음아", "마음 아", "마음이", "마으마음", "마음마음" 모두 통과.
+// "마음 같이", "마음대로" 같은 단어 안 들어가는 것 같지만 사용자가 wake 의도 없이 우연히 부른 경우엔
+// 그래도 발화 캡처되므로 false positive는 큰 문제 아님(사용자가 "괜찮아" 정도 답하면 됨).
+const WAKE_PATTERN = /마음/;
 
 export interface UseWakeWordOptions {
   enabled: boolean;       // alwaysOn 등 상위 ON/OFF
@@ -70,6 +73,14 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
   onWakeRef.current = onWake;
   const wakePhraseRef = useRef(wakePhrase);
   wakePhraseRef.current = wakePhrase;
+  // enabled/paused 최신값을 onend 콜백에서 안전하게 참조하기 위한 ref
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  // 연속 실패(권한 거부, 즉시 종료 등) 시 무한 재시작 차단용 카운터
+  const consecutiveFailRef = useRef(0);
+  const blockedRef = useRef(false);
 
   // 안전한 stop
   const stop = useCallback(() => {
@@ -88,7 +99,9 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
   const start = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) return;
-    if (recRef.current) return; // 이미 실행 중
+    if (recRef.current) return;        // 이미 실행 중
+    if (blockedRef.current) return;     // 권한 거부 등으로 차단된 상태
+    if (!enabledRef.current || pausedRef.current) return; // 외부 조건 안 맞으면 시작 안 함
     try {
       const rec = new Ctor();
       rec.lang = "ko-KR";
@@ -96,41 +109,59 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
       rec.interimResults = true;
       rec.maxAlternatives = 1;
 
+      let gotResult = false;
+
       rec.onresult = (e) => {
+        gotResult = true;
+        consecutiveFailRef.current = 0; // 정상 응답이 들어오면 실패 카운터 리셋
         let combined = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
           combined += e.results[i][0]?.transcript || "";
         }
         if (combined) setLastHeard(combined.slice(-60));
         if (wakePhraseRef.current.test(combined)) {
-          // wake 감지 → recognition 즉시 중단 후 콜백
           try { rec.stop(); } catch { /* ignore */ }
           onWakeRef.current();
         }
       };
       rec.onerror = (ev) => {
-        // no-speech / aborted 등은 정상 회복 흐름
-        if (ev?.error && !["no-speech", "aborted", "audio-capture"].includes(ev.error)) {
-          console.warn("[wake-word] error:", ev.error);
+        const err = ev?.error || "";
+        // not-allowed / service-not-allowed: 권한 거부 → 영구 차단
+        if (err === "not-allowed" || err === "service-not-allowed") {
+          console.warn("[wake-word] permission denied → blocking until next reload");
+          blockedRef.current = true;
+        }
+        if (err && !["no-speech", "aborted", "audio-capture"].includes(err)) {
+          console.warn("[wake-word] error:", err);
         }
       };
       rec.onend = () => {
         recRef.current = null;
-        // 자동 재시작: 호출자가 멈추라고 한 게 아니면 0.3s 후 다시 시작
-        // (continuous=true여도 브라우저가 ~60초마다 멈추는 경우 있음)
-        if (!restartTimerRef.current) {
-          restartTimerRef.current = setTimeout(() => {
-            restartTimerRef.current = null;
-            // 외부 상태 의존성 없이 다시 시도. 외부에서 stop했으면 enabled/paused 다시 false라 effect가 처리.
-            // 여기서는 단순 재진입만 트리거하기 위해 effect 의존성 변경처럼 동작시키지 않고 직접 start
-            // start 자체가 recRef 가드를 가지므로 안전
-            const Ctor2 = getSpeechRecognitionCtor();
-            if (Ctor2) {
-              // re-enter via the same start path
-              start();
-            }
-          }, 300);
+        setListening(false);
+
+        // 결과 한 번도 못 받고 즉시 종료 → 권한 미허용/오류 가능성
+        if (!gotResult) {
+          consecutiveFailRef.current += 1;
+          if (consecutiveFailRef.current >= 3) {
+            console.warn("[wake-word] 3 consecutive failures → blocking auto-restart");
+            blockedRef.current = true;
+            return;
+          }
+        } else {
+          consecutiveFailRef.current = 0;
         }
+
+        if (blockedRef.current) return;
+        if (!enabledRef.current || pausedRef.current) return;
+
+        // continuous=true여도 브라우저가 ~60초마다 끊는 경우가 있음 → 자동 재시작
+        // 단, 즉시 실패한 경우엔 backoff
+        const delay = gotResult ? 500 : 2000 + consecutiveFailRef.current * 1000;
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null;
+          start();
+        }, delay);
       };
 
       recRef.current = rec;
@@ -140,6 +171,8 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
       console.warn("[wake-word] start failed:", (e as Error).message);
       recRef.current = null;
       setListening(false);
+      consecutiveFailRef.current += 1;
+      if (consecutiveFailRef.current >= 3) blockedRef.current = true;
     }
   }, []);
 
@@ -149,6 +182,9 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
 
   useEffect(() => {
     if (enabled && !paused) {
+      // 외부 enable 조건이 다시 켜진 경우 차단 해제 재시도
+      blockedRef.current = false;
+      consecutiveFailRef.current = 0;
       start();
     } else {
       stop();
