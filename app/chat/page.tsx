@@ -69,8 +69,9 @@ function extractJsonFromResponse(raw: string): { text: string; transcription: st
 /** 대화창에 표시할 때: JSON이나 기술 데이터를 제거하고 대화 텍스트만 표시 */
 function displayMessageContent(content: string): string {
   if (!content || !content.trim()) return content;
-  // AI가 실수로 포함한 cognitiveChecks 등 기술 데이터 제거
+  // AI가 실수로 포함한 cognitiveChecks 등 기술 데이터 + moderation 메타 시그니처 제거
   let cleaned = content
+    .replace(/<!--\s*__mod:[^>]*-->/g, "")
     .replace(/cognitiveChecks\s*:\s*\[[\s\S]*?\]/g, "")
     .replace(/isAnomaly\s*:\s*(true|false)/gi, "")
     .replace(/analysisNote\s*:\s*"[^"]*"/g, "")
