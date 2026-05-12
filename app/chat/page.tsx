@@ -430,16 +430,42 @@ export default function ChatPage() {
   const [textOnly, setTextOnly] = useState(false); // 텍스트 전용 모드
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
 
+  /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
   const startConversation = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      // 권한만 받았으면 트랙은 즉시 stop — wake-word(SpeechRecognition)와 마이크 점유 충돌 방지
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
       setMicAllowed(true);
       setMicDenied(false);
       setModeSelected(true);
       setTextOnly(false);
     } catch {
       setMicDenied(true);
+    }
+  }, []);
+
+  /** wake 시점에 호출 — getUserMedia로 stream 재획득 (권한 이미 받았으므로 팝업 없음). */
+  const ensureStream = useCallback(async (): Promise<MediaStream | null> => {
+    if (streamRef.current && streamRef.current.getTracks().some((t) => t.readyState === "live")) {
+      return streamRef.current;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      return stream;
+    } catch (e) {
+      console.warn("[chat] ensureStream failed:", (e as Error).message);
+      return null;
+    }
+  }, []);
+
+  /** 발화 전송이 끝나거나 wake 해제 시 stream을 release하여 SpeechRecognition이 마이크 점유 가능하게 함. */
+  const releaseStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     }
   }, []);
 
@@ -520,7 +546,7 @@ export default function ChatPage() {
     [conversationId, loading, speak, getContext]
   );
 
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async () => {
     if (loading || !conversationId) return;
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
@@ -531,8 +557,10 @@ export default function ChatPage() {
       setTimeout(() => startRecording(), 500);
       return;
     }
-    if (!streamRef.current) {
-      alert("먼저 '대화 시작하기' 버튼으로 마이크를 허용해 주세요.");
+    // wake 직후 stream 재획득 (권한 이미 있으므로 팝업 없음)
+    const stream = await ensureStream();
+    if (!stream) {
+      alert("마이크를 사용할 수 없습니다. 브라우저 마이크 권한을 확인해 주세요.");
       return;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") return;
@@ -540,7 +568,7 @@ export default function ChatPage() {
       alert("이 브라우저는 음성 녹음을 지원하지 않습니다.");
       return;
     }
-    const recorder = new MediaRecorder(streamRef.current, {
+    const recorder = new MediaRecorder(stream, {
       mimeType: "audio/webm",
     } as MediaRecorderOptions);
     audioChunksRef.current = [];
@@ -558,7 +586,7 @@ export default function ChatPage() {
       // OFF 직후 중단된 녹음은 전송 금지 (전원 OFF 시 어떤 경우에도 음성 전달 안 됨)
       if (discardNextRef.current || !alwaysOnRef.current) {
         discardNextRef.current = false;
-        // wake 상태도 해제
+        releaseStream();
         wakeArmedRef.current = false;
         setWakeArmed(false);
         return;
@@ -566,6 +594,7 @@ export default function ChatPage() {
 
       // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우 → wake 대기로 복귀
       if (blob.size < 5000) {
+        releaseStream();
         wakeArmedRef.current = false;
         setWakeArmed(false);
         return;
@@ -582,7 +611,8 @@ export default function ChatPage() {
           { id: createId(), role: "assistant", content: displayMsg },
         ]);
       }
-      // 발화 전송 끝 → wake 상태 해제. 다시 "마음아" 부를 때까지 대기 모드.
+      // 발화 전송 끝 → stream release → wake 상태 해제. 다시 "마음아" 부를 때까지 대기 모드.
+      releaseStream();
       wakeArmedRef.current = false;
       setWakeArmed(false);
     };
@@ -592,7 +622,7 @@ export default function ChatPage() {
 
       // VAD: 음량 모니터링 → 2초 침묵 시 자동 전송
       const audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(streamRef.current!);
+      const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;
       source.connect(analyser);
@@ -647,7 +677,7 @@ export default function ChatPage() {
       setListening(false);
       alert("음성 녹음을 시작할 수 없습니다. Chrome 또는 Edge에서 시도해 주세요.");
     }
-  }, [conversationId, loading, sendAudioMessage]);
+  }, [conversationId, loading, sendAudioMessage, ensureStream, releaseStream]);
 
   /** 녹음 중지. discard=true면 진행 중이던 녹음 블롭을 서버로 전송하지 않고 버림. */
   const stopRecording = useCallback((opts?: { discard?: boolean }) => {
@@ -663,9 +693,12 @@ export default function ChatPage() {
       } catch {
         // ignore
       }
+    } else {
+      // recording 중이 아니면 onstop이 안 불리므로 여기서 stream release
+      releaseStream();
     }
     setListening(false);
-  }, []);
+  }, [releaseStream]);
 
   // wake-word 감지 ("마음", "마음아") — alwaysOn 활성 상태에서만 동작.
   //  - 듣고 있을 때(listening) / AI 응답 중(turnLock) / 이미 wake된 상태는 일시 정지
@@ -739,17 +772,27 @@ export default function ChatPage() {
         </div>
       </header>
 
-      {/* 파동 + 상태 텍스트: 헤더 아래 고정, 항상 보임 */}
-      {micAllowed && (listening || aiSpeaking) && (
+      {/* 파동 + 상태 텍스트: 헤더 아래 고정. wake 대기 중에도 시각화 표시 */}
+      {micAllowed && (alwaysOn || listening || aiSpeaking) && (
         <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
           <AudioVisualizer
             stream={streamRef.current}
-            active={listening || aiSpeaking}
+            active={listening || aiSpeaking || (alwaysOn && wakeListening)}
             aiSpeaking={aiSpeaking}
             size={120}
           />
-          <p className={`text-sm font-semibold ${listening ? "text-red-500" : "text-[#007bff]"}`}>
-            {listening ? "말씀하세요… (끝나면 자동 전송됩니다)" : "AI가 응답하고 있어요..."}
+          <p className={`text-sm font-semibold ${
+            listening ? "text-red-500" : aiSpeaking ? "text-[#007bff]" : "text-amber-600 dark:text-amber-400"
+          }`}>
+            {listening
+              ? "말씀하세요… (끝나면 자동 전송됩니다)"
+              : aiSpeaking
+                ? "AI가 응답하고 있어요…"
+                : wakeSupported
+                  ? wakeListening
+                    ? '"마음아" 부르시면 들을게요'
+                    : "마이크 준비 중…"
+                  : "자동 듣기 모드 (호출어 미지원)"}
           </p>
         </div>
       )}
