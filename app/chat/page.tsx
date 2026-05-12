@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { ThemeToggle } from "../theme-toggle";
+import { useWakeWord } from "./useWakeWord";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -117,6 +118,10 @@ export default function ChatPage() {
   const [alwaysOn, setAlwaysOn] = useState(false); // 음성 전원 (기본 꺼짐 — 사용자가 명시적으로 켜야 함)
   const alwaysOnRef = useRef(false);
   alwaysOnRef.current = alwaysOn; // stale closure 방지
+  // wake-word 활성화 단계: false=대기(wake 기다림), true=마음 호출 후 발화 캡처 진행 중
+  const [wakeArmed, setWakeArmed] = useState(false);
+  const wakeArmedRef = useRef(false);
+  wakeArmedRef.current = wakeArmed;
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -519,6 +524,8 @@ export default function ChatPage() {
     if (loading || !conversationId) return;
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
+    // wake-word 활성화 안 됐으면 시작 금지 (폴백 환경에서는 wakeArmed를 true로 유지)
+    if (!wakeArmedRef.current) return;
     // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링
     if (turnLockRef.current) {
       setTimeout(() => startRecording(), 500);
@@ -551,12 +558,16 @@ export default function ChatPage() {
       // OFF 직후 중단된 녹음은 전송 금지 (전원 OFF 시 어떤 경우에도 음성 전달 안 됨)
       if (discardNextRef.current || !alwaysOnRef.current) {
         discardNextRef.current = false;
+        // wake 상태도 해제
+        wakeArmedRef.current = false;
+        setWakeArmed(false);
         return;
       }
 
-      // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우
+      // 너무 짧은 녹음(0.3초 미만)은 무시 — 침묵만 녹음된 경우 → wake 대기로 복귀
       if (blob.size < 5000) {
-        if (alwaysOnRef.current && !loading && !turnLockRef.current) setTimeout(() => startRecording(), 500);
+        wakeArmedRef.current = false;
+        setWakeArmed(false);
         return;
       }
       try {
@@ -571,8 +582,9 @@ export default function ChatPage() {
           { id: createId(), role: "assistant", content: displayMsg },
         ]);
       }
-      // alwaysOn 모드: AI 응답 완료 후 자동으로 다시 녹음 시작 (ref로 최신 상태 참조)
-      if (alwaysOnRef.current) setTimeout(() => startRecording(), 1000);
+      // 발화 전송 끝 → wake 상태 해제. 다시 "마음아" 부를 때까지 대기 모드.
+      wakeArmedRef.current = false;
+      setWakeArmed(false);
     };
     mediaRecorderRef.current = recorder;
     try {
@@ -655,13 +667,30 @@ export default function ChatPage() {
     setListening(false);
   }, []);
 
-  // alwaysOn 모드: 마이크 허용 후 자동으로 첫 녹음 시작
+  // wake-word 감지 ("마음", "마음아") — alwaysOn 활성 상태에서만 동작.
+  //  - 듣고 있을 때(listening) / AI 응답 중(turnLock) / 이미 wake된 상태는 일시 정지
+  //  - 미지원 브라우저면 supported=false → 폴백으로 wakeArmed 자동 활성화해 기존 흐름 유지
+  const { supported: wakeSupported } = useWakeWord({
+    enabled: micAllowed && alwaysOn && !!conversationId,
+    paused: listening || loading || wakeArmed,
+    onWake: () => {
+      if (turnLockRef.current) return; // AI 응답 중이면 무시
+      wakeArmedRef.current = true;
+      setWakeArmed(true);
+      // 살짝 딜레이 두고 녹음 시작 (recognition stop이 마이크 해제하는 데 시간이 필요)
+      setTimeout(() => startRecording(), 250);
+    },
+  });
+
+  // 폴백: SpeechRecognition 미지원 브라우저 → wake-word 없이 기존처럼 자동 녹음
   useEffect(() => {
-    if (micAllowed && alwaysOn && !listening && !loading && conversationId) {
+    if (!wakeSupported && micAllowed && alwaysOn && !listening && !loading && conversationId && !turnLockRef.current) {
+      wakeArmedRef.current = true;
+      setWakeArmed(true);
       const timer = setTimeout(() => startRecording(), 1000);
       return () => clearTimeout(timer);
     }
-  }, [micAllowed, alwaysOn, listening, loading, conversationId, startRecording]);
+  }, [wakeSupported, micAllowed, alwaysOn, listening, loading, conversationId, startRecording]);
 
   if (status === "loading") {
     return (
@@ -841,32 +870,44 @@ export default function ChatPage() {
                     setAlwaysOn(next);
                     alwaysOnRef.current = next;
                     if (next) {
-                      // OFF → ON: 녹음 시작은 useEffect가 처리
+                      // OFF → ON: wake-word 모드로 시작 (녹음은 wake 시점에)
                     } else {
-                      // ON → OFF: 녹음 중이던 블롭 버리고 즉시 중지
+                      // ON → OFF: 녹음 중이던 블롭 버리고 즉시 중지 + wake 해제
                       stopRecording({ discard: true });
+                      wakeArmedRef.current = false;
+                      setWakeArmed(false);
                     }
                   }}
                   aria-pressed={alwaysOn}
                   title={alwaysOn ? "눌러서 끄기" : "눌러서 켜기"}
-                  className={`flex min-w-[180px] items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition ${
-                    alwaysOn
-                      ? "bg-red-500 text-white shadow-md hover:bg-red-600"
-                      : "bg-zinc-300 text-zinc-700 hover:bg-zinc-400"
+                  className={`flex min-w-[200px] items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                    !alwaysOn
+                      ? "bg-zinc-300 text-zinc-700 hover:bg-zinc-400 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                      : listening
+                        ? "bg-red-500 text-white shadow-md hover:bg-red-600"
+                        : "bg-amber-400 text-zinc-900 shadow-md hover:bg-amber-500"
                   }`}
                 >
-                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${alwaysOn ? "bg-white animate-pulse" : "bg-zinc-500"}`} />
-                  🎤 음성 대화 {alwaysOn ? "켜짐" : "꺼짐"}
+                  <span
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${
+                      !alwaysOn
+                        ? "bg-zinc-500"
+                        : listening
+                          ? "bg-white animate-pulse"
+                          : "bg-zinc-900 animate-pulse"
+                    }`}
+                  />
+                  🎤 음성 {!alwaysOn ? "꺼짐" : listening ? "듣는 중" : '"마음아" 대기 중'}
                 </button>
-                <span className="text-[11px] text-zinc-400">
-                  {alwaysOn ? "(눌러서 끌 수 있어요)" : "(눌러서 켤 수 있어요)"}
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {!alwaysOn
+                    ? "(눌러서 켜면 \"마음아\" 호출로 대화 시작)"
+                    : listening
+                      ? "(말씀 끝나면 자동 전송)"
+                      : wakeSupported
+                        ? '("마음아" 또는 "마음" 부르시면 들을게요)'
+                        : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
                 </span>
-                {alwaysOn && listening && (
-                  <span className="flex items-center gap-1 text-xs text-red-500">
-                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                    듣는 중…
-                  </span>
-                )}
               </div>
               {/* 텍스트 입력 */}
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
@@ -891,7 +932,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; stopRecording({ discard: true }); setModeSelected(false); setMicAllowed(false); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); stopRecording({ discard: true }); setModeSelected(false); setMicAllowed(false); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 텍스트 대화로 전환
