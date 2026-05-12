@@ -10,6 +10,8 @@ import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
 import { analyzeCognitive } from "@/lib/chat/cognitive-analyzer";
 import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
+import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
+import { prisma } from "@/lib/prisma";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
 
@@ -320,7 +322,9 @@ function buildHistoryText(
     .map((m) => {
       const speaker = m.role === "user" ? "사용자" : "AI";
       const timeLabel = m.createdAt ? `[${getRelativeTimeLabel(m.createdAt, now)}] ` : "";
-      return `${timeLabel}${speaker}: ${m.content}`;
+      // 내부 메타 시그니처(<!-- __mod:... -->) 제거: 모델 프롬프트에 노출 방지
+      const cleaned = m.content.replace(/\s*<!--\s*__mod:[^>]*-->\s*$/g, "").trim();
+      return `${timeLabel}${speaker}: ${cleaned}`;
     })
     .join("\n");
 }
@@ -451,6 +455,17 @@ async function handleAudioMessage(params: {
     console.warn("[STT] transcription failed:", e);
   }
 
+  // 1.5단계: 부적절 발언 감지 시 LLM 우회 + 단계적 거절
+  const moderated = await handleInappropriateMessage({
+    userContent: transcription,
+    conversationId,
+    userId,
+    honorific,
+    companionName,
+    transcription,
+  });
+  if (moderated) return moderated as NextResponse;
+
   // 2단계: 변환된 텍스트로 대화 모델 호출 (텍스트 모델 — googleSearch 포함)
   const model = getTextModel(systemPrompt);
   const repetitionHint = buildRepetitionHint(transcription);
@@ -482,6 +497,51 @@ ${repetitionHint}${wordGameHint}
   return NextResponse.json({ text: answerText, transcription, role: "assistant" });
 }
 
+/**
+ * 부적절 발언 감지 시 LLM 우회. 같은 세션 내 같은 카테고리 발생 횟수를 조회해
+ * 단계적 거절 멘트를 반환하고 저장한다.
+ *
+ * @returns 처리된 경우 NextResponse, 정상 발화면 null
+ */
+async function handleInappropriateMessage(params: {
+  userContent: string;
+  conversationId: string | undefined;
+  userId: string;
+  honorific: string;
+  companionName: string;
+  transcription?: string;
+}): Promise<Response | null> {
+  const { userContent, conversationId, userId, honorific, companionName, transcription } = params;
+  const moderation = detectInappropriate(userContent);
+  if (moderation.category === "ok") return null;
+
+  // 같은 세션에서 이전에 같은 카테고리 거절 멘트가 얼마나 발생했는지 카운트
+  let occurrence = 1;
+  if (conversationId) {
+    const signature = `__mod:${moderation.category}__`;
+    const prev = await prisma.message.count({
+      where: { conversationId, role: "assistant", content: { contains: signature } },
+    });
+    occurrence = prev + 1;
+  }
+
+  const reply = buildModerationReply(moderation.category, occurrence, honorific, companionName);
+  // 저장본은 표시 안 보이는 메타 시그니처를 끝에 붙여 향후 카운트에 사용
+  const stored = `${reply}\n<!-- __mod:${moderation.category}__ -->`;
+
+  if (conversationId) {
+    await saveMessages({
+      conversationId,
+      userId,
+      userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
+      assistantContent: stored,
+    });
+  }
+  const payload: Record<string, unknown> = { text: reply, role: "assistant", moderated: moderation.category };
+  if (transcription !== undefined) payload.transcription = transcription;
+  return NextResponse.json(payload);
+}
+
 /** 5) 텍스트 요청 (텍스트 모델 — 순수 텍스트 응답) */
 async function handleTextMessage(params: {
   systemPrompt: string; envBlock: string;
@@ -490,6 +550,17 @@ async function handleTextMessage(params: {
   companionName: string; companionRelation: string; honorific: string;
 }) {
   const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, companionName, honorific } = params;
+
+  // 부적절 발언 감지 시 LLM 우회 + 단계적 거절
+  const moderated = await handleInappropriateMessage({
+    userContent,
+    conversationId,
+    userId,
+    honorific,
+    companionName,
+  });
+  if (moderated) return moderated as NextResponse;
+
   const model = getTextModel(systemPrompt);
 
   const repetitionHint = buildRepetitionHint(userContent);
