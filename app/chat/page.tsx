@@ -670,7 +670,7 @@ export default function ChatPage() {
   // wake-word 감지 ("마음", "마음아") — alwaysOn 활성 상태에서만 동작.
   //  - 듣고 있을 때(listening) / AI 응답 중(turnLock) / 이미 wake된 상태는 일시 정지
   //  - 미지원 브라우저면 supported=false → 폴백으로 wakeArmed 자동 활성화해 기존 흐름 유지
-  const { supported: wakeSupported } = useWakeWord({
+  const { supported: wakeSupported, listening: wakeListening, lastHeard: wakeLastHeard } = useWakeWord({
     enabled: micAllowed && alwaysOn && !!conversationId,
     paused: listening || loading || wakeArmed,
     onWake: () => {
@@ -905,9 +905,16 @@ export default function ChatPage() {
                     : listening
                       ? "(말씀 끝나면 자동 전송)"
                       : wakeSupported
-                        ? '("마음아" 또는 "마음" 부르시면 들을게요)'
+                        ? wakeListening
+                          ? '("마음아" 또는 "마음" 부르시면 들을게요)'
+                          : "(마이크 준비 중…)"
                         : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
                 </span>
+                {alwaysOn && !listening && wakeSupported && wakeLastHeard && (
+                  <span className="max-w-[280px] truncate text-[10px] text-zinc-400 dark:text-zinc-500" title={wakeLastHeard}>
+                    들림: {wakeLastHeard}
+                  </span>
+                )}
               </div>
               {/* 텍스트 입력 */}
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
