@@ -243,6 +243,23 @@ function buildWordGameHint(historyText: string, userText: string): string {
   return `\n${WORD_GAME_GUARDRAIL}\n`;
 }
 
+/**
+ * 직전 AI가 고유명사(이름/지명/사물명)를 물었고 사용자가 짧게 답한 경우,
+ * 그 답을 일반 단어 의미로 해석하지 말고 "이름 그대로" 받으라는 hint 주입.
+ */
+function buildNameAnswerHint(historyText: string, userText: string): string {
+  const userTrim = (userText || "").trim();
+  if (!userTrim) return "";
+  // 짧은 답 (10자 이하, 띄어쓰기 0~1회) 만 대상
+  if (userTrim.length > 10 || userTrim.split(/\s+/).length > 2) return "";
+  const lastAi = extractLastAiMessage(historyText);
+  if (!lastAi) return "";
+  const askPattern = /(이름이? (어떻게|뭐)|성함이? (어떻게|뭐)|뭐라고 부르|뭐라고 불|호칭이? (어떻게|뭐)|어디|어느 (시|도|동|동네|마을)|고향이? (어디|어느))/;
+  if (!askPattern.test(lastAi)) return "";
+
+  return `\n[직전 AI 질문 → 사용자 답변 해석 가이드]\n직전에 ${lastAi.length > 80 ? lastAi.slice(0, 80) + "…" : lastAi}\n사용자 답변 "${userTrim}"은 그 질문의 답(고유명사 — 이름/지명 등)입니다. 일반 단어 의미로 해석하지 마세요. 답변을 그대로 호명·인용하며 자연스럽게 반응하세요. 예: "아드님 성함이 '${userTrim}' 씨이군요. 친근한 이름이네요." 절대 "${userTrim}"을 형용사/감탄사로 해석하지 마세요.\n`;
+}
+
 function buildRepetitionHint(userText: string): string {
   const slots = extractAnsweredSlots(userText);
   if (slots.length === 0) return "";
@@ -284,6 +301,59 @@ function fixWordChainStart(text: string): string {
     // 잘못된 시작글자 발견 → 끝글자로 교정
     return full.replace(`'${asked}'`, `'${lastChar}'`);
   });
+}
+
+/**
+ * 직전 AI 응답의 시작 문장이 새 응답에도 그대로 반복되면 첫 문장 제거.
+ * 사용자가 새 주제 꺼냈는데 모델이 직전 자기 응답을 미러링하는 흔한 결함 차단.
+ *
+ * 판정: 새 응답의 첫 문장과 직전 AI의 첫 문장이 35자 이상 겹치거나
+ *       0.7 이상 prefix 유사도면 첫 문장 삭제.
+ */
+function normalizeForCompare(s: string): string {
+  return s.replace(/[\s.,!?~()]/g, "").toLowerCase();
+}
+
+/** historyText (buildHistoryText 결과)에서 가장 최근 AI 발화 추출. 없으면 빈 문자열. */
+function extractLastAiMessage(historyText: string): string {
+  if (!historyText) return "";
+  const lines = historyText.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    // 라인 형식: "[방금] AI: ..." 또는 "AI: ..."
+    const m = lines[i].match(/^(?:\[[^\]]+\]\s*)?AI:\s*(.+)$/);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
+function removeRepeatedOpening(aiText: string, prevAiText: string): string {
+  if (!aiText || !prevAiText) return aiText;
+  const sentSplit = /(?<=[.!?~])\s+/;
+  const newSents = aiText.split(sentSplit);
+  const prevSents = prevAiText.split(sentSplit);
+  if (newSents.length === 0 || prevSents.length === 0) return aiText;
+  const firstNew = newSents[0].trim();
+  const firstPrev = prevSents[0].trim();
+  // 짧은 동조 인사("네, 알겠어요!" 등)는 그대로 둠
+  if (firstNew.length < 12) return aiText;
+
+  const a = normalizeForCompare(firstNew);
+  const b = normalizeForCompare(firstPrev);
+  if (!a || !b) return aiText;
+
+  // 완전 동일 또는 한쪽이 다른 쪽으로 시작하면 무조건 제거
+  if (a === b || a.startsWith(b) || b.startsWith(a)) {
+    return newSents.slice(1).join(" ").trim() || aiText;
+  }
+  // 공통 prefix 길이로 판정
+  let common = 0;
+  const minLen = Math.min(a.length, b.length);
+  while (common < minLen && a[common] === b[common]) common++;
+  const ratio = common / Math.max(a.length, b.length);
+  if (common >= 18 && ratio >= 0.7) {
+    return newSents.slice(1).join(" ").trim() || aiText;
+  }
+  return aiText;
 }
 
 /** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
@@ -470,10 +540,11 @@ async function handleAudioMessage(params: {
   const model = getTextModel(systemPrompt);
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
+  const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-${repetitionHint}${wordGameHint}
+${repetitionHint}${wordGameHint}${nameAnswerHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.
 
 [이번 턴]
@@ -482,7 +553,8 @@ ${repetitionHint}${wordGameHint}
   const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
-  const answerText = fallbackUsed ? rawText : fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific));
+  const prevAi = extractLastAiMessage(historyText);
+  const answerText = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific)), prevAi);
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -565,16 +637,18 @@ async function handleTextMessage(params: {
 
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
+  const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
   const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
 대화 내역:
 ${historyText}
-${repetitionHint}${wordGameHint}
+${repetitionHint}${wordGameHint}${nameAnswerHint}
 사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
 
   const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
-  const text = fallbackUsed ? rawText : fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific));
+  const prevAi = extractLastAiMessage(historyText);
+  const text = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific)), prevAi);
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
