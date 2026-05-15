@@ -62,6 +62,7 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - AI가 이름대기(우회적 설명 → 사물 이름) 요청 → 정답 못 댐 → score 2
 
 7. 주의력/계산 (attention_calculation):
+   - **⚠️ 계산 vs 기억 혼동 금지**: 직전 AI 발화에 "빼면/더하면/곱하면/나누면/N에서 M을/100-7" 같은 **명시적 계산 표현**이 있고 사용자가 단순 숫자로 답했다면, 그 답의 정/오는 **반드시 attention_calculation 한 영역**으로만 판정하세요. 답이 사용자의 환경 나이/생년 등과 우연히 어긋나더라도 **memory_delayed로 분류 금지**. 즉 "AI가 계산을 물었으면 답은 계산 영역으로만 본다".
    - AI가 **명시적으로 계산 문제**를 냈는데 사용자가 **틀린 숫자**로 답 → score 2
      예: AI "100-7은?" → 사용자 "85" (정답 93) → score 2
      예: AI "만원 내면 거스름돈은?" → 사용자 "3천원" (정답 다름) → score 2
@@ -185,6 +186,127 @@ function validateMemoryImmediate(
   return result;
 }
 
+/**
+ * AI 발화에서 인지 선별 질문 패턴을 검출 → 해당 도메인을 자동 등록(중복 방지).
+ *
+ * 배경: 분석기 LLM이 사용자 답변 기준으로만 도메인 태깅하면 AI가 같은 질문(속담/따라말하기 등)을
+ * 세션 내 반복 출제한다. AI 발화 자체에서 패턴이 보이면 score=0으로 즉시 cognitive_assessments에
+ * 박아 둬서 다음 턴 prompt의 "이미 확인한 영역"에 반영시킨다.
+ *
+ * 의도적으로 보수적이어서 오탐을 최소화한다: 진짜 cognitive 검사 표현만 매칭.
+ */
+const COGNITIVE_QUESTION_PATTERNS: Array<{ domain: string; pattern: RegExp }> = [
+  // 언어 — 속담/관용구 의미 질문
+  { domain: "language", pattern: /(백문이 불여일견|티끌 모아 태산|호랑이도 제 말 하면|소문난 잔치|세 살 (?:적|버릇)|아니 땐 굴뚝|등잔 밑이 어둡|돌다리도 두들겨|가는 말이 고와야)/ },
+  { domain: "language", pattern: /(?:속담|관용구).*(?:무슨\s*뜻|뜻이\s*뭐)/ },
+  // 언어 — 따라말하기 (간장 공장…)
+  { domain: "language", pattern: /(간장\s*공장\s*공장장|저기 저 분이|중앙청 창살)/ },
+  { domain: "language", pattern: /(?:똑같이\s*따라|그대로\s*따라|이대로\s*따라|따라\s*해\s*보세|따라\s*말씀해)/ },
+  // 언어 — 의미·음소 유창성
+  { domain: "language", pattern: /(?:1분\s*안에|일\s*분\s*안에|최대한\s*많이).*(?:동물|음식|과일|단어)/ },
+  { domain: "language", pattern: /(?:'[가-힣]'|"[가-힣]"|[가-힣])(?:로|으로)\s*시작하는\s*(?:동물|단어|음식|이름)/ },
+  // 즉시/지연 기억
+  { domain: "memory_immediate", pattern: /(?:방금|지금)\s*(?:외워|기억해)\s*(?:두|보세|주세)/ },
+  { domain: "memory_delayed", pattern: /(?:아까|좀\s*전에)\s*(?:외워|드린|말씀드린)\s*(?:단어|세\s*개|세개|3개|다섯\s*개|5개)/ },
+  { domain: "memory_delayed", pattern: /(?:아까|좀\s*전에).*(?:기억\s*나|회상해)/ },
+  // 주의력/계산
+  { domain: "attention_calculation", pattern: /\d+\s*에서\s*\d+\s*(?:을|를)?\s*(?:빼|더|곱|나눠|나누)/ },
+  { domain: "attention_calculation", pattern: /100\s*에서\s*7\s*씩|삼천리강산.*거꾸로|만원\s*내(?:면|고).*거스름/ },
+  // 시간 지남력
+  { domain: "orientation_time", pattern: /오늘\s*(?:무슨\s*요일|며칠|몇\s*월|날짜)|지금\s*몇\s*시|올해\s*몇\s*년|지금이\s*(?:몇년|몇\s*년)/ },
+  { domain: "orientation_time", pattern: /요즘\s*무슨\s*계절|지금\s*무슨\s*계절/ },
+  // 장소 지남력
+  { domain: "orientation_place", pattern: /(?:지금|할아버지|할머니)\s*(?:어디|어느\s*곳).*계세|여기(?:가)?\s*어디/ },
+  // 판단력
+  { domain: "judgment", pattern: /(?:길에서\s*지갑(?:을|를)?\s*주우면|불이\s*났을\s*때|화재.*어떻게|약을\s*잘못\s*드시면)/ },
+];
+
+function detectCognitiveQuestions(aiResponse: string): string[] {
+  const out = new Set<string>();
+  for (const { domain, pattern } of COGNITIVE_QUESTION_PATTERNS) {
+    if (pattern.test(aiResponse)) out.add(domain);
+  }
+  return Array.from(out);
+}
+
+function ensureCognitiveDomainLogged(
+  result: CognitiveAnalysisResult,
+  aiResponse: string,
+): CognitiveAnalysisResult {
+  const detected = detectCognitiveQuestions(aiResponse);
+  if (detected.length === 0) return result;
+  const existing = new Set(result.cognitiveChecks.map((c) => c.domain));
+  const additions = detected
+    .filter((d) => !existing.has(d))
+    .map((domain) => ({
+      domain,
+      score: 0,
+      confidence: 0.6,
+      evidence: "AI 질문 패턴 자동 검출",
+      note: "도메인 자동 기록(세션 내 중복 질문 차단)",
+    }));
+  if (additions.length === 0) return result;
+  return { ...result, cognitiveChecks: [...result.cognitiveChecks, ...additions] };
+}
+
+/**
+ * 직전 AI 발화에 명시적 계산 표현이 있고 사용자가 숫자 위주로 답한 경우,
+ * 잘못 분류된 memory_delayed/memory_immediate를 attention_calculation으로 정정.
+ *
+ * 케이스: AI "79에서 7 빼면?" → 사용자 "70" → LLM이 "79세→70세 나이 불일치"로 memory_delayed 오판.
+ * 실제론 계산 오답이므로 attention_calculation 영역으로 재배정해야 한다.
+ */
+const CALC_QUESTION_PATTERN = /(?:\d+\s*(?:에서|-)\s*\d+\s*(?:을|를)?\s*(?:빼|더|곱|나눠|나누))|(?:\d+\s*[+\-*×÷]\s*\d+)|(?:거스름돈|얼마|몇|덧셈|뺄셈|곱셈|나눗셈|계산)/;
+// 숫자 위주 답변: 아라비아 숫자 또는 Sino-Korean 수사(영/일/이/삼/사/오/육/칠/팔/구/십/백/천/만)
+// + 선택적 단위(원/개/살/세) — "기억이 안 나요" 같은 일반 한글은 매칭 안 되도록 가-힣은 제외
+const NUMERIC_REPLY_PATTERN = /^\s*(?:\d+|[영일이삼사오육칠팔구십백천만\s]+)\s*(?:원|개|살|세|점|등)?\s*[.!?~]?\s*$/;
+
+function extractLastAiMessage(historyText: string): string {
+  const lines = historyText.split("\n").filter((l) => l.trim().length > 0);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(/^\s*(?:AI|assistant|Assistant|민지|ai)\s*[:：]\s*(.+)$/);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
+function reclassifyCalculation(
+  result: CognitiveAnalysisResult,
+  userMessage: string,
+  historyText: string,
+): CognitiveAnalysisResult {
+  const lastAi = extractLastAiMessage(historyText);
+  if (!lastAi || !CALC_QUESTION_PATTERN.test(lastAi)) return result;
+
+  const userOnlyNumber = NUMERIC_REPLY_PATTERN.test(userMessage) && /[\d일이삼사오육칠팔구십]/.test(userMessage);
+  if (!userOnlyNumber) return result;
+
+  // memory_delayed/memory_immediate가 anomaly로 잡혔으면 → attention_calculation으로 교체
+  const misclassified = result.cognitiveChecks.filter((c) => (c.domain === "memory_delayed" || c.domain === "memory_immediate") && c.score >= 1);
+  if (misclassified.length === 0) return result;
+
+  const hasCalc = result.cognitiveChecks.some((c) => c.domain === "attention_calculation");
+  let newChecks = result.cognitiveChecks.filter((c) => c.domain !== "memory_delayed" && c.domain !== "memory_immediate");
+  if (!hasCalc) {
+    const worstScore = Math.max(...misclassified.map((c) => c.score));
+    newChecks = [
+      ...newChecks,
+      {
+        domain: "attention_calculation",
+        score: worstScore,
+        confidence: 0.7,
+        evidence: `직전 AI 계산 질문에 숫자 답("${userMessage.slice(0, 40)}") 오분류 보정`,
+        note: "memory→attention_calculation 재배정",
+      },
+    ];
+  }
+  return {
+    ...result,
+    cognitiveChecks: newChecks,
+    analysisNote: result.analysisNote.replace(/(?:연세|나이|생년).*?(?:불일치|틀림|차이)/g, "계산 영역 재배정").slice(0, 500),
+  };
+}
+
 export async function analyzeCognitive(params: {
   userMessage: string;
   assistantResponse: string;
@@ -205,7 +327,9 @@ export async function analyzeCognitive(params: {
 
     const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${params.userMessage}\nAI: ${params.assistantResponse}`);
     const raw = parseResult(res.response.text().trim());
-    return validateMemoryImmediate(raw, params.userMessage, recentHistory);
+    const memValidated = validateMemoryImmediate(raw, params.userMessage, recentHistory);
+    const calcReclassified = reclassifyCalculation(memValidated, params.userMessage, recentHistory);
+    return ensureCognitiveDomainLogged(calcReclassified, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
     return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
