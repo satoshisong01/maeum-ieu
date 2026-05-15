@@ -161,21 +161,36 @@ function removeTimeLabels(text: string): string {
     .trim();
 }
 
-/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지. 사용자가 명시한 호칭 외 모든 친족·존칭 변형 제거. */
+/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지. 사용자가 명시한 호칭 외 모든 친족·존칭 변형 제거.
+ *
+ * 중요: userHonorific의 부분 문자열인 호칭은 offenders에서 제외해야 함.
+ * 예: userHonorific="할아버지"면 "아버지"를 치환하면 안 됨 (할아버지 안에 아버지 들어있음 → 할할아버지).
+ * 또한 앞에 한글이 있는 경우는 더 큰 단어의 일부이므로 치환 금지.
+ */
 function normalizeHonorific(text: string, userHonorific: string = "할아버지"): string {
   if (!text) return text;
-  // 모든 가능 호칭 후보를 모아두고, 사용자 선택값을 제외한 나머지가 등장하면 사용자 선택으로 치환.
-  const ALL = ["할아버지", "할머니", "아버지", "어머니", "아빠", "엄마",
-    "아저씨", "이모", "삼촌", "고모", "이모님", "삼촌님",
-    "회원님", "고객님", "선생님", "사장님", "어르신", "아버님", "어머님"];
-  const offenders = ALL.filter((h) => h !== userHonorific);
-  if (offenders.length === 0) return text;
-  // 길이 긴 후보부터 매칭 (예: "어르신"이 "어"보다 먼저)
-  offenders.sort((a, b) => b.length - a.length);
-  const pattern = new RegExp(offenders.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
-  return text
-    .replace(pattern, userHonorific)
-    .replace(/(?<![가-힣])님\s*,/g, `${userHonorific},`);
+  // 친족 호칭 — 앞뒤 한글이 있으면 더 큰 단어(외할아버지/큰아버지)일 가능성 → 양쪽 lookahead 적용
+  const KIN = ["할아버지", "할머니", "아버지", "어머니", "아빠", "엄마",
+    "아저씨", "이모", "삼촌", "고모"];
+  // 존칭/직함 — 뒤에 조사(과/이/에게 등)가 붙는 경우가 흔하므로 lookbehind만 적용
+  const TITLE = ["회원님", "고객님", "선생님", "사장님", "어르신",
+    "아버님", "어머님", "이모님", "삼촌님"];
+
+  const filter = (arr: string[]) => arr.filter((h) => h !== userHonorific && !userHonorific.includes(h));
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  let out = text;
+  const kinOffenders = filter(KIN).sort((a, b) => b.length - a.length);
+  if (kinOffenders.length > 0) {
+    const kinPat = new RegExp(`(?<![가-힣])(${kinOffenders.map(esc).join("|")})(?![가-힣])`, "g");
+    out = out.replace(kinPat, userHonorific);
+  }
+  const titleOffenders = filter(TITLE).sort((a, b) => b.length - a.length);
+  if (titleOffenders.length > 0) {
+    const titlePat = new RegExp(`(?<![가-힣])(${titleOffenders.map(esc).join("|")})`, "g");
+    out = out.replace(titlePat, userHonorific);
+  }
+  return out.replace(/(?<![가-힣])님\s*,/g, `${userHonorific},`);
 }
 
 /**
@@ -399,6 +414,83 @@ function buildHistoryText(
     .join("\n");
 }
 
+type GeminiTurn = { role: "user" | "model"; parts: { text: string }[] };
+
+/**
+ * 대화 이력을 Gemini multi-turn `contents` 배열로 변환.
+ *
+ * 텍스트로 history를 통째 stuff하는 방식 → 모델이 턴 순서/Q-A 페어를 자주 놓침.
+ * Gemini가 내부적으로 사용자/모델 턴을 구분하도록 구조화된 contents로 전달한다.
+ *
+ * 규칙:
+ * - Gemini contents는 user/model이 번갈아 와야 하므로 연속된 같은 role은 합친다
+ * - 첫 turn은 반드시 user → model로 시작하면 dummy user를 앞에 추가
+ * - `currentUserMessage`가 messages 끝 user 메시지와 동일하면 prior에서 제외
+ * - 최종 turn은 항상 user (현재 발화) — 가이드 블록(memories/hints)을 함께 주입
+ * - 직전 AI 발화가 있으면 final user 텍스트 앞에 "[직전 AI 질문에 대한 답입니다]" 마커 추가
+ */
+function buildChatContents(params: {
+  messages: { role: string; content: string; createdAt?: string }[];
+  currentUserMessage: string;
+  memories: string;
+  hintBlock: string;
+  now?: Date;
+  maxRecent?: number;
+}): GeminiTurn[] {
+  const { messages, currentUserMessage, memories, hintBlock, now = new Date(), maxRecent = 20 } = params;
+
+  const recent = messages.slice(-maxRecent);
+  // 마지막이 user이고 currentUserMessage와 동일하면 prior에서 제외 (텍스트 모드)
+  let prior = recent;
+  const lastMsg = recent[recent.length - 1];
+  if (lastMsg && lastMsg.role === "user" && lastMsg.content.trim() === (currentUserMessage || "").trim()) {
+    prior = recent.slice(0, -1);
+  }
+
+  const turns: GeminiTurn[] = [];
+  for (const m of prior) {
+    const role: "user" | "model" = m.role === "user" ? "user" : "model";
+    const timeLabel = m.createdAt ? `[${getRelativeTimeLabel(m.createdAt, now)}] ` : "";
+    const cleaned = m.content.replace(/\s*<!--\s*__mod:[^>]*-->\s*$/g, "").trim();
+    if (!cleaned) continue;
+    const text = `${timeLabel}${cleaned}`;
+    const lastTurn = turns[turns.length - 1];
+    if (lastTurn && lastTurn.role === role) {
+      lastTurn.parts[0].text += `\n${text}`;
+    } else {
+      turns.push({ role, parts: [{ text }] });
+    }
+  }
+
+  // Gemini는 첫 contents가 user여야 함 — model로 시작하면 dummy user 끼워넣기
+  if (turns.length > 0 && turns[0].role === "model") {
+    turns.unshift({ role: "user", parts: [{ text: "(대화 시작)" }] });
+  }
+
+  // 직전 AI 발화 확인 → 명시적 Q-A 페어링 마커
+  const lastPrior = prior[prior.length - 1];
+  const lastWasAi = lastPrior && lastPrior.role !== "user";
+  const qaMarker = lastWasAi
+    ? `[지금 사용자의 답변은 바로 위 AI의 마지막 발화에 대한 응답입니다. 새 주제가 아니라 그 흐름을 이어받으세요.]\n`
+    : "";
+
+  const cleanedHints = (hintBlock || "").trim();
+  const finalText = [
+    memories ? `[참고 — 과거 메모리]\n${memories}` : "",
+    cleanedHints,
+    `${qaMarker}[현재 사용자 발화]\n${currentUserMessage || "(빈 메시지)"}`,
+  ].filter(Boolean).join("\n\n");
+
+  // 마지막 prior turn이 user면 합치고, 아니면 새 user turn 추가
+  const tail = turns[turns.length - 1];
+  if (tail && tail.role === "user") {
+    tail.parts[0].text += `\n\n${finalText}`;
+  } else {
+    turns.push({ role: "user", parts: [{ text: finalText }] });
+  }
+  return turns;
+}
+
 async function fetchMemories(userId: string, query: string): Promise<string> {
   try { return await searchMemories(userId, query, 5); }
   catch { return ""; }
@@ -514,8 +606,9 @@ async function handleAudioMessage(params: {
   companionName: string; companionRelation: string;
   userId: string; conversationId?: string;
   audioData: string; audioMimeType: string; historyText: string; memories: string;
+  messages: { role: string; content: string; createdAt?: string }[];
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages } = params;
 
   // 1단계: 음성 → 텍스트 변환
   let transcription = "";
@@ -541,17 +634,15 @@ async function handleAudioMessage(params: {
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
-  const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
-대화 내역:
-${historyText}
-${repetitionHint}${wordGameHint}${nameAnswerHint}
-사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.
-
-[이번 턴]
-사용자: ${transcription || "(음성을 인식하지 못했습니다)"}`;
+  const hintBlock = [
+    repetitionHint, wordGameHint, nameAnswerHint,
+    "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
+  ].filter((s) => s && s.trim()).join("\n\n");
+  const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
+  const contents = buildChatContents({ messages, currentUserMessage: currentUserMsg, memories, hintBlock });
 
   const fallback = buildFallbackMessage(honorific, companionName);
-  const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
+  const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
   const answerText = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific)), prevAi);
@@ -619,9 +710,10 @@ async function handleTextMessage(params: {
   systemPrompt: string; envBlock: string;
   userId: string; conversationId?: string;
   userContent: string; historyText: string; memories: string;
+  messages: { role: string; content: string; createdAt?: string }[];
   companionName: string; companionRelation: string; honorific: string;
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, companionName, honorific } = params;
+  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific } = params;
 
   // 부적절 발언 감지 시 LLM 우회 + 단계적 거절
   const moderated = await handleInappropriateMessage({
@@ -638,14 +730,15 @@ async function handleTextMessage(params: {
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
   const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
-  const prompt = `${memories ? `과거 맥락:\n${memories}\n` : ""}
-대화 내역:
-${historyText}
-${repetitionHint}${wordGameHint}${nameAnswerHint}
-사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요.`;
+  const hintBlock = [
+    repetitionHint, wordGameHint, nameAnswerHint,
+    "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
+  ].filter((s) => s && s.trim()).join("\n\n");
+
+  const contents = buildChatContents({ messages, currentUserMessage: userContent, memories, hintBlock });
 
   const fallback = buildFallbackMessage(honorific, companionName);
-  const { text: rawText, fallbackUsed } = await generateWithFallback(model, prompt, fallback);
+  const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
   const text = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific)), prevAi);
@@ -694,11 +787,11 @@ export async function POST(req: Request) {
     if (audio?.data && audio?.mimeType) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
-        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories,
+        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [],
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, companionName, companionRelation, honorific });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });
