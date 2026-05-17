@@ -31,14 +31,20 @@ export async function saveMessages(params: {
   userId: string;
   userContent: string;
   assistantContent: string;
+  emergencyLevel?: number;
+  emergencyEvidence?: string;
 }): Promise<{ userMsgId: string; assistantMsgId: string }> {
-  const { conversationId, userId, userContent, assistantContent } = params;
+  const { conversationId, userId, userContent, assistantContent, emergencyLevel, emergencyEvidence } = params;
   const userTime = getNowKst();
   // assistant 메시지는 1초 뒤로 설정 → createdAt ASC 정렬 시 항상 user → assistant 순서 보장
   const assistantTime = new Date(userTime.getTime() + 1000);
 
   const userMsg = await prisma.message.create({
-    data: { conversationId, role: "user", content: userContent, createdAt: userTime },
+    data: {
+      conversationId, role: "user", content: userContent, createdAt: userTime,
+      emergencyLevel: emergencyLevel ?? null,
+      emergencyEvidence: emergencyEvidence ?? null,
+    },
   });
   const assistantMsg = await prisma.message.create({
     data: { conversationId, role: "assistant", content: assistantContent, createdAt: assistantTime },
@@ -60,6 +66,19 @@ export async function markAnomaly(messageId: string, analysisNote: string): Prom
   await prisma.message.update({
     where: { id: messageId },
     data: { isAnomaly: true, analysisNote },
+  });
+}
+
+/** 최근 24시간 내 같은 대화의 L1 응급 신호 카운트 — L1→L2 승격 판단용 */
+export async function countRecentL1Signals(conversationId: string): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return prisma.message.count({
+    where: {
+      conversationId,
+      role: "user",
+      emergencyLevel: 1,
+      createdAt: { gte: since },
+    },
   });
 }
 

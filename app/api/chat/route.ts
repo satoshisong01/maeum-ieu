@@ -7,10 +7,11 @@ import type { ChatRequestBody } from "@/lib/chat/types";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
-import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
+import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
 import { analyzeCognitive } from "@/lib/chat/cognitive-analyzer";
 import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
+import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { prisma } from "@/lib/prisma";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
@@ -618,6 +619,15 @@ async function handleAudioMessage(params: {
     console.warn("[STT] transcription failed:", e);
   }
 
+  // 1.4단계: 응급 발화 감지 — moderation보다 먼저
+  const emergency = await evaluateEmergency({ userContent: transcription, conversationId });
+  if (emergency.effectiveLevel === 3) {
+    return handleEmergencyL3({
+      result: emergency.result, userContent: transcription,
+      conversationId, userId, honorific, companionName, transcription,
+    });
+  }
+
   // 1.5단계: 부적절 발언 감지 시 LLM 우회 + 단계적 거절
   const moderated = await handleInappropriateMessage({
     userContent: transcription,
@@ -635,7 +645,7 @@ async function handleAudioMessage(params: {
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
   const hintBlock = [
-    repetitionHint, wordGameHint, nameAnswerHint,
+    repetitionHint, wordGameHint, nameAnswerHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
@@ -652,12 +662,71 @@ async function handleAudioMessage(params: {
       conversationId, userId,
       userContent: transcription || "(음성 메시지)",
       assistantContent: answerText,
+      emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+      emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
     });
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }
 
-  return NextResponse.json({ text: answerText, transcription, role: "assistant" });
+  return NextResponse.json({
+    text: answerText, transcription, role: "assistant",
+    ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}),
+  });
+}
+
+/**
+ * 응급 발화 감지 — moderation보다 먼저 분기.
+ *
+ * - L3: LLM 우회 즉시 응급 안내 반환 + Message에 마킹
+ * - L2: hint를 호출자에게 반환(LLM 프롬프트에 주입) + Message에 마킹
+ * - L1: 24h 누적 ≥3이면 L2로 승격하여 hint 반환, 아니면 마킹만
+ * - 0: noop
+ */
+async function evaluateEmergency(params: {
+  userContent: string;
+  conversationId: string | undefined;
+}): Promise<{ result: EmergencyResult; effectiveLevel: 0 | 1 | 2 | 3; hint: string }> {
+  const { userContent, conversationId } = params;
+  const result = detectEmergency(userContent);
+  let effectiveLevel: 0 | 1 | 2 | 3 = result.level;
+
+  // L1이면 누적 평가 후 L2로 승격할지 결정
+  if (result.level === 1 && conversationId) {
+    const recent = await countRecentL1Signals(conversationId);
+    // 현재 발화 1건이 곧 저장될 예정이므로 +1로 평가
+    if (shouldEscalateL1ToL2(recent + 1)) effectiveLevel = 2;
+  }
+
+  const hint = effectiveLevel === 2 ? buildEmergencyL2Hint(result.category, result.evidence) : "";
+  return { result, effectiveLevel, hint };
+}
+
+async function handleEmergencyL3(params: {
+  result: EmergencyResult;
+  userContent: string;
+  conversationId: string | undefined;
+  userId: string;
+  honorific: string;
+  companionName: string;
+  transcription?: string;
+}): Promise<NextResponse> {
+  const { result, userContent, conversationId, userId, honorific, companionName, transcription } = params;
+  const reply = buildEmergencyL3Reply(honorific, companionName, result.category);
+
+  if (conversationId) {
+    await saveMessages({
+      conversationId,
+      userId,
+      userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
+      assistantContent: reply,
+      emergencyLevel: 3,
+      emergencyEvidence: `${result.category}:${result.evidence}`,
+    });
+  }
+  const payload: Record<string, unknown> = { text: reply, role: "assistant", emergency: { level: 3, category: result.category } };
+  if (transcription !== undefined) payload.transcription = transcription;
+  return NextResponse.json(payload);
 }
 
 /**
@@ -715,6 +784,15 @@ async function handleTextMessage(params: {
 }) {
   const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific } = params;
 
+  // 응급 발화 감지 — moderation보다 먼저
+  const emergency = await evaluateEmergency({ userContent, conversationId });
+  if (emergency.effectiveLevel === 3) {
+    return handleEmergencyL3({
+      result: emergency.result, userContent,
+      conversationId, userId, honorific, companionName,
+    });
+  }
+
   // 부적절 발언 감지 시 LLM 우회 + 단계적 거절
   const moderated = await handleInappropriateMessage({
     userContent,
@@ -731,7 +809,7 @@ async function handleTextMessage(params: {
   const wordGameHint = buildWordGameHint(historyText, userContent);
   const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
   const hintBlock = [
-    repetitionHint, wordGameHint, nameAnswerHint,
+    repetitionHint, wordGameHint, nameAnswerHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
 
@@ -744,12 +822,19 @@ async function handleTextMessage(params: {
   const text = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific)), prevAi);
 
   if (conversationId && userContent) {
-    const { userMsgId } = await saveMessages({ conversationId, userId, userContent, assistantContent: text });
+    const { userMsgId } = await saveMessages({
+      conversationId, userId, userContent, assistantContent: text,
+      emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+      emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+    });
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }
 
-  return NextResponse.json({ text, role: "assistant" });
+  return NextResponse.json({
+    text, role: "assistant",
+    ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}),
+  });
 }
 
 // ─── POST ───────────────────────────────────────────────────────────────────
