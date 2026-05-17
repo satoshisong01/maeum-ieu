@@ -78,13 +78,15 @@ model Conversation {
 }
 
 model Message {
-  id             String   @id @default(cuid())
-  conversationId String
-  role           String
-  content        String
-  isAnomaly      Boolean? @default(false)
-  analysisNote   String?
-  createdAt      DateTime @default(now())
+  id                String   @id @default(cuid())
+  conversationId    String
+  role              String
+  content           String
+  isAnomaly         Boolean? @default(false)
+  analysisNote      String?
+  emergencyLevel    Int?     // 0=정상, 1=관찰, 2=주의, 3=즉시. null=미평가/AI 발화
+  emergencyEvidence String?  // 매칭된 키워드/구문 (디버깅·보호자 알림용)
+  createdAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
