@@ -13,6 +13,20 @@ interface DailyTrend { session_date: string; avg_score: number; check_count: num
 interface Summary { anomalyCount: number; recentAnomaly: number; }
 interface CognitiveData { assessments: CognitiveAssessment[]; domainAverages: DomainAvg[]; dailyTrend: DailyTrend[]; }
 
+interface EmergencyRecord {
+  id: string;
+  content: string;
+  emergencyLevel: number;
+  emergencyEvidence: string | null;
+  createdAt: string;
+}
+interface EmergencyDailyRow { day: string; l1: number; l2: number; l3: number; }
+interface EmergencyData {
+  summary: { totalL3: number; totalL2: number; totalL1: number; last24hCount: number };
+  recent: EmergencyRecord[];
+  daily: EmergencyDailyRow[];
+}
+
 const DOMAIN_LABELS: Record<string, string> = {
   orientation_time: "시간 지남력", orientation_place: "장소 지남력",
   memory_immediate: "즉시 기억력", memory_delayed: "지연 기억력",
@@ -31,6 +45,7 @@ export default function DashboardPage() {
   const { status } = useSession();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [cognitive, setCognitive] = useState<CognitiveData | null>(null);
+  const [emergency, setEmergency] = useState<EmergencyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showExport, setShowExport] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<"week" | "month">("week");
@@ -50,6 +65,7 @@ export default function DashboardPage() {
         const data = await res.json();
         setSummary(data.summary ?? null);
         setCognitive(data.cognitive ?? null);
+        setEmergency(data.emergency ?? null);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -163,6 +179,84 @@ export default function DashboardPage() {
           )}
           <p className="mt-2 text-[10px] text-zinc-400">* 본 결과는 AI 기반 선별 검사이며 의료 진단이 아닙니다</p>
         </div>
+
+        {/* 응급 신호 요약 + 추세 */}
+        {emergency && (emergency.summary.totalL1 + emergency.summary.totalL2 + emergency.summary.totalL3) > 0 && (
+          <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-700">응급 신호</h2>
+              {emergency.summary.last24hCount > 0 && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                  최근 24시간 {emergency.summary.last24hCount}건
+                </span>
+              )}
+            </div>
+
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="rounded-lg bg-red-50 p-3 text-center">
+                <p className="text-[11px] text-red-600">L3 즉시</p>
+                <p className="text-lg font-bold text-red-700">{emergency.summary.totalL3}</p>
+              </div>
+              <div className="rounded-lg bg-orange-50 p-3 text-center">
+                <p className="text-[11px] text-orange-600">L2 주의</p>
+                <p className="text-lg font-bold text-orange-700">{emergency.summary.totalL2}</p>
+              </div>
+              <div className="rounded-lg bg-yellow-50 p-3 text-center">
+                <p className="text-[11px] text-yellow-600">L1 관찰</p>
+                <p className="text-lg font-bold text-yellow-700">{emergency.summary.totalL1}</p>
+              </div>
+            </div>
+
+            {emergency.daily.length > 0 && (
+              <div className="mb-4">
+                <p className="mb-2 text-xs text-zinc-500">최근 14일 응급 신호 일별 발생</p>
+                <div className="flex items-end gap-1">
+                  {emergency.daily.map((d) => {
+                    const total = d.l1 + d.l2 + d.l3;
+                    const max = Math.max(...emergency.daily.map((x) => x.l1 + x.l2 + x.l3), 1);
+                    const heightPct = (total / max) * 100;
+                    return (
+                      <div key={d.day} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.day}: L1=${d.l1} L2=${d.l2} L3=${d.l3}`}>
+                        <div className="w-full flex flex-col justify-end" style={{ height: 48 }}>
+                          {d.l3 > 0 && <div className="w-full bg-red-500" style={{ height: `${(d.l3 / total) * heightPct}%` }} />}
+                          {d.l2 > 0 && <div className="w-full bg-orange-400" style={{ height: `${(d.l2 / total) * heightPct}%` }} />}
+                          {d.l1 > 0 && <div className="w-full bg-yellow-300" style={{ height: `${(d.l1 / total) * heightPct}%` }} />}
+                        </div>
+                        <span className="text-[9px] text-zinc-400">{formatShortDate(d.day)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {emergency.recent.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs text-zinc-500">최근 응급 발화</p>
+                <div className="max-h-64 overflow-y-auto space-y-1.5">
+                  {emergency.recent.slice(0, 10).map((e) => {
+                    const lvlBg = e.emergencyLevel === 3 ? "bg-red-50 border-red-200" : e.emergencyLevel === 2 ? "bg-orange-50 border-orange-200" : "bg-yellow-50 border-yellow-200";
+                    const lvlText = e.emergencyLevel === 3 ? "text-red-700" : e.emergencyLevel === 2 ? "text-orange-700" : "text-yellow-700";
+                    const lvlLabel = e.emergencyLevel === 3 ? "L3" : e.emergencyLevel === 2 ? "L2" : "L1";
+                    const time = new Date(e.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                    return (
+                      <div key={e.id} className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 ${lvlBg}`}>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${lvlText} bg-white/60`}>{lvlLabel}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-zinc-700 truncate">{e.content}</p>
+                          <p className="text-[10px] text-zinc-400">
+                            {time}
+                            {e.emergencyEvidence && <> · {e.emergencyEvidence}</>}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 취약 영역 안내 */}
         {weakDomains.length > 0 && (
