@@ -21,6 +21,7 @@ interface EmergencyRow {
   content: string;
   emergencyLevel: number | null;
   emergencyEvidence: string | null;
+  speakerLabel: string | null;
   createdAt: Date;
 }
 interface EmergencyDaily { day: string; l1: number; l2: number; l3: number; }
@@ -76,7 +77,7 @@ export async function GET() {
       conversation: { userId },
       emergencyLevel: { gte: 1 },
     },
-    select: { id: true, content: true, emergencyLevel: true, emergencyEvidence: true, createdAt: true },
+    select: { id: true, content: true, emergencyLevel: true, emergencyEvidence: true, speakerLabel: true, createdAt: true },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

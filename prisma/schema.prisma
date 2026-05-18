@@ -89,6 +89,7 @@ model Message {
   emergencyLevel    Int?     // 0=정상, 1=관찰, 2=주의, 3=즉시. null=미평가/AI 발화
   emergencyEvidence String?  // 매칭된 키워드/구문 (디버깅·보호자 알림용)
   notifiedAt        DateTime? // 보호자 알림 발송 시각 (null=미발송)
+  speakerLabel      String?  // "primary" | "visitor" | "unknown" — null=미라벨
   createdAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

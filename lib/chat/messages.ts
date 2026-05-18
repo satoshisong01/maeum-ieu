@@ -33,17 +33,25 @@ export async function saveMessages(params: {
   assistantContent: string;
   emergencyLevel?: number;
   emergencyEvidence?: string;
+  speakerLabel?: string | null;
 }): Promise<{ userMsgId: string; assistantMsgId: string }> {
-  const { conversationId, userId, userContent, assistantContent, emergencyLevel, emergencyEvidence } = params;
+  const { conversationId, userId, userContent, assistantContent, emergencyLevel, emergencyEvidence, speakerLabel } = params;
   const userTime = getNowKst();
   // assistant 메시지는 1초 뒤로 설정 → createdAt ASC 정렬 시 항상 user → assistant 순서 보장
   const assistantTime = new Date(userTime.getTime() + 1000);
+
+  // Phase 1 휴리스틱: 응급/이상 신호가 있으면 보호자 검토용으로 null 유지,
+  // 그 외 일반 발화는 wake-word 사용 환경 가정 하에 "primary" 라벨.
+  const inferredLabel = speakerLabel !== undefined
+    ? speakerLabel
+    : (emergencyLevel && emergencyLevel >= 2) ? null : "primary";
 
   const userMsg = await prisma.message.create({
     data: {
       conversationId, role: "user", content: userContent, createdAt: userTime,
       emergencyLevel: emergencyLevel ?? null,
       emergencyEvidence: emergencyEvidence ?? null,
+      speakerLabel: inferredLabel,
     },
   });
   const assistantMsg = await prisma.message.create({
