@@ -21,6 +21,8 @@ model User {
   guardianName  String?   // 보호자 이름
   guardianPhone String?   // 보호자 연락처
   guardianRelation String? // 보호자 관계 (아들, 딸, 배우자 등)
+  guardianEmail String?   // 보호자 이메일 (응급 알림용)
+  guardianWebhookUrl String? // 보호자 Webhook URL (Discord/Slack/IFTTT/n8n 등)
   companionName     String?  @default("민지") // AI 동반자 이름
   companionRelation String?  @default("손녀") // AI 동반자 관계 (손녀/손자/딸/아들/며느리/친구 등)
   userHonorific     String?                   // 사용자 호칭 override (null이면 성별 자동 추론)
@@ -86,6 +88,7 @@ model Message {
   analysisNote      String?
   emergencyLevel    Int?     // 0=정상, 1=관찰, 2=주의, 3=즉시. null=미평가/AI 발화
   emergencyEvidence String?  // 매칭된 키워드/구문 (디버깅·보호자 알림용)
+  notifiedAt        DateTime? // 보호자 알림 발송 시각 (null=미발송)
   createdAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

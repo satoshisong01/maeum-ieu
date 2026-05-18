@@ -14,6 +14,7 @@ import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
+import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { prisma } from "@/lib/prisma";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
@@ -703,6 +704,16 @@ async function handleAudioMessage(params: {
       emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
       emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
     });
+    // L2 응급은 백그라운드 알림 (LLM은 이미 부드러운 권유 멘트 포함)
+    if (emergency.effectiveLevel === 2) {
+      notifyGuardian({
+        userId, userName: honorific, messageId: userMsgId, level: 2,
+        category: emergency.result.category, content: transcription,
+        aiReply: answerText, createdAt: new Date(),
+      }).then((r) => {
+        if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
+      }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+    }
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }
@@ -753,7 +764,7 @@ async function handleEmergencyL3(params: {
   const reply = buildEmergencyL3Reply(honorific, companionName, result.category);
 
   if (conversationId) {
-    await saveMessages({
+    const { userMsgId } = await saveMessages({
       conversationId,
       userId,
       userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
@@ -761,6 +772,20 @@ async function handleEmergencyL3(params: {
       emergencyLevel: 3,
       emergencyEvidence: `${result.category}:${result.evidence}`,
     });
+    // 보호자 알림 — 백그라운드로 발송 (응답 지연 방지)
+    notifyGuardian({
+      userId,
+      userName: honorific,
+      messageId: userMsgId,
+      level: 3,
+      category: result.category,
+      content: (transcription ?? userContent) || "",
+      aiReply: reply,
+      createdAt: new Date(),
+    }).then((r) => {
+      if (r.sent) console.log("[emergency-notify] L3 sent:", r.channels);
+      else console.log("[emergency-notify] L3 skipped:", r.reason);
+    }).catch((e) => console.error("[emergency-notify] L3 error:", e));
   }
   const payload: Record<string, unknown> = { text: reply, role: "assistant", emergency: { level: 3, category: result.category } };
   if (transcription !== undefined) payload.transcription = transcription;
@@ -865,6 +890,15 @@ async function handleTextMessage(params: {
       emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
       emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
     });
+    if (emergency.effectiveLevel === 2) {
+      notifyGuardian({
+        userId, userName: honorific, messageId: userMsgId, level: 2,
+        category: emergency.result.category, content: userContent,
+        aiReply: text, createdAt: new Date(),
+      }).then((r) => {
+        if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
+      }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+    }
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
   }

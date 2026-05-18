@@ -13,7 +13,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, companionName: true, companionRelation: true, userHonorific: true, createdAt: true },
+    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, guardianEmail: true, guardianWebhookUrl: true, companionName: true, companionRelation: true, userHonorific: true, createdAt: true },
   });
 
   if (!user) {
@@ -31,13 +31,15 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json();
-  const { name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, currentPassword, newPassword } = body as {
+  const { name, age, gender, guardianName, guardianPhone, guardianRelation, guardianEmail, guardianWebhookUrl, companionName, companionRelation, userHonorific, currentPassword, newPassword } = body as {
     name?: string;
     age?: number | null;
     gender?: string | null;
     guardianName?: string | null;
     guardianPhone?: string | null;
     guardianRelation?: string | null;
+    guardianEmail?: string | null;
+    guardianWebhookUrl?: string | null;
     companionName?: string | null;
     companionRelation?: string | null;
     userHonorific?: string | null;
@@ -88,6 +90,15 @@ export async function PATCH(req: Request) {
   if (guardianName !== undefined) updateData.guardianName = guardianName || null;
   if (guardianPhone !== undefined) updateData.guardianPhone = guardianPhone || null;
   if (guardianRelation !== undefined) updateData.guardianRelation = guardianRelation || null;
+  if (guardianEmail !== undefined) updateData.guardianEmail = guardianEmail || null;
+  if (guardianWebhookUrl !== undefined) {
+    const url = (guardianWebhookUrl ?? "").trim();
+    // 기본 URL 형식 검사 — http(s) 만 허용
+    if (url && !/^https?:\/\//i.test(url)) {
+      return NextResponse.json({ error: "Webhook URL은 http:// 또는 https:// 로 시작해야 합니다." }, { status: 400 });
+    }
+    updateData.guardianWebhookUrl = url || null;
+  }
   if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
   if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
   if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
