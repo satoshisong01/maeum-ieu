@@ -581,7 +581,9 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
 /** 3) 날짜/시간 질문 직접 응답 */
 async function handleDateTimeQuestion(userMessage: string, honorific: string, conversationId: string | undefined, userId: string, clientTimeIso?: string) {
   const timeStr = getCurrentKstDateTimeString(clientTimeIso);
-  const replyText = `${honorific}님, 지금은 한국 시각으로 ${timeStr}이에요.`;
+  // honorific 자체가 "할아버지"/"할머니"/"어머니"처럼 이미 친족 호칭이므로
+  // "님" 접미 없이 그대로 사용. ("할아버지님" 같은 어색한 호명 방지)
+  const replyText = `${honorific}, 지금은 한국 시각으로 ${timeStr}이에요.`;
   if (conversationId) {
     await saveMessages({ conversationId, userId, userContent: userMessage, assistantContent: replyText });
   }
