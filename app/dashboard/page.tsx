@@ -18,6 +18,7 @@ interface EmergencyRecord {
   content: string;
   emergencyLevel: number;
   emergencyEvidence: string | null;
+  speakerLabel: string | null;
   createdAt: string;
 }
 interface EmergencyDailyRow { day: string; l1: number; l2: number; l3: number; }
@@ -239,16 +240,39 @@ export default function DashboardPage() {
                     const lvlText = e.emergencyLevel === 3 ? "text-red-700" : e.emergencyLevel === 2 ? "text-orange-700" : "text-yellow-700";
                     const lvlLabel = e.emergencyLevel === 3 ? "L3" : e.emergencyLevel === 2 ? "L2" : "L1";
                     const time = new Date(e.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                    const isVisitor = e.speakerLabel === "visitor";
+                    const toggleVisitor = async () => {
+                      const next = isVisitor ? null : "visitor";
+                      const r = await fetch("/api/messages/speaker", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ messageId: e.id, label: next }),
+                      });
+                      if (r.ok && emergency) {
+                        setEmergency({
+                          ...emergency,
+                          recent: emergency.recent.map((m) => m.id === e.id ? { ...m, speakerLabel: next } : m),
+                        });
+                      }
+                    };
                     return (
-                      <div key={e.id} className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 ${lvlBg}`}>
+                      <div key={e.id} className={`flex items-start gap-2 rounded-md border px-2.5 py-1.5 ${lvlBg} ${isVisitor ? "opacity-50" : ""}`}>
                         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${lvlText} bg-white/60`}>{lvlLabel}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-zinc-700 truncate">{e.content}</p>
+                          <p className="text-xs text-zinc-700 truncate">{e.content}{isVisitor && <span className="ml-1 text-zinc-400">(방문객 발화)</span>}</p>
                           <p className="text-[10px] text-zinc-400">
                             {time}
                             {e.emergencyEvidence && <> · {e.emergencyEvidence}</>}
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={toggleVisitor}
+                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${isVisitor ? "bg-zinc-200 text-zinc-600" : "bg-white/80 text-zinc-500 hover:bg-zinc-100"}`}
+                          title={isVisitor ? "라벨 해제" : "방문객 발화로 표시 (집계 제외)"}
+                        >
+                          {isVisitor ? "복원" : "방문객"}
+                        </button>
                       </div>
                     );
                   })}
