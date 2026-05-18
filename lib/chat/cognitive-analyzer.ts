@@ -6,6 +6,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
+import { normalizeDialect } from "./dialect-normalize";
 
 const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문가입니다.
 아래 대화에서 사용자(고령자)의 발화만 분석하여 인지 이상 여부를 JSON으로 반환하세요.
@@ -325,10 +326,22 @@ export async function analyzeCognitive(params: {
     const historyLines = params.historyText.split("\n");
     const recentHistory = historyLines.slice(-10).join("\n");
 
-    const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${params.userMessage}\nAI: ${params.assistantResponse}`);
+    // 사투리 정규화 — 인지 분석은 표준어 기준으로 빈도·문법 평가 → false positive 감소
+    //   UI 응답에는 원문이 그대로 들어가므로 사용자 정체성/말투는 보존됨.
+    const normalized = normalizeDialect(params.userMessage);
+    const userForAnalysis = normalized.changes.length > 0 ? normalized.normalized : params.userMessage;
+    if (normalized.changes.length > 0) {
+      console.log("[dialect-normalize]", JSON.stringify({
+        original: params.userMessage,
+        normalized: normalized.normalized,
+        regions: normalized.changes.map((c) => c.region),
+      }));
+    }
+
+    const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${userForAnalysis}\nAI: ${params.assistantResponse}`);
     const raw = parseResult(res.response.text().trim());
-    const memValidated = validateMemoryImmediate(raw, params.userMessage, recentHistory);
-    const calcReclassified = reclassifyCalculation(memValidated, params.userMessage, recentHistory);
+    const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
+    const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
     return ensureCognitiveDomainLogged(calcReclassified, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
