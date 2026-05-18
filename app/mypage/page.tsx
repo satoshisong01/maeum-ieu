@@ -15,6 +15,8 @@ interface Profile {
   guardianName: string | null;
   guardianPhone: string | null;
   guardianRelation: string | null;
+  guardianEmail: string | null;
+  guardianWebhookUrl: string | null;
   companionName: string | null;
   companionRelation: string | null;
   userHonorific: string | null;
@@ -32,6 +34,8 @@ export default function MyPage() {
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [guardianRelation, setGuardianRelation] = useState("");
+  const [guardianEmail, setGuardianEmail] = useState("");
+  const [guardianWebhookUrl, setGuardianWebhookUrl] = useState("");
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
@@ -58,6 +62,8 @@ export default function MyPage() {
           setGuardianName(data.guardianName ?? "");
           setGuardianPhone(data.guardianPhone ?? "");
           setGuardianRelation(data.guardianRelation ?? "");
+          setGuardianEmail(data.guardianEmail ?? "");
+          setGuardianWebhookUrl(data.guardianWebhookUrl ?? "");
           setCompanionName(data.companionName ?? "");
           setCompanionRelation(data.companionRelation ?? "");
           setUserHonorific(data.userHonorific ?? "");
@@ -85,6 +91,8 @@ export default function MyPage() {
         guardianName: guardianName || null,
         guardianPhone: guardianPhone || null,
         guardianRelation: guardianRelation || null,
+        guardianEmail: guardianEmail || null,
+        guardianWebhookUrl: guardianWebhookUrl || null,
         companionName: companionName || null,
         companionRelation: companionRelation || null,
         userHonorific: userHonorific || null,
@@ -226,6 +234,25 @@ export default function MyPage() {
               <option value="grandchild">손자/손녀</option>
               <option value="other">기타</option>
             </select>
+            <input
+              type="email"
+              placeholder="보호자 이메일 (응급 알림 수신)"
+              value={guardianEmail}
+              onChange={(e) => setGuardianEmail(e.target.value)}
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+            <div>
+              <input
+                type="url"
+                placeholder="Webhook URL (Discord/Slack/IFTTT/Zapier 등)"
+                value={guardianWebhookUrl}
+                onChange={(e) => setGuardianWebhookUrl(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <p className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                응급 상황(L2/L3) 감지 시 이 URL로 POST 알림이 전송됩니다. 1시간 내 같은 카테고리는 중복 발송 차단됩니다.
+              </p>
+            </div>
 
             <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 
