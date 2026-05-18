@@ -13,6 +13,7 @@ import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
+import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { prisma } from "@/lib/prisma";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
@@ -650,6 +651,19 @@ async function handleAudioMessage(params: {
       text: clarification, transcription, role: "assistant",
       sttFailed: true, sttReason: sttConf.reason,
     });
+  }
+
+  // 1.48단계: 맥락 기반 STT 보정 — 직전 AI 발화 도메인에 맞춰 어휘 교정
+  //   "미빈밥" → "비빔밥", "혈양약" → "혈압약" 같은 오인식을 인지 분석기 도달 전에 차단.
+  const lastAi = extractLastAiMessage(historyText);
+  const correction = correctTranscriptionByContext(transcription, lastAi);
+  if (correction.changes.length > 0) {
+    console.log("[stt-context-correction]", JSON.stringify({
+      original: transcription,
+      corrected: correction.corrected,
+      changes: correction.changes,
+    }));
+    transcription = correction.corrected;
   }
 
   // 1.5단계: 부적절 발언 감지 시 LLM 우회 + 단계적 거절
