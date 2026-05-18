@@ -378,6 +378,62 @@ export default function ChatPage() {
     };
   }, [status, conversationId, getContext]);
 
+  // ─── 복약/일과 알림 폴링 ────────────────────────────────────────────────
+  //   1분마다 /api/medications/check 호출 → due 발견 시 /trigger 로 멘트 받아 AI 메시지로 표시·재생.
+  //   AI가 말하는 동안(turnLockRef) 또는 loading 중이면 다음 폴링 사이클로 미룬다.
+  useEffect(() => {
+    if (status !== "authenticated" || !conversationId) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const tick = async () => {
+      if (cancelled || inFlight) return;
+      // 사용자 발화 중이거나 AI 응답 중이면 알림을 끼우지 않음 (대화 중복 방지)
+      if (turnLockRef.current || loading) return;
+      inFlight = true;
+      try {
+        const r = await fetch("/api/medications/check");
+        if (!r.ok) return;
+        const data = await r.json() as { due?: { scheduleId: string; label: string; slotTime: string }[] };
+        const due = data.due ?? [];
+        if (due.length === 0) return;
+
+        // 같은 폴링 사이클에 여러 due면 첫 1건만 처리 (다음 분에 나머지 처리)
+        const first = due[0];
+        const tr = await fetch("/api/medications/trigger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleId: first.scheduleId, conversationId }),
+        });
+        if (!tr.ok) return;
+        const triggerResp = await tr.json() as { text?: string; skipped?: boolean };
+        if (triggerResp.skipped || !triggerResp.text) return;
+
+        const reminderId = createId();
+        setMessages((prev) => [
+          ...prev,
+          { id: reminderId, role: "assistant", content: triggerResp.text!, createdAt: new Date().toISOString() },
+        ]);
+        // 음성 재생 (TTS 실패해도 텍스트는 이미 노출)
+        speak(triggerResp.text!).catch(() => {});
+      } catch (e) {
+        console.warn("[medication-poll]", e);
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    // 초기 1회는 5초 뒤 (서버/세션 안정화), 이후 60초 간격
+    const initial = setTimeout(tick, 5000);
+    const interval = setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
+  }, [status, conversationId, loading, speak]);
+
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim() || loading || !conversationId) return;

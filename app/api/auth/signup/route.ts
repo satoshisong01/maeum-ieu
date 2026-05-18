@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { normalizeTimes } from "@/lib/chat/medication";
+
+interface MedicationDraftInput { label?: string; times?: unknown; enabled?: boolean }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific } = body as {
+    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, medicationDrafts } = body as {
       email?: string;
       password?: string;
       passwordConfirm?: string;
@@ -18,6 +21,7 @@ export async function POST(req: Request) {
       companionName?: string;
       companionRelation?: string;
       userHonorific?: string;
+      medicationDrafts?: MedicationDraftInput[];
     };
 
     if (!email || !password) {
@@ -58,6 +62,24 @@ export async function POST(req: Request) {
         userHonorific: userHonorific?.trim() || null,
       },
     });
+
+    // 복약 스케줄 초기 등록 — 회원가입 시 입력한 경우만
+    if (Array.isArray(medicationDrafts) && medicationDrafts.length > 0) {
+      const valid = medicationDrafts
+        .map((d) => ({
+          label: typeof d?.label === "string" ? d.label.trim().slice(0, 40) : "",
+          times: normalizeTimes(d?.times),
+          enabled: d?.enabled !== false,
+        }))
+        .filter((d) => d.label && d.times.length > 0);
+      if (valid.length > 0) {
+        await prisma.medicationSchedule.createMany({
+          data: valid.map((d) => ({
+            userId: user.id, label: d.label, times: d.times, enabled: d.enabled,
+          })),
+        });
+      }
+    }
 
     return NextResponse.json({
       id: user.id,
