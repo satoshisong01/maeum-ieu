@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import MedicationEditor from "../components/MedicationEditor";
 
 interface Profile {
   id: string;
@@ -302,6 +303,16 @@ export default function MyPage() {
               <option value="친구">친구</option>
             </select>
             <p className="text-[11px] text-zinc-400 dark:text-zinc-500">* 변경 후 첫 1~2턴은 이전 호칭이 유지될 수 있어요.</p>
+
+            <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
+
+            {/* 복약/일과 알림 */}
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">복약/일과 알림</p>
+            <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+              지정한 시간이 되면 채팅에 접속해 있을 때 AI가 먼저 말을 걸어 알려드려요.
+              놓치셔도 정시 후 30분까지는 알림이 유지됩니다.
+            </p>
+            <MedicationEditor persist={true} />
 
             <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 

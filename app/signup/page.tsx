@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import MedicationEditor from "../components/MedicationEditor";
+
+interface MedicationDraft { label: string; times: string[]; enabled: boolean }
 
 export default function SignupPage() {
   const router = useRouter();
@@ -19,6 +22,7 @@ export default function SignupPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
+  const [medicationDrafts, setMedicationDrafts] = useState<MedicationDraft[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -47,6 +51,7 @@ export default function SignupPage() {
           companionName: companionName || undefined,
           companionRelation: companionRelation || undefined,
           userHonorific: userHonorific || undefined,
+          medicationDrafts: medicationDrafts.length > 0 ? medicationDrafts : undefined,
         }),
       });
       const data = await res.json();
@@ -195,6 +200,20 @@ export default function SignupPage() {
             <option value="조카">조카</option>
             <option value="친구">친구</option>
           </select>
+
+          {/* 복약/일과 알림 (선택) */}
+          <details className="rounded-xl border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              복약/일과 알림 미리 등록 (선택)
+            </summary>
+            <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+              지정한 시간이 되면 AI가 먼저 말을 걸어 약 드실 시간이라고 알려드려요. 나중에 마이페이지에서도 추가/수정 가능합니다.
+            </p>
+            <div className="mt-3">
+              <MedicationEditor persist={false} onChange={setMedicationDrafts} />
+            </div>
+          </details>
+
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"
