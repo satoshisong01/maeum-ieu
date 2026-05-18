@@ -12,6 +12,7 @@ import { analyzeCognitive } from "@/lib/chat/cognitive-analyzer";
 import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
+import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { prisma } from "@/lib/prisma";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
@@ -619,12 +620,35 @@ async function handleAudioMessage(params: {
     console.warn("[STT] transcription failed:", e);
   }
 
-  // 1.4단계: 응급 발화 감지 — moderation보다 먼저
+  // 1.4단계: 응급 발화 감지 — moderation·STT 게이트보다 먼저 (안전 우선)
   const emergency = await evaluateEmergency({ userContent: transcription, conversationId });
   if (emergency.effectiveLevel === 3) {
     return handleEmergencyL3({
       result: emergency.result, userContent: transcription,
       conversationId, userId, honorific, companionName, transcription,
+    });
+  }
+
+  // 1.45단계: STT 신뢰도 게이트 — 인식 결과가 잡음/짧음/오인식이면 LLM 우회하고 재질문
+  //   응급/모더레이션 매칭이 없는 경우에만 실행. 신뢰도 통과한 발화만 인지 분석에 들어가도록.
+  const sttConf = evaluateSttConfidence(transcription);
+  if (!sttConf.pass) {
+    console.log("[stt-confidence] failed:", sttConf.reason, "tx:", JSON.stringify(transcription).slice(0, 80));
+    const clarification = buildClarificationReply(honorific, companionName);
+    if (conversationId) {
+      // 사용자 발화는 잡음/오인식이므로 따로 마커를 붙여 저장 (디버깅용)
+      const userTag = transcription && transcription.trim().length > 0
+        ? `(STT 저신뢰: ${transcription.trim().slice(0, 60)})`
+        : "(음성 메시지 — 인식 실패)";
+      await saveMessages({
+        conversationId, userId,
+        userContent: userTag,
+        assistantContent: clarification,
+      });
+    }
+    return NextResponse.json({
+      text: clarification, transcription, role: "assistant",
+      sttFailed: true, sttReason: sttConf.reason,
     });
   }
 
