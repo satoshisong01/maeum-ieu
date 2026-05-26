@@ -51,6 +51,7 @@ interface CheckInput {
   recentUserText: string;   // 최근 N턴 user 발화 join
   memories: string;          // RAG retrieve 결과
   honorific: string;         // 사용자 호칭 (할아버지 등)
+  currentUserText?: string;  // 직전 사용자 발화 — 공감/일상 패턴이면 grounding fallback 적용 제외
 }
 
 interface CheckResult {
@@ -222,7 +223,14 @@ export function factCheckResponse(input: CheckInput): CheckResult {
 
   // grounding score 임계값 미달 시 safe fallback — 매우 공격적이라 임계값 낮춤.
   // removeUngroundedClaims가 이미 문장 단위 정교 검증하므로, score는 logging 위주 + 극단치만 fallback.
-  if (result.groundingScore < 0.2 && result.cleaned.length > 80) {
+  // 공감·일상 발화(짧은 감정 호소)는 응답에 사실명사 비중이 낮을 수밖에 없어 fallback 적용 제외.
+  // Why: 2026-05-26 cycle에서 "재미가 없어"/"기분이 우울해" 같은 공감 발화에 회피 답변 회귀.
+  const currentUser = input.currentUserText || "";
+  const isEmotionalOrCasual = currentUser.length <= 25 && (
+    /외로|우울|쓸쓸|허전|슬프|속상|짜증|답답|화나|기분|마음|재미|취미|심심|적적|울적|무료|기운|힘들|피곤|지친|괜찮|좋|싫/.test(currentUser) ||
+    /아파|시려|쑤셔|뻐근|결리|어지|두통|불편|찌릿/.test(currentUser)
+  );
+  if (result.groundingScore < 0.2 && result.cleaned.length > 80 && !isEmotionalOrCasual) {
     console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore);
     result.cleaned = `${input.honorific}, 민지가 정확히 기억이 안 나는 부분이 있어서요. 다시 한 번 알려주시겠어요?`;
   } else if (result.groundingScore < 0.5) {
