@@ -31,7 +31,8 @@ interface MsgRow {
 // ── 이상 발언 휴리스틱 (실제 이상 발화가 포함하는 시그니처) ───────────────
 const ANOMALY_SIGNATURES: { name: string; pattern: RegExp }[] = [
   { name: "비현실_생물", pattern: /(UFO|외계인|공룡|천사|도깨비|유령|마당에.*호랑이|화단에.*호랑이|화단에.*사자|거실에.*사자|집에서.*호랑이)/ },
-  { name: "사망인물", pattern: /(박정희|이승만|전두환|김구|세종대왕).*(만나|먹|저녁|차 한잔|각하.*연설|동기|인사|봤|말씀)/ },
+  // 한국 역사 인물 + 현대 사망 정치인 + 외국 위인 망라. 동사도 자연 대화에 자주 나오는 형태로 확장.
+  { name: "사망인물", pattern: /(박정희|이승만|전두환|김구|김대중|노무현|이순신(?:\s*장군)?|세종(?:대왕)?|이방원|영조|정조|숙종|태조|광개토(?:대왕)?|이성계|마더\s*테레사|히틀러|마오쩌둥|레닌|스탈린|김일성|김정일).*(만나|만났|먹었|먹었어|저녁|점심|아침|차\s*한잔|연설|봤|보았|말씀|함께|같이|이야기|대화|나눴|나누|통일|통화|찾아왔|왔어|와서|왔|들렀|놀러|인사|갔어|가서|갔|동네|우리\s*집|우리집|댁에)|(?:만났|먹었|봤|함께|같이|왔어|와서|찾아왔|들렀).*(박정희|이승만|전두환|김구|김대중|노무현|이순신|세종|이방원|영조|정조|광개토|마더\s*테레사|히틀러|마오쩌둥|김일성)/ },
   { name: "과거연도_오늘", pattern: /오늘.*(19[5-9]\d|200\d|201\d)년|오늘이? ?(19[5-9]\d|20[01]\d)년|(19[5-9]\d|20[01]\d)년.*(광복절|개막|생중계|특집)/ },
   { name: "미래연도_오늘", pattern: /오늘이? ?(203\d|204\d|205\d)년|금년이? ?(203\d|204\d|205\d)년/ },
   { name: "원거리_장소", pattern: /(하와이|미국 LA|LA에 있|뉴욕|파리|에펠탑|제주도|서귀포|부산 해운대|해운대 바다|설악산.*와있|설악산에 와|도쿄|일본 도쿄|오사카)/ },
@@ -44,13 +45,24 @@ const ANOMALY_SIGNATURES: { name: string; pattern: RegExp }[] = [
 ];
 
 // 부정/정정 발언은 이상 아님 (AI 응답 반박 / 본인 정정)
+// "농담이야/꿈이었나/장난"도 자기 정정으로 간주.
 const NEGATION_PATTERNS: RegExp[] = [
-  /(안\s*갔|안\s*했|안\s*먹|없었|아니야|아니고|아니지|한\s*적\s*없|그런\s*말\s*한\s*적|무슨|옛날이지|헷갈렸네|내가\s*잠깐)/,
+  /(안\s*갔|안\s*했|안\s*먹|없었|아니야|아니고|아니지|한\s*적\s*없|그런\s*말\s*한\s*적|무슨|옛날이지|헷갈렸네|내가\s*잠깐|농담이(?:야|에)|장난이(?:야|에)|꿈에서|꿈이었|꿈인가|상상)/,
 ];
 
 function detectAnomalySignatures(text: string): string[] {
-  if (NEGATION_PATTERNS.some((p) => p.test(text))) return [];
-  return ANOMALY_SIGNATURES.filter((s) => s.pattern.test(text)).map((s) => s.name);
+  // 발화를 절(clause) 단위로 쪼개 각 절별로 검사.
+  // 한 발화에 "이순신 농담이야 + 김대중 만났어"처럼 부정·이상이 혼재하는 케이스 처리.
+  // 부정어가 있는 절은 정상으로 보지만, 다른 절에 별도 시그니처가 있으면 이상으로 판정.
+  const segments = text.split(/[.!?]+\s*|\s+그것보다\s+|\s+그건\s+|\s+근데\s+|\s+그리고\s+|\s+그러고\s+/).filter((s) => s.trim().length > 0);
+  const found = new Set<string>();
+  for (const seg of segments) {
+    if (NEGATION_PATTERNS.some((p) => p.test(seg))) continue;
+    for (const sig of ANOMALY_SIGNATURES) {
+      if (sig.pattern.test(seg)) found.add(sig.name);
+    }
+  }
+  return Array.from(found);
 }
 
 // ── 대화 품질 탐지기 ──────────────────────────────────────────────────────
@@ -96,12 +108,23 @@ function detectHallucinationName(
   recentUserTexts: string[],
   rag: string
 ): string[] {
-  // AI 응답에서 구체 명사/속성이 등장했는데, 최근 user 발화·rag에 없으면 할루시
-  const suspects = ai.match(/(하와이|LA|뉴욕|파리|에펠탑|제주도|부산|서귀포|해운대|병원|책|드라마|영화|카페|등산|낚시|공룡|UFO|물리치료|허리|아내|아드님|며느님|전화)/g) || [];
+  // AI 응답에서 구체 명사/속성이 등장했는데, 최근 user 발화·rag에 없으면 할루시.
+  // 호칭(아드님·며느님·따님·어머님·아버님)은 한국어 자연 화법의 가족 호칭일 뿐 정보 노출이 아님 → 검사 대상에서 제외.
+  // 진짜 할루시는 구체 장소·사물·사건·신체 부위·관계 등 사실 정보가 근거 없이 등장하는 경우.
+  const suspects = ai.match(/(하와이|LA|뉴욕|파리|에펠탑|제주도|부산|서귀포|해운대|병원|책|드라마|영화|카페|등산|낚시|공룡|UFO|물리치료|허리|아내|전화)/g) || [];
+  // 의미 동의어: AI가 "아내" 했을 때 사용자가 "안사람/처/와이프/마누라/집사람" 으로 말했다면 동일 대상.
+  const SYNONYMS: Record<string, string[]> = {
+    "아내": ["안사람", "와이프", "마누라", "집사람", "여편네", "처"],
+    "남편": ["바깥양반", "주인양반", "남편"],
+  };
   const haystack = (recentUserTexts.join(" ") + " " + rag);
   const hits: string[] = [];
   for (const s of suspects) {
-    if (!haystack.includes(s)) hits.push(s);
+    if (haystack.includes(s)) continue;
+    // 동의어 매칭
+    const syns = SYNONYMS[s];
+    if (syns && syns.some((alt) => haystack.includes(alt))) continue;
+    hits.push(s);
   }
   return Array.from(new Set(hits));
 }

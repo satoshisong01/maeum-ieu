@@ -9,7 +9,12 @@
     "lint": "eslint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "audit:user-scope": "npx tsx scripts/audit-user-scope.ts",
+    "audit:prompt-leak": "npx tsx scripts/check-prompt-leak.ts",
+    "audit:prompt-leak:ci": "npx tsx scripts/check-prompt-leak.ts --regex-only",
+    "ci:safety": "npm run audit:prompt-leak:ci && npx tsc --noEmit",
+    "ci:safety:all": "npm run audit:user-scope; npm run audit:prompt-leak:ci && npx tsc --noEmit"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

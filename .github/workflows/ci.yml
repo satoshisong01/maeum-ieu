@@ -1,0 +1,59 @@
+# 마음이음 CI — 안전성 자동 검증
+#
+# 트리거:
+#   - push: main 브랜치 직접 push 시
+#   - pull_request: 모든 PR에 대해 자동 실행
+#
+# 검사 항목 (모두 fail 시 머지/배포 막힘):
+#   1. TypeScript 컴파일 (타입 안전성)
+#   2. User-scope audit (모든 user-scoped 쿼리에 user_id 필터 있는지)
+#   3. Prompt-leak detector (regex-only 모드) — DB 접근 불필요. 한국어 이름이
+#      "큰아들 X" 같은 패턴으로 prompt 파일에 박혔는지 검출
+#
+# 보안: DB 접근 필요한 full prompt-leak 검사는 별도 schedule workflow에서 실행 (cron).
+
+name: CI Safety Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  safety-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript compile check
+        run: npx tsc --noEmit
+        continue-on-error: false
+
+      - name: User-scope audit (DB queries have user_id filter)
+        run: npx tsx scripts/audit-user-scope.ts
+        continue-on-error: true  # false positive 많아 warning 모드. 향후 strict 전환.
+
+      - name: Prompt-leak detector (regex-only)
+        run: npx tsx scripts/check-prompt-leak.ts --regex-only
+        continue-on-error: false  # 사용자 이름이 prompt에 박히면 즉시 fail
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## CI Safety Checks Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- TypeScript compile: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- User-scope audit: warning-only" >> $GITHUB_STEP_SUMMARY
+          echo "- Prompt-leak (regex): strict" >> $GITHUB_STEP_SUMMARY

@@ -9,6 +9,7 @@
  */
 
 import type { MedicationSchedule } from "@/generated/prisma/client/client";
+import { nameSubj } from "./korean-particle";
 
 export const TOLERANCE_MS = 30 * 60 * 1000; // 30분
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -85,8 +86,8 @@ export function buildMedicationReminder(
   companionName: string,
 ): string {
   const variants = [
-    `${honorific}, ${slotTime} ${label} 드실 시간이에요! ${companionName}가 잊으실까 봐 알려드려요. 드시고 나서 ${companionName}한테 말씀해주세요~`,
-    `${honorific}! ${label} 챙겨 드실 시간이에요. ${companionName}가 옆에서 같이 챙겨드릴게요. 한 알 드시고 나면 알려주세요!`,
+    `${honorific}, ${slotTime} ${label} 드실 시간이에요! ${nameSubj(companionName)} 잊으실까 봐 알려드려요. 드시고 나서 ${companionName}한테 말씀해주세요~`,
+    `${honorific}! ${label} 챙겨 드실 시간이에요. ${nameSubj(companionName)} 옆에서 같이 챙겨드릴게요. 한 알 드시고 나면 알려주세요!`,
     `${honorific}, 시간 됐어요! ${label} 잊지 마시고 꼭 드세요. 다 드신 다음에 ${companionName}한테 알려주시면 좋아요.`,
   ];
   // 결정적이지만 슬롯 시각에 따라 살짝 다른 멘트

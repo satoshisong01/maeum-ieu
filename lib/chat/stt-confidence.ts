@@ -92,15 +92,17 @@ export function evaluateSttConfidence(
  * 재질문 멘트 — STT 신뢰도 통과 못 했을 때 LLM 우회로 즉시 반환.
  * 자연스러운 손녀/손주 톤으로, 노인이 부담 없이 다시 말하도록.
  */
+import { nameSubj } from "./korean-particle";
+
 export function buildClarificationReply(
   honorific: string,
   companionName: string,
   attempt: number = 1,
 ): string {
   const variants = [
-    `${honorific}, ${companionName}가 잘 못 들었어요. 한 번만 더 천천히 말씀해주실래요?`,
+    `${honorific}, ${nameSubj(companionName)} 잘 못 들었어요. 한 번만 더 천천히 말씀해주실래요?`,
     `어? ${companionName} 귀가 잠깐 안 들렸나 봐요. ${honorific}, 한 번만 더 얘기해주실 수 있으세요?`,
-    `${honorific}, 죄송한데 ${companionName}가 잘 못 알아들었어요. 한 번만 더 또렷하게 부탁드릴게요!`,
+    `${honorific}, 죄송한데 ${nameSubj(companionName)} 잘 못 알아들었어요. 한 번만 더 또렷하게 부탁드릴게요!`,
   ];
   return variants[Math.min(Math.max(attempt - 1, 0), variants.length - 1)];
 }

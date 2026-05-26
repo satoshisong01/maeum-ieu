@@ -28,13 +28,18 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - 현재 위치와 다른 장소에 있다고 말함 → score 2
    - 환경 정보의 사용자 위치를 기준으로 판단하세요
    - 예: 동탄에 있는데 "나 지금 뉴욕에 있어", "여기 부산이잖아"
+   - ⚠️ **회상 신호가 같은 발화에 동반되면 보수적으로 판단**: "옛날에", "예전에", "결혼하고", "젊었을 때", "쭉 살았어", "태어났", "어릴 때" 같은 과거 회상 표현이 같은 메시지 안에 함께 있으면 score를 한 단계 낮추세요 (2→1, 1→체크 자체 제외). 사용자가 다음 턴에 자기 정정할 가능성이 있어 1턴만으로 score=2 단정은 오탐 위험.
+   - 예: "부산에 살지. 결혼하고 부산으로 와서 쭉 살았어" → "결혼하고"+"쭉 살았어" 회상 신호 동반 → score 1 (또는 신중 보류)
+   - 예: "지금 뉴욕에 있어" 단독 → score 2 (회상 신호 없음)
 
 3. 판단력 (judgment):
    - 과거에 끝난 사건을 현재 일어나는 것처럼 말함 → score 2
-   - 이미 사망한 인물을 만나겠다고 함 → score 2
+   - 이미 사망한 인물을 만나겠다/만났다/같이 했다고 함 (어떤 시제든) → score 2
    - 비현실적 경험 (외계인, 공룡 등) → score 2
    - 상황에 맞지 않는 행동 계획 (폭우에 반팔, 새벽 3시에 시장) → score 2
    - 예: "911테러가 방금 일어났어", "박정희 각하를 만나뵙기로 했어", "새마을운동 하러 가야지"
+   - 예(과거형): "어제 박정희 대통령이 우리집에 왔어", "지난주에 김구 선생이랑 차 한잔 했어" → 사망 인물과의 최근 일상 접촉 묘사도 즉시 score 2
+   - ⚠️ 사용자가 곧바로 "꿈에서 본 거였나" 처럼 자기 정정해도, 직전 발화 자체는 isAnomaly 처리하세요. 정정은 후속 turn의 judgment score=0 evidence가 됩니다.
 
 4. 즉시 기억력 (memory_immediate): ⛔ **매우 보수적으로 판단 — 기본값은 절대 체크 금지**
    - 이 영역을 이상(score 1 이상)으로 체크하려면 **세 조건 모두** 만족해야 함:
@@ -53,6 +58,15 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - 가족 이름, 과거 경험 기억 못함 → score 2
    - AI가 "아까 외워주신 단어 세 개"(나무/자동차/모자 등 MMSE-K 3단어) 회상 요청 → 사용자가 0~1개만 회상 → score 2, 2개 → score 1
    - AI가 MoCA-K 5단어(얼굴/비단/교회/카네이션/빨강) 회상 요청 → 사용자가 0~1개 회상 → score 2, 2~3개 → score 1
+   - ⛔ **사용자가 회상 거부·화제 전환 시 점수 무판정**:
+     · 예: AI "아까 외운 단어 기억나세요?" → 사용자 "단어 외운 건 됐고 무릎이 더 문제야" → 이건 **회상 거부/화제 전환**이지 회상 실패가 아닙니다. memory_delayed 점수 무판정 (cognitiveCheck 미생성).
+     · 예: AI 단어 회상 요청 → 사용자 "그건 그렇고 점심 뭐 먹지" → 화제 전환, 점수 무판정.
+     · 사용자가 명시적으로 응답을 회피하면 인지 이상이 아닌 의사 결정으로 해석. 인지 평가는 사용자가 실제로 답을 시도한 경우에만.
+   - ⛔ **가족 관계·순서 판단 시 절대 주의**:
+     · 사용자가 과거 발화에서 "큰아들=A, 둘째=B"로 명시했다면 그 관계는 **사용자가 명시적으로 정정하지 않는 한 변경되지 않은 것**으로 간주하세요.
+     · 직전 발화에 "재미는 그 옆에서 형 놀린다고"가 있고 다음 발화에 "큰아들이 재미야"가 나와도, 이건 모순이 아닙니다 — "형 놀린다"의 "형"은 본인(재미)이 아니라 다른 자녀(영민)를 지칭할 수 있고, 사용자는 일관되게 "큰아들=재미"라고 말하는 중입니다.
+     · 가족 순서 혼동(memory_delayed score=2)으로 판정하려면 **사용자가 명시적으로 두 다른 발화에서 모순된 관계를 진술해야** 합니다 (예: 어떤 발화 "큰아들 영민", 다른 발화 "큰아들 재미").
+     · 그렇지 않으면 score=0(정상). RAG/맥락에 못 잡힌 자녀 이름이라 해서 ‘가족 이름 못 기억’으로 판단 금지 — 이는 RAG의 한계이지 사용자의 인지 문제가 아닙니다.
 
 6. 언어 유창성 (language):
    - "그거", "저기", "뭐시기" 과다 사용, 단어 찾기 어려움 → score 2
@@ -271,6 +285,47 @@ function extractLastAiMessage(historyText: string): string {
   return "";
 }
 
+/**
+ * 사망인물·비현실 명시 발화는 LLM이 누락할 수 있어 휴리스틱 안전망으로 강제 marking.
+ * 동작: 사용자 발화에 (사망인물 ∪ 비현실 생물) + (최근 시점 동사) 패턴이 같이 있으면
+ *      judgment score=2를 강제 주입하고 isAnomaly=true 설정.
+ */
+const DECEASED_FIGURES = /(박정희|이승만|전두환|김구|김대중|노무현|이순신|세종대왕|광개토|영조|정조|숙종|태조|마더\s*테레사|히틀러|마오쩌둥|레닌|스탈린)/;
+const SURREAL_BEINGS = /(외계인|공룡|UFO|도깨비|유령|화단에\s*호랑이|마당에\s*호랑이|거실에\s*사자|집에서\s*호랑이)/;
+const RECENT_TIME_CONTACT = /(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주|아침|저녁|점심).*(만났|만나|왔|와서|봤|보았|먹었|마셨|했|같이|차\s*한잔|대화|이야기)|(만났|왔|봤|먹었|같이|차\s*한잔).*(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주)/;
+
+function injectJudgmentSafetyNet(
+  result: CognitiveAnalysisResult,
+  userMessage: string,
+): CognitiveAnalysisResult {
+  const text = userMessage;
+  const hasDeceasedOrSurreal = DECEASED_FIGURES.test(text) || SURREAL_BEINGS.test(text);
+  if (!hasDeceasedOrSurreal) return result;
+  const isRecentContact = RECENT_TIME_CONTACT.test(text) || SURREAL_BEINGS.test(text);
+  if (!isRecentContact) return result;
+
+  const already = result.cognitiveChecks.find((c) => c.domain === "judgment");
+  if (already && already.score >= 2) return result;
+
+  const matched = (text.match(DECEASED_FIGURES) || text.match(SURREAL_BEINGS) || [""])[0];
+  const newCheck = {
+    domain: "judgment",
+    score: 2,
+    confidence: 0.95,
+    evidence: `휴리스틱 안전망: "${matched}" + 최근 접촉 시제 동반`,
+    note: "사망인물 또는 비현실 대상과의 최근 접촉 묘사 — judgment 안전망 강제 마킹",
+  };
+  const filtered = result.cognitiveChecks.filter((c) => c.domain !== "judgment");
+  return {
+    ...result,
+    isAnomaly: true,
+    analysisNote: result.analysisNote
+      ? `${result.analysisNote} | 안전망: ${matched}+최근시제`
+      : `[안전망] 사망/비현실(${matched}) + 최근 시제 동반`,
+    cognitiveChecks: [...filtered, newCheck],
+  };
+}
+
 function reclassifyCalculation(
   result: CognitiveAnalysisResult,
   userMessage: string,
@@ -342,7 +397,8 @@ export async function analyzeCognitive(params: {
     const raw = parseResult(res.response.text().trim());
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
-    return ensureCognitiveDomainLogged(calcReclassified, params.assistantResponse);
+    const safetyNetted = injectJudgmentSafetyNet(calcReclassified, userForAnalysis);
+    return ensureCognitiveDomainLogged(safetyNetted, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
     return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
