@@ -220,6 +220,34 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
  *
  * 부모가 자식·손주에게 "씨" 붙이는 건 한국어로 매우 부자연스러움. prompt만으로 LLM이 따르지 않아 후처리 추가.
  */
+/**
+ * 자녀 성별 호칭 자동 정정 — DB family relation을 ground truth로 사용.
+ *
+ * 예: family에 "수진(daughter)" 저장돼 있는데 AI가 "수진 아드님"이라 답하면 → "수진 따님"으로 swap.
+ *     family에 "민호(son)" 저장돼 있는데 AI가 "민호 따님"이라 답하면 → "민호 아드님"으로 swap.
+ *
+ * Why: prompt block에 family 정보가 있어도 LLM이 가끔 성별을 헷갈림.
+ *      DB 신뢰 우선 — 2026-05-26 rudtjrch cycle에서 "큰딸 수진이" → "수진 아드님" 회귀 발견.
+ */
+function fixChildGenderHonorific(text: string, family: Array<{ name: string; relation: string }>): string {
+  if (!text || !family || family.length === 0) return text;
+  let out = text;
+  for (const f of family) {
+    const name = f.name;
+    if (!name || name.length < 2) continue;
+    if (f.relation === "daughter") {
+      // 딸인데 "아드님"으로 호칭한 경우 → "따님"으로
+      out = out.replace(new RegExp(`${name}\\s*아드님`, "g"), `${name} 따님`);
+      out = out.replace(new RegExp(`${name}\\s*아들`, "g"), `${name} 딸`);
+    } else if (f.relation === "son") {
+      // 아들인데 "따님"으로 호칭한 경우 → "아드님"으로
+      out = out.replace(new RegExp(`${name}\\s*따님`, "g"), `${name} 아드님`);
+      out = out.replace(new RegExp(`${name}\\s*딸(?!기|기는|기와|기랑)`, "g"), `${name} 아들`);
+    }
+  }
+  return out;
+}
+
 function normalizeFamilyChildHonorific(text: string, ctx: string): string {
   if (!text || !ctx) return text;
   const familiar = new Set<string>();
@@ -341,6 +369,86 @@ function buildRepetitionHint(userText: string): string {
   const slots = extractAnsweredSlots(userText);
   if (slots.length === 0) return "";
   return `\n[이미 답변받은 정보 — 이 차원은 절대 되묻지 마세요]\n${slots.join(" / ")}\n이 정보들은 같은 차원으로 다시 질문하면 사용자가 불쾌해합니다. 필요하면 세부/심화 질문(왜/어떻게/느낌)만 하세요.\n`;
+}
+
+/**
+ * 사망인물·비현실 대상 + 최근 시제 동반 발화 → AI가 부드럽게 정정하도록 prompt-time hint.
+ *
+ * Why: cognitive-analyzer의 injectJudgmentSafetyNet은 post-response DB marking 용도.
+ *      AI 실제 응답에 영향을 주려면 prompt 시점 hint가 필요. 2026-05-26 rudtjrch
+ *      cycle에서 "이순신 장군이 어제 동네 왔다 가셨어"에 AI가 회피 답변하던 회귀 발견.
+ */
+const DECEASED_FIGURES_HINT = /(박정희|이승만|전두환|김구|김대중|노무현|이순신|세종대왕|광개토|영조|정조|숙종|태조|마더\s*테레사|히틀러|마오쩌둥|레닌|스탈린)/;
+const SURREAL_BEINGS_HINT = /(외계인|공룡|UFO|도깨비|유령|호랑이|사자|코끼리|기린)/;
+const RECENT_TIME_CONTACT_HINT = /(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주|아침|저녁|점심|새벽|밤에).*(만났|만나|왔|와서|봤|보았|먹었|마셨|했|같이|차\s*한잔|대화|이야기|놀러|들렀|다녀|머물|머무|점심|저녁\s*먹)|(만났|왔|봤|먹었|같이|놀러|들렀|다녀).*(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주)/;
+function buildAnomalyCorrectionHint(userText: string): string {
+  if (!userText) return "";
+  const deceased = DECEASED_FIGURES_HINT.test(userText) ? userText.match(DECEASED_FIGURES_HINT)![0] : null;
+  const surreal = SURREAL_BEINGS_HINT.test(userText) ? userText.match(SURREAL_BEINGS_HINT)![0] : null;
+  const recentTime = RECENT_TIME_CONTACT_HINT.test(userText);
+  if (!deceased && !surreal) return "";
+  if (!recentTime) return "";
+  const subject = deceased || surreal!;
+  const reason = deceased
+    ? `${deceased}는(은) 역사 속 인물 또는 이미 돌아가신 분`
+    : `${surreal}는(은) 일상에서 마주칠 수 없는 비현실 대상`;
+  return `\n[🚫 인지 안전망 — 사실 확인 필수]\n사용자가 "${subject}" 와(과) 최근 시제(어제/오늘/방금 등)를 함께 언급했습니다. ${reason}이에요.\n절대 사용자 발화를 그대로 받아들여 "그러셨군요" 하지 마세요. 부드럽게 사실을 확인해주세요.\n예시: "할아버지/할머니, ${subject}은(는) 아주 오래전 분이시잖아요. 혹시 TV 사극이나 꿈에서 보신 건 아닐까요?" 또는 "비슷한 이름의 다른 분이 다녀가신 거 아닐까요?"\n절대 "정확히 기억이 안 나서" 같은 회피 답변 금지. 사용자가 헷갈리는 부분을 친절히 짚어드리는 게 어르신 안전·신뢰의 핵심입니다.\n`;
+}
+
+/**
+ * 가족 정보 조회 요청에 대한 환각 차단 hint.
+ *
+ * 사용자가 "큰아들이 누구야/큰딸 이름이 뭐였지" 식으로 가족 정보를 직접 물었는데,
+ * profile.family에 해당 관계+순서의 ground-truth가 없으면 LLM이 다른 가족 이름을
+ * 잘못 답하거나 동문서답함 → 솔직히 "아직 안 들었어요"라고 답하도록 강제.
+ *
+ * Why: 2026-05-26 rudtjrch cycle에서 "큰아들이 누구라고 했지?" → AI가 동문서답.
+ */
+const FAMILY_QUERY_PATTERN = /(?:큰\s*아들|장남|첫째\s*아들|둘째\s*아들|차남|막내\s*아들|큰\s*딸|장녀|첫째\s*딸|둘째\s*딸|차녀|막내\s*딸|손주|손자|손녀|아내|남편|영감|안사람)(?:이|가|은|는|의)?\s*(?:이름|성함|누구|뭐|뭐였|뭐죠|뭐예요|어떻게|어디|어떤)/;
+function buildFamilyQueryGuard(userText: string, family: Array<{ name: string; relation: string; orderIdx?: number | null }>): string {
+  if (!userText) return "";
+  if (!FAMILY_QUERY_PATTERN.test(userText)) return "";
+  // 가족 관계+순서별 ground truth 존재 여부 확인
+  const has = {
+    bigSon: family.some((f) => f.relation === "son" && (f.orderIdx === 1 || f.orderIdx === null)),
+    secondSon: family.some((f) => f.relation === "son" && f.orderIdx === 2),
+    bigDaughter: family.some((f) => f.relation === "daughter" && (f.orderIdx === 1 || f.orderIdx === null)),
+    secondDaughter: family.some((f) => f.relation === "daughter" && f.orderIdx === 2),
+    grandchild: family.some((f) => f.relation === "grandchild"),
+    spouse: family.some((f) => f.relation === "spouse"),
+  };
+  // 질문에 해당하는 정보가 DB에 있는지 매칭
+  const askBigSon = /큰\s*아들|장남|첫째\s*아들/.test(userText);
+  const askSecondSon = /둘째\s*아들|차남/.test(userText);
+  const askBigDaughter = /큰\s*딸|장녀|첫째\s*딸/.test(userText);
+  const askSecondDaughter = /둘째\s*딸|차녀/.test(userText);
+  const askGrandchild = /손주|손자|손녀/.test(userText);
+
+  const missing: string[] = [];
+  if (askBigSon && !has.bigSon) missing.push("큰아들");
+  if (askSecondSon && !has.secondSon) missing.push("둘째아들");
+  if (askBigDaughter && !has.bigDaughter) missing.push("큰딸");
+  if (askSecondDaughter && !has.secondDaughter) missing.push("둘째딸");
+  if (askGrandchild && !has.grandchild) missing.push("손주");
+
+  if (missing.length === 0) return "";
+  return `\n[🚫 가족 정보 환각 차단 — 매우 중요]\n사용자가 "${missing.join("/")}" 정보를 직접 물어보셨는데, 우리 DB에는 아직 이 관계의 가족 정보가 저장돼 있지 않아요. (즉 사용자가 이전에 말씀해주신 적 없음)\n절대 다른 가족 이름을 끌어와 답하지 마세요. 절대 화제 전환하지 마세요. 솔직하게 "어, 죄송해요. ${missing[0]} 성함은 아직 안 알려주신 것 같아요. 혹시 ${missing[0]} 성함이 어떻게 되세요?" 라고 답하세요.\n사용자가 "기억하지?"라고 물어도 모르는 건 솔직히 모른다고 인정 — 어르신 신뢰의 핵심.\n`;
+}
+
+/**
+ * 회상 검증 hint — 사용자가 "방금 외운 단어/세 단어 다시" 요청했는데
+ * conversation history에 AI가 단어를 외워준 흔적이 없으면 환각 차단.
+ *
+ * Why: 새 conversation 직후 회상 요청 시 AI가 "나무/자동차/모자" 같은 단어를
+ *      만들어내는 거짓 메모리 발생. 노인 사용자 신뢰 붕괴 위험.
+ */
+function buildRecallVerificationHint(historyText: string, userText: string): string {
+  if (!userText) return "";
+  const recallAsk = /(방금|아까|좀\s*전|먼저)?\s*(외운|외워준|외워주신|들려준|말해준|알려준)\s*(단어|세\s*단어|세\s*가지|단어\s*세|단어들)|단어\s*다시|단어\s*뭐였|단어\s*뭐죠|단어\s*기억\s*나|세\s*단어\s*기억|세\s*가지\s*기억/;
+  if (!recallAsk.test(userText)) return "";
+  const aiPresented = /외워\s*(드릴게요|드릴게|드리겠어요|두세요|두시면|두시고|볼까요|봐주세요)|단어\s*세\s*(가지|개)\s*(을|를|만)?\s*(말씀|드리|말해|읽어)|단어\s*세\s*(가지|개)\s*(외워|기억)/.test(historyText);
+  if (aiPresented) return "";
+  return `\n[🚫 회상 검증 — 매우 중요, 환각 절대 금지]\n이번 대화에서 민지가 단어를 외워드린 적이 한 번도 없습니다. 그런데 사용자가 "방금 외운 단어"를 물으셨어요.\n절대 임의로 "나무, 자동차, 모자" 같은 단어를 만들어 답하지 마세요 (없는 기억 만들기 = 환각, 신뢰 붕괴).\n대신 이렇게 답하세요: "어, 민지가 아직 단어를 외워드린 적이 없는 것 같아요. 지금 새로 외워드릴까요? 그럼 [실제 새 단어 3개] — 이렇게 세 개 외워주세요." 또는 "혹시 어디서 들으신 거 같으세요? 지금부터 함께 단어 외우기 해볼까요?"\n`;
 }
 
 /**
@@ -783,6 +891,9 @@ async function handleAudioMessage(params: {
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
+  const recallVerifyHint = buildRecallVerificationHint(historyText, transcription);
+  const anomalyHint = buildAnomalyCorrectionHint(transcription);
+  const familyQueryGuard = buildFamilyQueryGuard(transcription, profile.family);
   const infoRequestHint = buildInfoRequestHint(transcription);
   const intent = classifyIntent(transcription);
   const intentHint = buildIntentHint(intent, honorific);
@@ -790,7 +901,7 @@ async function handleAudioMessage(params: {
     console.log("[intent:audio]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
   }
   const hintBlock = [
-    intentHint, repetitionHint, wordGameHint, nameAnswerHint, infoRequestHint, emergency.hint,
+    intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
@@ -800,12 +911,12 @@ async function handleAudioMessage(params: {
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let answerText = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific), ctx)), prevAi)));
+  let answerText = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
 
   // Phase 1 Fact-checker — 음성 응답에도 적용 (텍스트와 동일 수준 안전성)
   if (!fallbackUsed && answerText) {
     const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific });
+    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific, currentUserText: transcription });
     if (checked.cleaned !== answerText) {
       console.warn("[fact-checker:audio] cleaned response. removed:", checked.removed.length);
       answerText = checked.cleaned || answerText;
@@ -994,6 +1105,9 @@ async function handleTextMessage(params: {
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
   const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
+  const recallVerifyHint = buildRecallVerificationHint(historyText, userContent);
+  const anomalyHint = buildAnomalyCorrectionHint(userContent);
+  const familyQueryGuard = buildFamilyQueryGuard(userContent, profile.family);
   const infoRequestHint = buildInfoRequestHint(userContent);
   // Phase C: 의도 분류기 — 발화 유형에 따라 prompt 분기 강제
   const intent = classifyIntent(userContent);
@@ -1002,7 +1116,7 @@ async function handleTextMessage(params: {
     console.log("[intent]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
   }
   const hintBlock = [
-    intentHint, repetitionHint, wordGameHint, nameAnswerHint, infoRequestHint, emergency.hint,
+    intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
 
@@ -1029,13 +1143,13 @@ async function handleTextMessage(params: {
   }
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let text = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific), ctx)), prevAi)));
+  let text = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
 
   // Phase 1 Fact-checker — 응답에 등장한 이름·고유명사가 profile/이력에 근거 있는지 cross-check.
   //   환각 차단의 마지막 라인 (오늘 abc→rudtjrch 사고 같은 케이스 방지).
   if (!fallbackUsed && text) {
     const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific });
+    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific, currentUserText: userContent });
     if (checked.cleaned !== text) {
       console.warn("[fact-checker] cleaned response. removed sentences:", checked.removed.length);
       text = checked.cleaned || text; // 모두 삭제되면 fallback 우회용으로 원본 유지
