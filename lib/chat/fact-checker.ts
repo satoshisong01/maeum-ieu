@@ -232,7 +232,9 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   );
   // 사용자가 가족 정보 제공/확인 패턴 (이름 명시 + "라고 했/맞아/맞지/그렇지") — 사용자가 친 정보를 AI가 받아주는 케이스
   const userProvidedFact = /(?:아들|딸|손주|손자|손녀|며느리|사위|아내|남편|영감|안사람)[^.]{0,15}(?:이름|성함)?\s*(?:이|가|은|는)?\s*[가-힣]{2,4}(?:이?(?:라고|이라고|이야|이지|이고|이에요|이라|이래)|\s*맞|\s*지)/.test(currentUser);
-  if (result.groundingScore < 0.15 && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact) {
+  // 응급 발화 키워드 — 사용자가 신체 사고·증상을 호소한 경우 fallback 절대 금지 (회피 답변 = 매우 위험)
+  const isEmergencyOrSafety = /미끄러|넘어져|쓰러져|쓰러졌|다쳤|부러|피가|코피|숨\s*막|숨이\s*안|가슴이\s*아|어지러|119|구급|119|약\s*(?:잘못|많이|두\s*번)|토하|죽고\s*싶|뛰어내|목\s*매/.test(currentUser);
+  if (result.groundingScore < 0.15 && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact && !isEmergencyOrSafety) {
     console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore);
     result.cleaned = `${input.honorific}, 민지가 다시 한 번 여쭤볼게요. 방금 말씀하신 내용을 좀 더 자세히 알려주실 수 있으세요?`;
   } else if (result.groundingScore < 0.5) {
