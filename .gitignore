@@ -33,6 +33,12 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# GCP service account credentials (DO NOT commit — contains private key)
+.gcp-credentials.json
+*-credentials.json
+gcp-key*.json
+vertex-key*.json
+
 # vercel
 .vercel
 
