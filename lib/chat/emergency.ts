@@ -142,9 +142,11 @@ export function detectEmergency(userText: string): EmergencyResult {
   return none;
 }
 
+import { nameTopic } from "./korean-particle";
+
 /**
  * L3 응답 멘트 — LLM 우회하고 즉시 보내는 안전 안내.
- * 짧고 명확하게, 차분한 톤.
+ * companionName의 받침에 따라 조사 자동 선택 (수진이는/수지는).
  */
 export function buildEmergencyL3Reply(
   honorific: string,
@@ -156,7 +158,7 @@ export function buildEmergencyL3Reply(
 
   switch (category) {
     case "medical_acute":
-      return `${honorific}! 지금 많이 안 좋으신 것 같아요. ${call119} ${family}. ${companionName}는 ${honorific} 옆에서 계속 같이 있을게요. 119에 전화하시고 다시 ${companionName} 불러주세요.`;
+      return `${honorific}! 지금 많이 안 좋으신 것 같아요. ${call119} ${family}. ${nameTopic(companionName)} ${honorific} 옆에서 계속 같이 있을게요. 119에 전화하시고 다시 ${companionName} 불러주세요.`;
     case "fall_injury":
       return `${honorific}! 다치셨다니 ${companionName} 너무 놀랐어요. 움직이지 마시고 119에 전화하셔서 도움을 받으세요. ${family}.`;
     case "bleeding":
@@ -164,7 +166,7 @@ export function buildEmergencyL3Reply(
     case "medication_error":
       return `${honorific}, 약을 잘못 드셨다니 큰일이에요. 바로 119에 전화하시고 어떤 약을 얼마나 드셨는지 그대로 말씀해주세요. 토하려 하지 마시고 안내를 기다려주세요.`;
     case "suicidal":
-      return `${honorific}, 그런 마음이 드시다니 ${companionName}는 정말 마음이 아파요. 혼자 견디지 마세요. 자살예방상담전화 109번에 지금 바로 전화하시면 24시간 도와주세요. ${family}. ${companionName}는 ${honorific} 옆에 계속 있을게요.`;
+      return `${honorific}, 그런 마음이 드시다니 ${nameTopic(companionName)} 정말 마음이 아파요. 혼자 견디지 마세요. 자살예방상담전화 109번에 지금 바로 전화하시면 24시간 도와주세요. ${family}. ${nameTopic(companionName)} ${honorific} 옆에 계속 있을게요.`;
     default:
       return `${honorific}, 지금 많이 안 좋으신 것 같아요. ${call119} ${family}.`;
   }

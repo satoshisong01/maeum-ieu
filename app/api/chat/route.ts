@@ -3,6 +3,12 @@ import { getServerSession } from "next-auth";
 import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
 import { authOptions } from "@/lib/auth";
 import { searchMemories } from "@/lib/rag";
+import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
+import { factCheckResponse } from "@/lib/chat/fact-checker";
+import type { FullProfile } from "@/lib/chat/profile";
+import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
+import { nameSubj, normalizeImnida, stripRecallAnswerLeak } from "@/lib/chat/korean-particle";
+import { classifyIntent, buildIntentHint } from "@/lib/chat/intent-classifier";
 import type { ChatRequestBody } from "@/lib/chat/types";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
@@ -48,9 +54,9 @@ function getTextModel(systemInstruction: string) {
  */
 function buildFallbackMessage(honorific: string, companionName: string): string {
   const variants = [
-    `${honorific}, ${companionName}가 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실래요?`,
-    `어? ${companionName}가 제대로 못 들었나 봐요. 한 번만 더 얘기해주실 수 있으세요?`,
-    `아이고 ${honorific}, ${companionName}가 생각이 꼬였네요. 다시 말씀해주시면 잘 들을게요!`,
+    `${honorific}, ${nameSubj(companionName)} 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실래요?`,
+    `어? ${nameSubj(companionName)} 제대로 못 들었나 봐요. 한 번만 더 얘기해주실 수 있으세요?`,
+    `아이고 ${honorific}, ${nameSubj(companionName)} 생각이 꼬였네요. 다시 말씀해주시면 잘 들을게요!`,
     `${honorific}, 잠깐 정신이 흐릿했어요. 방금 하신 말씀 한 번 더 부탁드려도 될까요?`,
   ];
   return variants[Math.floor(Math.random() * variants.length)];
@@ -186,7 +192,13 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
   let out = text;
   const kinOffenders = filter(KIN).sort((a, b) => b.length - a.length);
   if (kinOffenders.length > 0) {
-    const kinPat = new RegExp(`(?<![가-힣])(${kinOffenders.map(esc).join("|")})(?![가-힣])`, "g");
+    // lookbehind: 앞에 한글이 오면 더 큰 단어(외할아버지/큰아버지)일 가능성 — 매칭 X
+    // lookahead: 뒤에 일반 한글 조사(의/은/는/이/가/께/께서/와/과/한테/에게/도/만)는 허용,
+    //           나머지 한글이 붙으면 다른 명사일 가능성 → 매칭 X
+    const kinPat = new RegExp(
+      `(?<![가-힣])(${kinOffenders.map(esc).join("|")})(?=$|[^가-힣]|의|은|는|이|가|을|를|와|과|랑|이랑|도|만|께|께서|한테|에게|에서|로|으로)`,
+      "g"
+    );
     out = out.replace(kinPat, userHonorific);
   }
   const titleOffenders = filter(TITLE).sort((a, b) => b.length - a.length);
@@ -198,6 +210,49 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
 }
 
 /**
+ * 자녀·손주 호칭 정규화 — AI가 "영민 씨/재미 씨" 같이 자녀에게 사회적 존칭 "씨"를 붙이는 패턴 제거.
+ *
+ * 동작 방식:
+ * 1) context(사용자 발화 + 이력)에서 친근 종조사("이가/이는/이도/이야/야")로 호명된 이름 추출 → familiar set
+ *    예: "영민이가 와서", "재미는 일이 바빠" → {영민, 재미}
+ * 2) AI 응답에서 (familiar 이름) + 공백 + "씨" 패턴 → "씨" 제거
+ *    예: "영민 씨가" → "영민이가", "재미 씨는" → "재미는"
+ *
+ * 부모가 자식·손주에게 "씨" 붙이는 건 한국어로 매우 부자연스러움. prompt만으로 LLM이 따르지 않아 후처리 추가.
+ */
+function normalizeFamilyChildHonorific(text: string, ctx: string): string {
+  if (!text || !ctx) return text;
+  const familiar = new Set<string>();
+  // 1) 친근 종조사로 호명된 이름 (받침 있는 이름: "영민이가/영민이는")
+  const familiarPattern = /([가-힣]{2,3})(?:이가|이는|이도|이야|이를|이랑|이한테|이에게|야\s)/g;
+  let m: RegExpExecArray | null;
+  while ((m = familiarPattern.exec(ctx)) !== null) {
+    familiar.add(m[1]);
+  }
+  // 2) 가족 관계 + 이름 패턴 (받침 없는 이름까지 포함: "큰아들이 재미", "둘째가 영민")
+  const familyRelationPattern = /(?:큰?아들|장남|차남|막내아들|딸|장녀|차녀|막내딸|첫째|둘째|셋째|넷째|막내|손자|손녀|아내|남편)(?:이?|가|는|이름은?|은|이름이)\s*([가-힣]{2,3})(?:이고|이며|이지|이야|고|이에요|예요|이|$|\s)/g;
+  while ((m = familyRelationPattern.exec(ctx)) !== null) {
+    familiar.add(m[1]);
+  }
+  if (familiar.size === 0) return text;
+
+  let out = text;
+  for (const name of familiar) {
+    // "이름 씨" + 조사(가/는/이/도/를/랑/한테/에게)
+    const pattern = new RegExp(`${name}\\s*씨(?=\\s*(?:가|는|이|도|를|랑|한테|에게|의|와|과)?)`, "g");
+    // 사용자가 부르는 형태 그대로 (이가/이는/이도 → 이) 또는 이름만
+    out = out.replace(pattern, (match) => {
+      // 뒤에 조사가 있으면 친근 형태로 변환, 없으면 이름만
+      const rest = out.slice(out.indexOf(match) + match.length);
+      // 단순 치환: "씨" 제거하고 친근 종조사 "이" 추가가 가능한 경우
+      // 안전한 기본: "OO 씨" → "OO" (조사는 그대로)
+      return name;
+    });
+  }
+  return out;
+}
+
+/**
  * 할루시네이션 가드 — AI가 사용자 발화/RAG에 없는 사실을 전제로 하는 문장 제거.
  *
  * 작동 방식:
@@ -205,7 +260,10 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
  * 2) 해당 문장에서 2글자 이상 한글 명사 후보 추출 (stopword 제외)
  * 3) 그 중 하나라도 context(history + rag + 현재 userContent)에 나타나지 않으면 문장 통째 제거
  */
-const PREMISE_PATTERN = /[^.!?~]*?(?:라고\s*하셨|다고\s*하셨|(?:가|오)신다고\s*하셨|다녀오셨다고|드셨다고\s*하셨|주신다고\s*하셨|보셨다고\s*하셨|신다고도\s*하셨|셨다고도)[^.!?~]*[.!?~]/g;
+// 과거 전제 표현 — AI가 사용자 발화/메모리에 없는 사실을 전제로 하는 문장 매칭.
+// 어르신 안정성 핵심: 추측 사실을 "~라고 하셨" 식으로 가정하면 신뢰 무너짐.
+// narrow: "전제 표현 + 종결동사" 페어만 매칭 (단순 "아까 말씀" 같은 일반 표현 제외)
+const PREMISE_PATTERN = /[^.!?~]*?(?:라고\s*하셨|다고\s*하셨|(?:가|오)신다고\s*하셨|다녀오셨다고|드셨다고\s*하셨|주신다고\s*하셨|보셨다고\s*하셨|신다고도\s*하셨|셨다고도|말씀하셨던|들으셨던\s*[가-힣]+|하셨던\s*[가-힣]+|드셨던\s*[가-힣]+|보셨던\s*[가-힣]+|가셨던\s*[가-힣]+|아까\s*말씀하셨|아까\s*드셨다고|지난번에\s*말씀하셨|예전에\s*말씀하셨|전에\s*하셨다고|어제\s*말씀하셨)[^.!?~]*[.!?~]/g;
 
 const HALLU_STOPWORDS = new Set([
   "할아버지","할머니","민지","오늘","어제","내일","지금","아까","저번","그때","요즘","많이","정말",
@@ -283,6 +341,27 @@ function buildRepetitionHint(userText: string): string {
   const slots = extractAnsweredSlots(userText);
   if (slots.length === 0) return "";
   return `\n[이미 답변받은 정보 — 이 차원은 절대 되묻지 마세요]\n${slots.join(" / ")}\n이 정보들은 같은 차원으로 다시 질문하면 사용자가 불쾌해합니다. 필요하면 세부/심화 질문(왜/어떻게/느낌)만 하세요.\n`;
+}
+
+/**
+ * 사용자가 자기 정보를 헷갈려하거나 직접 정보를 요청하는 패턴 감지 → 평가 모드 강제 해제.
+ *
+ * 트리거 표현: "기억하지?", "알려줘", "뭐였더라", "헷갈리네", "까먹었어", "모르겠어", "누가"
+ * → AI가 "민지가 깜빡했어요/헷갈려서" 같은 평가 모드 핑계 대지 말고
+ *   RAG/대화 이력에서 정보 찾아서 부드럽게 알려주도록 강제.
+ *
+ * 안전성 우선 — 어르신이 헷갈릴 때 시스템이 같이 흔들리면 신뢰 무너짐.
+ */
+function buildInfoRequestHint(userText: string): string {
+  if (!userText) return "";
+  const directAsk = /기억하지|기억해\??|기억나|알려\s*줘|알려\s*주|뭐였더라|뭐였지|뭐였어|누구였|누가|어디였|언제였|헷갈리네|헷갈려|까먹었|까먹어|모르겠어|모르겠다|잊어버렸|생각 안 나|생각이 안/.test(userText);
+  if (!directAsk) return "";
+  return `\n[🛡️ 사용자가 직접 정보를 요청하거나 헷갈려함 — 평가 모드 절대 금지]
+- 사용자가 자기 정보를 헷갈려하거나 AI에게 직접 알려달라고 했습니다.
+- 이 순간 "민지가 헷갈려서/깜빡해서/기억이 안 나서" 같은 평가용 핑계 절대 금지.
+- [참고 — 과거 메모리]나 직전 대화 이력에서 답이 명확하면 **솔직하게 알려주세요**. "할아버지가 ~라고 말씀해주셨어요" 형식.
+- 만약 메모리/이력에 답이 명확히 없으면 "민지가 정확히 기억이 안 나네요. 다시 알려주시겠어요?" 라고 솔직히 인정.
+- 절대 추측하지 마세요. 메모리에 없는 정보를 지어내면 어르신 신뢰가 무너집니다.\n`;
 }
 
 function removeUngroundedClaims(aiText: string, context: string): string {
@@ -495,8 +574,15 @@ function buildChatContents(params: {
   return turns;
 }
 
+/**
+ * RAG 메모리 조회 — searchMemories에 DISTINCT ON dedup + limit 15.
+ *
+ * 진단 결과(2026-05-26): "마당 청소 좀 했어" 같은 발화가 4번 중복 임베딩되어 top 차지,
+ *   다양성 있는 다른 메시지(제라늄/백일홍)가 밀려남. dedup으로 해결.
+ * enriched query(recent 3 join)는 가족/명절 토픽이 너무 강해져 마당/화분이 희석되는 부작용 있어 미사용.
+ */
 async function fetchMemories(userId: string, query: string): Promise<string> {
-  try { return await searchMemories(userId, query, 5); }
+  try { return await searchMemories(userId, query, 15); }
   catch { return ""; }
 }
 
@@ -550,11 +636,12 @@ async function runCognitiveAnalysis(params: {
 /** 1) 최초 인사 */
 async function handleFirstGreeting(systemPrompt: string, userName: string, honorific: string, companionName: string, companionRelation: string, conversationId?: string) {
   const model = getTextModel(systemPrompt);
-  const { text } = await generateWithFallback(
+  const { text: raw } = await generateWithFallback(
     model,
     `지금 ${userName}님이 대화를 시작합니다. ${companionRelation} '${companionName}'으로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
     `${honorific}, 안녕하세요! ${companionName}예요. 오늘 하루 어떻게 보내고 계세요?`,
   );
+  const text = normalizeImnida(raw);  // "수지이에요" → "수지예요"
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
 }
@@ -566,16 +653,26 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
     model,
     `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.
 
-[중요] 인사와 함께 아래 중 하나를 자연스럽게 물어보세요:
-- 시간대에 맞는 식사 질문 ("점심 맛있게 드셨어요?")
-- 오늘의 기분/컨디션 ("오늘 기분이 어떠세요?")
+[중요 — 시간대에 맞는 인사·식사 질문]
+위 [현재 환경 정보]의 "시간대" 라벨(새벽/아침/오전/점심/오후/저녁/밤)을 **반드시 확인**해서 시간대에 맞는 식사 질문을 하세요:
+- 새벽/아침 (~10시): "아침은 드셨어요?" / "잘 주무셨어요?"
+- 오전 (10~11시): "오전은 어떻게 보내고 계세요?"
+- 점심 (11~14시): "점심 맛있게 드셨어요?"
+- 오후 (14~17시): "점심 뭐 드셨어요?" 또는 "오후엔 뭐 하고 계세요?"
+- 저녁 (17~20시): "저녁 준비하셨어요?" 또는 "오늘 하루 어떠셨어요?"
+- 밤 (20시 이후): "오늘 하루 잘 보내셨어요?"
+**시간대와 다른 식사 질문(아침인데 "점심 드셨어요?")은 절대 금지**.
+
+또는 아래 중 하나로 대체 가능:
+- 오늘의 기분/컨디션 질문
 - 인지 선별 프로토콜에서 아직 확인 안 한 영역의 질문 하나 (시험이 아닌 자연스러운 대화 형식으로)
 
 2~3문장 이내. 절대 자기소개 반복하지 마세요.`,
     `${honorific}, 다시 오셨네요! 오늘 하루 어떻게 보내고 계세요?`,
   );
-  if (conversationId) await saveGreetingMessage(conversationId, text);
-  return NextResponse.json({ text, role: "assistant" });
+  const cleaned = normalizeImnida(text);
+  if (conversationId) await saveGreetingMessage(conversationId, cleaned);
+  return NextResponse.json({ text: cleaned, role: "assistant" });
 }
 
 /** 3) 날짜/시간 질문 직접 응답 */
@@ -613,8 +710,9 @@ async function handleAudioMessage(params: {
   userId: string; conversationId?: string;
   audioData: string; audioMimeType: string; historyText: string; memories: string;
   messages: { role: string; content: string; createdAt?: string }[];
+  profile: FullProfile;
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages, profile } = params;
 
   // 1단계: 음성 → 텍스트 변환
   let transcription = "";
@@ -685,8 +783,14 @@ async function handleAudioMessage(params: {
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
+  const infoRequestHint = buildInfoRequestHint(transcription);
+  const intent = classifyIntent(transcription);
+  const intentHint = buildIntentHint(intent, honorific);
+  if (intent.primary !== "daily") {
+    console.log("[intent:audio]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
+  }
   const hintBlock = [
-    repetitionHint, wordGameHint, nameAnswerHint, emergency.hint,
+    intentHint, repetitionHint, wordGameHint, nameAnswerHint, infoRequestHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
@@ -696,7 +800,17 @@ async function handleAudioMessage(params: {
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  const answerText = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific)), prevAi);
+  let answerText = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific), ctx)), prevAi)));
+
+  // Phase 1 Fact-checker — 음성 응답에도 적용 (텍스트와 동일 수준 안전성)
+  if (!fallbackUsed && answerText) {
+    const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
+    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific });
+    if (checked.cleaned !== answerText) {
+      console.warn("[fact-checker:audio] cleaned response. removed:", checked.removed.length);
+      answerText = checked.cleaned || answerText;
+    }
+  }
 
   if (conversationId) {
     const { userMsgId } = await saveMessages({
@@ -718,6 +832,12 @@ async function handleAudioMessage(params: {
     }
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+    // Phase 1 프로필 추출 — 음성 발화에서도 가족·고향·취미 자동 추출
+    if (transcription) {
+      extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
+      // Phase 3 요약 트리거
+      maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
+    }
   }
 
   return NextResponse.json({
@@ -846,8 +966,9 @@ async function handleTextMessage(params: {
   userContent: string; historyText: string; memories: string;
   messages: { role: string; content: string; createdAt?: string }[];
   companionName: string; companionRelation: string; honorific: string;
+  profile: FullProfile;
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific } = params;
+  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile } = params;
 
   // 응급 발화 감지 — moderation보다 먼저
   const emergency = await evaluateEmergency({ userContent, conversationId });
@@ -873,18 +994,53 @@ async function handleTextMessage(params: {
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
   const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
+  const infoRequestHint = buildInfoRequestHint(userContent);
+  // Phase C: 의도 분류기 — 발화 유형에 따라 prompt 분기 강제
+  const intent = classifyIntent(userContent);
+  const intentHint = buildIntentHint(intent, honorific);
+  if (intent.primary !== "daily") {
+    console.log("[intent]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
+  }
   const hintBlock = [
-    repetitionHint, wordGameHint, nameAnswerHint, emergency.hint,
+    intentHint, repetitionHint, wordGameHint, nameAnswerHint, infoRequestHint, emergency.hint,
     "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
   ].filter((s) => s && s.trim()).join("\n\n");
 
   const contents = buildChatContents({ messages, currentUserMessage: userContent, memories, hintBlock });
 
+  // DEBUG: 환경변수 DEBUG_INPUT=1 설정 시 입력 dump (사용자 간 데이터 누수 진단용).
+  //   2026-05-26 abc→rudtjrch 누수 root cause 추적에 사용됨. 평소엔 off.
+  if (process.env.DEBUG_INPUT === "1") {
+    console.log("[DEBUG-INPUT]", JSON.stringify({
+      userId: userId.slice(0, 12),
+      conversationId: conversationId?.slice(0, 12),
+      userContent: userContent.slice(0, 200),
+      messagesCount: messages.length,
+      memoriesPreview: (memories || "").slice(0, 300),
+      systemPromptLen: systemPrompt.length,
+      profileFamily: profile.family.map((f) => `${f.relation}#${f.orderIdx ?? '-'} ${f.name}`),
+    }, null, 2));
+  }
+
   const fallback = buildFallbackMessage(honorific, companionName);
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
+  if (process.env.DEBUG_INPUT === "1") {
+    console.log("[DEBUG-RAW-RESPONSE]", JSON.stringify({ rawText: rawText?.slice(0, 500), fallbackUsed }));
+  }
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  const text = fallbackUsed ? rawText : removeRepeatedOpening(fixWordChainStart(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific)), prevAi);
+  let text = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific), ctx)), prevAi)));
+
+  // Phase 1 Fact-checker — 응답에 등장한 이름·고유명사가 profile/이력에 근거 있는지 cross-check.
+  //   환각 차단의 마지막 라인 (오늘 abc→rudtjrch 사고 같은 케이스 방지).
+  if (!fallbackUsed && text) {
+    const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
+    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific });
+    if (checked.cleaned !== text) {
+      console.warn("[fact-checker] cleaned response. removed sentences:", checked.removed.length);
+      text = checked.cleaned || text; // 모두 삭제되면 fallback 우회용으로 원본 유지
+    }
+  }
 
   if (conversationId && userContent) {
     const { userMsgId } = await saveMessages({
@@ -903,6 +1059,10 @@ async function handleTextMessage(params: {
     }
     // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
     runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+    // Phase 1 프로필 추출 — 사용자 발화에서 가족·고향·취미 등 자동 추출 (백그라운드)
+    extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
+    // Phase 3 요약 트리거 — 메시지 50건+ 누적 시 weekly 생성 + 계층 rollup (백그라운드)
+    maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
   }
 
   return NextResponse.json({
@@ -926,14 +1086,15 @@ export async function POST(req: Request) {
 
     const timeCtx = getTimeContext(ctx?.currentTime);
     const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
-    const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation } = await buildSystemPrompt({
+    const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx,
     });
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
 
-    const lastUserMessage = messages?.filter((m) => m.role === "user").pop()?.content ?? "";
+    const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
+    const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
     const [memories, historyText] = await Promise.all([
       fetchMemories(userId, lastUserMessage),
       Promise.resolve(buildHistoryText(messages ?? [])),
@@ -946,11 +1107,11 @@ export async function POST(req: Request) {
     if (audio?.data && audio?.mimeType) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
-        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [],
+        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [], profile,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific, profile });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });
