@@ -135,6 +135,24 @@ function isGrounded(name: string, profile: FullProfile, recentUserText: string, 
   return false;
 }
 
+/**
+ * 가족 컨텍스트(아드님/따님/큰아들 등)에 등장한 이름이 family_member에 정식 등록돼 있는지.
+ *
+ * Why: 2026-05-27 abc 계정에서 옛 message_embeddings의 "재미" 이름이 RAG retrieve로
+ *      흘러나와 응답에 "큰아드님 이름은 재미"로 출력되는 회귀 재발.
+ *      family_member가 ground truth이므로 가족 컨텍스트에서 등장한 이름은
+ *      반드시 DB family_member에 등록돼야만 grounded로 인정.
+ */
+function isFamilyContextGrounded(name: string, profile: FullProfile): boolean {
+  const candidates = new Set([name, stripNameSuffix(name)]);
+  for (const cand of candidates) {
+    if (!cand || cand.length < 2) continue;
+    if (profile.family.some((m) => m.name === cand)) return true;
+    if (profile.profile?.spouseName === cand) return true;
+  }
+  return false;
+}
+
 /** 가족 관계 모순 검증 — 응답에서 "큰아들 X" 라고 하는데 profile에서 X가 둘째인 경우 */
 function findRelationContradictions(text: string, profile: FullProfile): string[] {
   const warnings: string[] = [];
@@ -178,10 +196,13 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   result.warnings.push(...findRelationContradictions(aiText, profile));
 
   // 2) 응답에서 이름 후보 추출 → 근거 없는 이름 포함 문장 통째 삭제
+  // 가족 컨텍스트 이름은 family_member ground truth 강제 (RAG·history 매칭만으로는 grounded X)
+  // Why: 2026-05-27 abc cycle에서 옛 message_embeddings의 "재미"가 흘러나옴
   const candidates = extractNameCandidates(aiText);
   const ungrounded: string[] = [];
   for (const name of candidates) {
-    if (!isGrounded(name, profile, recentUserText, memories)) {
+    // 가족 컨텍스트에 등장한 이름이면 family_member에 명시 등록돼야만 grounded
+    if (!isFamilyContextGrounded(name, profile)) {
       ungrounded.push(name);
     }
   }
