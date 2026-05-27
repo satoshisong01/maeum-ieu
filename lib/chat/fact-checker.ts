@@ -203,10 +203,14 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   // 2) 응답에서 이름 후보 추출 → 근거 없는 이름 포함 문장 통째 삭제
   // 가족 컨텍스트 이름은 family_member 또는 사용자 직접 발화에서만 grounded (RAG memories 제외)
   // Why: 2026-05-27 abc cycle에서 옛 message_embeddings의 "재미"가 흘러나옴
+  // 단, 사용자가 사망인물·비현실을 언급한 경우 AI가 정정 응답에 그 이름을 호명해야 하므로
+  // 이름 후보로 매칭됐어도 사용자 발화에 등장한 이름이면 ungrounded 처리 안 함.
   const candidates = extractNameCandidates(aiText);
   const ungrounded: string[] = [];
   for (const name of candidates) {
     if (!isFamilyContextGrounded(name, profile, recentUserText)) {
+      // 사용자가 그 이름을 직접 발화한 경우 (사망인물 정정 등) — 보존
+      if (input.currentUserText && input.currentUserText.includes(stripNameSuffix(name))) continue;
       ungrounded.push(name);
     }
   }
