@@ -44,6 +44,8 @@ const PAST_CONTEXT_GUARD = /(예전에|옛날에|어릴\s*때|젊었을\s*때|�
 // 비유/감탄/농담 가드 (강도 강조용 "죽겠어", "쓰러질 것 같아 (피곤해서)" 등)
 // 단독으로 "죽겠다/쓰러질 것 같아"가 신체 통증·식사/날씨 등 비응급 명사와 함께 오면 L3 후보에서 강등
 const FIGURATIVE_HINT = /(맛있어\s*죽|배고파\s*죽|더워\s*죽|추워\s*죽|졸려\s*죽|좋아\s*죽|예뻐\s*죽|웃겨\s*죽|힘들어\s*죽|피곤해서\s*쓰러)/;
+// 약 누락(처방량보다 적게 복용) — 오용 아님. "두 알 먹는걸 하나만 / 빼먹 / 안 먹" 같은 축소 컨텍스트
+const MEDICATION_UNDERDOSE_GUARD = /(?:두\s*알|세\s*알|두\s*번|세\s*번)\s*(?:먹는걸|먹어야|드시는걸|복용해야|복용하는걸)[^.]{0,15}(?:하나만|반만|덜|안\s*먹|빼먹|건너|잊|까먹|놓쳤|놓치)|약\s*(?:을|이)?\s*(?:빼먹|안\s*먹|덜\s*먹|건너|잊|까먹|놓쳤)/;
 
 // ─── L3 즉시 응급 ──────────────────────────────────────────────────────────
 const L3_RULES: PatternRule[] = [
@@ -64,8 +66,9 @@ const L3_RULES: PatternRule[] = [
   { level: 3, category: "bleeding", pattern: /피가\s*(?:많이|계속|안\s*멈|쏟아져|줄줄)|코피가\s*안\s*멈|출혈이\s*심/ },
   // 약 오용 — 다양한 어순·표현 (조사·키워드 위치 자유)
   { level: 3, category: "medication_error", pattern: /약\s*(?:을|이)?\s*(?:잘못|많이|두\s*번|세\s*번|이중으로|이중|섞어|두\s*알|세\s*알|여러\s*번|또|한\s*번\s*더|다시)\s*(?:먹|복용|드|삼|넣)|약\s*(?:먹은\s*것\s*같|먹었던\s*것\s*같|복용했던\s*것\s*같)\s*(?:은\s*데|아|어)?\s*(?:또|다시|한\s*번\s*더)|(?:또|다시|한\s*번\s*더|두\s*번)\s*약\s*(?:을|이)?\s*(?:먹|복용|드|삼)|(?:깜빡|까먹)(?:고|어서|어\s*가지고)?\s*약\s*(?:을|이)?\s*(?:또|다시|한\s*번\s*더)?\s*(?:먹|복용|드)|약\s*과다|수면제\s*(?:많이|여러\s*알|두\s*알|두\s*번)/ },
-  // 자살 의도 (moderation과 독립 L3) — "끝내" / "사라지" / "그만 살" 변형 보강
-  { level: 3, category: "suicidal", pattern: /(?:정말|진짜|이제|그냥|다)?\s*죽고\s*싶|목\s*매(?:달|려|어)|뛰어내리|자살\s*(?:하|할|방법)|(?:다|그냥|이제|모든\s*걸)\s*끝내(?:버리|고\s*싶|려)|사라지(?:고\s*싶|버리고\s*싶|면\s*좋겠)|살기\s*싫|그만\s*살(?:고\s*싶|아야|아|래)|이\s*세상에서?\s*없(?:어지|어지고)|살아갈\s*이유\s*없|살아서\s*뭐|살아\s*뭐\s*해/ },
+  // 자살 의도 (moderation과 독립 L3) — 직설 + 은유 표현 다양화
+  // "짐만 되 / 빨리 가야 / 폐만 끼친다" 등 어르신 특유의 우회 표현 (2026-05-27 발견)
+  { level: 3, category: "suicidal", pattern: /(?:정말|진짜|이제|그냥|다)?\s*죽고\s*싶|목\s*매(?:달|려|어)|뛰어내리|자살\s*(?:하|할|방법)|(?:다|그냥|이제|모든\s*걸)\s*끝내(?:버리|고\s*싶|려)|사라지(?:고\s*싶|버리고\s*싶|면\s*좋겠)|살기\s*싫|그만\s*살(?:고\s*싶|아야|아|래)|이\s*세상에서?\s*없(?:어지|어지고)|살아갈\s*이유\s*없|살아서\s*뭐|살아\s*뭐\s*해|짐(?:만|이|이만)\s*(?:되|되는|되겠|돼|되네|되니|되어)|폐(?:만|를)\s*(?:끼치|끼친|되|돼)|빨리\s*(?:가야|가버려|떠나야|죽어야)|어서\s*가야|먼저\s*(?:가야|가버려|떠나야|죽으면|가는\s*게)|얼른\s*죽어/ },
 ];
 
 // ─── L2 주의 ───────────────────────────────────────────────────────────────
@@ -107,11 +110,15 @@ export function detectEmergency(userText: string): EmergencyResult {
   const isPastContext = PAST_CONTEXT_GUARD.test(text);
   // 비유적 표현
   const isFigurative = FIGURATIVE_HINT.test(text);
+  // 약 누락 (처방량 미달) — 응급 X
+  const isMedicationUnderdose = MEDICATION_UNDERDOSE_GUARD.test(text);
 
   // L3부터 매칭
   for (const rule of L3_RULES) {
     const m = text.match(rule.pattern);
     if (m) {
+      // 약 누락(덜 복용) — 응급 X, skip
+      if (rule.category === "medication_error" && isMedicationUnderdose) continue;
       // 과거 회상 — suicidal/medication만 L2로 보존(과소평가 방지), 그 외는 무시
       if (isPastContext) {
         if (rule.category === "suicidal" || rule.category === "medication_error") {

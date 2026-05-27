@@ -136,19 +136,24 @@ function isGrounded(name: string, profile: FullProfile, recentUserText: string, 
 }
 
 /**
- * 가족 컨텍스트(아드님/따님/큰아들 등)에 등장한 이름이 family_member에 정식 등록돼 있는지.
+ * 가족 컨텍스트(아드님/따님/큰아들 등)에 등장한 이름이 grounded인지.
  *
  * Why: 2026-05-27 abc 계정에서 옛 message_embeddings의 "재미" 이름이 RAG retrieve로
  *      흘러나와 응답에 "큰아드님 이름은 재미"로 출력되는 회귀 재발.
- *      family_member가 ground truth이므로 가족 컨텍스트에서 등장한 이름은
- *      반드시 DB family_member에 등록돼야만 grounded로 인정.
+ *
+ * 인정 기준 (RAG memories는 제외 — 옛 데이터 누수 차단):
+ *   1) family_member에 등록 OR
+ *   2) spouseName 일치 OR
+ *   3) recentUserText (최근 user 발화)에 사용자가 직접 언급
+ *      → 사용자가 방금 처음 알려준 이름도 인정 (background extractor가 등록하기 전이라도)
  */
-function isFamilyContextGrounded(name: string, profile: FullProfile): boolean {
+function isFamilyContextGrounded(name: string, profile: FullProfile, recentUserText: string): boolean {
   const candidates = new Set([name, stripNameSuffix(name)]);
   for (const cand of candidates) {
     if (!cand || cand.length < 2) continue;
     if (profile.family.some((m) => m.name === cand)) return true;
     if (profile.profile?.spouseName === cand) return true;
+    if (recentUserText.includes(cand)) return true;
   }
   return false;
 }
@@ -196,13 +201,12 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   result.warnings.push(...findRelationContradictions(aiText, profile));
 
   // 2) 응답에서 이름 후보 추출 → 근거 없는 이름 포함 문장 통째 삭제
-  // 가족 컨텍스트 이름은 family_member ground truth 강제 (RAG·history 매칭만으로는 grounded X)
+  // 가족 컨텍스트 이름은 family_member 또는 사용자 직접 발화에서만 grounded (RAG memories 제외)
   // Why: 2026-05-27 abc cycle에서 옛 message_embeddings의 "재미"가 흘러나옴
   const candidates = extractNameCandidates(aiText);
   const ungrounded: string[] = [];
   for (const name of candidates) {
-    // 가족 컨텍스트에 등장한 이름이면 family_member에 명시 등록돼야만 grounded
-    if (!isFamilyContextGrounded(name, profile)) {
+    if (!isFamilyContextGrounded(name, profile, recentUserText)) {
       ungrounded.push(name);
     }
   }
@@ -254,7 +258,7 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   // 사용자가 가족 정보 제공/확인 패턴 (이름 명시 + "라고 했/맞아/맞지/그렇지") — 사용자가 친 정보를 AI가 받아주는 케이스
   const userProvidedFact = /(?:아들|딸|손주|손자|손녀|며느리|사위|아내|남편|영감|안사람)[^.]{0,15}(?:이름|성함)?\s*(?:이|가|은|는)?\s*[가-힣]{2,4}(?:이?(?:라고|이라고|이야|이지|이고|이에요|이라|이래)|\s*맞|\s*지)/.test(currentUser);
   // 응급 발화 키워드 — 사용자가 신체 사고·증상·자해의도를 호소한 경우 fallback 절대 금지 (회피 답변 = 매우 위험)
-  const isEmergencyOrSafety = /미끄러|넘어져|쓰러져|쓰러졌|다쳤|부러|피가|코피|숨\s*막|숨이\s*안|가슴(?:이|을)?\s*(?:아|답답|조여|찢|쪼개|짓눌|터질)|식은땀|어지러|119|구급|약\s*(?:잘못|많이|두\s*번|또)|토하|죽고\s*싶|뛰어내|목\s*매|끝내(?:버리|고\s*싶|려)|사라지(?:고\s*싶|버리)|살기\s*싫|그만\s*살|살아서\s*뭐|살아\s*뭐/.test(currentUser);
+  const isEmergencyOrSafety = /미끄러|넘어져|쓰러져|쓰러졌|다쳤|부러|피가|코피|숨\s*막|숨이\s*안|가슴(?:이|을)?\s*(?:아|답답|조여|찢|쪼개|짓눌|터질)|식은땀|어지러|119|구급|약\s*(?:잘못|많이|두\s*번|또)|토하|죽고\s*싶|뛰어내|목\s*매|끝내(?:버리|고\s*싶|려)|사라지(?:고\s*싶|버리)|살기\s*싫|그만\s*살|살아서\s*뭐|살아\s*뭐|짐(?:만|이|이만)\s*(?:되|돼)|폐(?:만|를)\s*끼치|빨리\s*(?:가야|가버려)|얼른\s*죽어/.test(currentUser);
   if (result.groundingScore < 0.15 && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact && !isEmergencyOrSafety) {
     console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore);
     result.cleaned = `${input.honorific}, 민지가 다시 한 번 여쭤볼게요. 방금 말씀하신 내용을 좀 더 자세히 알려주실 수 있으세요?`;
