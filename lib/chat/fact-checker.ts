@@ -255,9 +255,10 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   // 공감·일상 발화 + 사용자가 직접 사실을 제공·확인 요청하는 경우는 fallback 적용 제외.
   // Why: 2026-05-26 cycle에서 "재미가 없어"/"민호라고 했었지?" 같은 발화에 회피 답변 회귀.
   const currentUser = input.currentUserText || "";
-  const isEmotionalOrCasual = currentUser.length <= 25 && (
+  const isEmotionalOrCasual = currentUser.length <= 45 && (
     /외로|우울|쓸쓸|허전|슬프|속상|짜증|답답|화나|기분|마음|재미|취미|심심|적적|울적|무료|기운|힘들|피곤|지친|괜찮|좋|싫/.test(currentUser) ||
-    /아파|시려|쑤셔|뻐근|결리|어지|두통|불편|찌릿/.test(currentUser)
+    /아파|시려|쑤셔|뻐근|결리|어지|두통|불편|찌릿/.test(currentUser) ||
+    /고맙|감사|사랑해|예뻐|기뻐|즐거|행복|반가|뿌듯|뭉클|보고\s*싶|그리|챙겨|너\s*없으면|너\s*때문에|덕분에/.test(currentUser)
   );
   // 사용자가 가족 정보 제공/확인 패턴 (이름 명시 + "라고 했/맞아/맞지/그렇지") — 사용자가 친 정보를 AI가 받아주는 케이스
   const userProvidedFact = /(?:아들|딸|손주|손자|손녀|며느리|사위|아내|남편|영감|안사람)[^.]{0,15}(?:이름|성함)?\s*(?:이|가|은|는)?\s*[가-힣]{2,4}(?:이?(?:라고|이라고|이야|이지|이고|이에요|이라|이래)|\s*맞|\s*지)/.test(currentUser);
