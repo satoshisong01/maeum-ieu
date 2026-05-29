@@ -13,6 +13,8 @@ import "dotenv/config";
 import { factCheckResponse } from "../lib/chat/fact-checker";
 import { stripRecallAnswerLeak } from "../lib/chat/korean-particle";
 import { detectEmergency } from "../lib/chat/emergency";
+import { salvageJsonLeak } from "../lib/chat/sanitize";
+import { cleanName } from "../lib/chat/profile-extractor";
 
 let pass = 0;
 let fail = 0;
@@ -61,6 +63,34 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
     check(`no false positive: ${t}`, !isSuicidal(t));
+}
+
+// ── A-3: JSON 누출 방어 ───────────────────────────────────────────────────
+console.log("\n[A-3] JSON leak salvage");
+{
+  const j1 = salvageJsonLeak('{"text": "할아버지, 오늘 날씨가 참 좋네요!", "isAnomaly": true, "analysisNote": "..."}');
+  check("full JSON → text field extracted", j1 === "할아버지, 오늘 날씨가 참 좋네요!", j1);
+  const j2 = salvageJsonLeak('{"text": "민지가 함께 있어요", "isAnomaly": tr');  // truncated
+  check("truncated JSON → text recovered", j2 === "민지가 함께 있어요", j2);
+  const j3 = salvageJsonLeak('```json\n{"response": "네, 선생님!"}\n```');
+  check("fenced JSON → field extracted", j3 === "네, 선생님!", j3);
+  const j4 = salvageJsonLeak("선생님, 오늘 점심은 드셨어요?");  // 일반 텍스트
+  check("plain text untouched", j4 === "선생님, 오늘 점심은 드셨어요?", j4);
+  const j5 = salvageJsonLeak('{"isAnomaly": true, "score": 2}');  // 텍스트 필드 없는 JSON
+  check("JSON w/o text field → blanked (fallback)", j5 === "", JSON.stringify(j5));
+}
+
+// ── 민호라: 추출기 cleanName 인용어미 보정 ─────────────────────────────────
+console.log("\n[extractor] cleanName quotative 라고 fix");
+{
+  check('"민호라"(민호라고) → 민호', cleanName("민호라") === "민호", cleanName("민호라"));
+  check('"보라라"(보라라고) → 보라', cleanName("보라라") === "보라", cleanName("보라라"));
+  // 2글자 라-이름 보호
+  check('"보라"(보라야) 보존', cleanName("보라") === "보라", cleanName("보라"));
+  check('"세라" 보존', cleanName("세라") === "세라", cleanName("세라"));
+  check('"미라" 보존', cleanName("미라") === "미라", cleanName("미라"));
+  // 기존 조사 제거 정상
+  check('"영민이고" → 영민', cleanName("영민이고") === "영민", cleanName("영민이고"));
 }
 
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
