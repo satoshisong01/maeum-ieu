@@ -159,3 +159,28 @@
 - `app/api/chat/route.ts` — extractText가 salvageJsonLeak 사용 (inline 함수 → lib 분리)
 - `lib/chat/profile-extractor.ts` — cleanName 라고 보정 + export
 - `scripts/safety-regression.ts` — A-3 + cleanName 케이스 추가 (총 26)
+
+---
+
+## 2026-05-29 · Cycle C (신규 계정 첫 대화 검증 + 능동 대화 로드맵)
+
+### 신규 계정 검증 (cycle_test_2026@example.com / test1234!, 박순자 78세, 커스텀 동반자 "지윤/손녀/할머니")
+- **AI 먼저 첫 인사 ✓**: 진입 시 자동으로 "안녕하세요, 할머니! 저는 할머니의 손녀 지윤이에요…" (DB msg 0).
+  ※ `app/chat/page.tsx` 진입 effect → `POST /api/chat {isInitialGreeting:true}` → `handleFirstGreeting`.
+- **커스텀 동반자 ✓**: companionName=지윤 / relation=손녀 / honorific=할머니 모두 정확 반영.
+- **계정 독립성 ✓ (누수 0)**: "큰아들 이름 기억하니?" → "지윤이가 아직 모르고 있었네요, 알려주시면 기억할게요"
+  — 신규 계정은 가족 정보 없음, 기존 계정(abc/rudtjrch)에서 누수 전혀 없음.
+- **이름 재질문 자가보정 ✓**: 첫 응답에선 자기소개 반복금지 룰로 이름 생략했으나, 재차 물으니 "저는 지윤이에요" 정확히 밝힘.
+- **결론**: 첫 대화부터 프로필 축적·커스텀·독립성·공감 모두 정상. 신규 결함 없음.
+
+### 🛣️ 로드맵 — 능동 대화(AI-initiated) [핵심 기능, 사용자 비전 2026-05-29]
+현재 상태:
+- ✅ 첫 진입 시 AI 먼저 인사 (`isInitialGreeting`).
+- ✅ 2시간 이상 경과 후 재진입 시 AI 먼저 재인사 (`app/chat/page.tsx` RETURNING_THRESHOLD_MS=2h, `isReturningGreeting`).
+- ✅ 복약/일과 알림 폴링(1분) → due 시 AI 먼저 멘트 (`/api/medications/check`).
+
+향후(IoT always-on 환경) 목표 — 웹은 제약 있으나 IoT는 상시 가동 가정:
+- 대화 공백 N시간 후 AI가 먼저 말 검 (식사 후 복귀 등).
+- **비음성 인기척 감지**(문소리/발소리 등)로 사용자 복귀 추정 → 능동 대화 트리거.
+- 시간대·일과 맥락 기반 선제 대화(예: 아침 약 시간, 저녁 안부).
+- → 설계 시 트리거 소스(타이머/센서/일정)와 멘트 생성(`handleReturningGreeting` 계열)을 분리한 이벤트 기반 구조 권장.
