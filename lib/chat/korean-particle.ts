@@ -90,19 +90,24 @@ export function normalizeImnida(text: string, knownNames: string[] = []): string
  */
 export function stripRecallAnswerLeak(text: string): string {
   if (!text) return text;
-  // 1) 회상 컨텍스트 검출
-  const recallContext = /(?:외워[ㄴ던드]|외운|말씀\s*드린|아까\s*(?:드린|말씀)|기억(?:나|해))/.test(text);
+  // 1) 회상 컨텍스트 검출 — "외운/외워드린/외워달라고/말씀드린/기억나세요" + 정답 노출 위험
+  const recallContext = /(?:외워[ㄴ던드]|외운|외워달라|외워드|말씀\s*드린|아까\s*(?:드린|말씀)|기억(?:나|해))/.test(text);
   if (!recallContext) return text;
 
-  // 2) 작은/큰따옴표로 묶인 한글 단어 2개+ 시퀀스 매칭 → 제거
-  //    예: '나무', '자동차', '모자' / "나무" "자동차" "모자"
-  const quotedSeq = /[''""]?[가-힣]{1,5}[''""]?\s*[,·、]\s*[''""]?[가-힣]{1,5}[''""]?(?:\s*[,·、]\s*[''""]?[가-힣]{1,5}[''""]?){0,4}(?:\s*(?:였는데|이었는데|이었어요|예요|이에요))?/g;
   let out = text;
-  // 회상 컨텍스트가 있는 문장만 매칭 (다른 정상 나열 보호)
-  out = out.replace(quotedSeq, (match) => {
-    // 매칭에 따옴표가 적어도 한 번 등장하면 회상 단서로 간주
-    if (/['"'""]/.test(match)) return "";
-    return match;
-  });
+
+  // 2) 따옴표 묶인 한글 단어 2개+ 시퀀스 매칭 → 제거 ('나무', '자동차', '모자')
+  const quotedSeq = /[''""][가-힣]{1,5}[''""](?:\s*[,·、]\s*[''""]?[가-힣]{1,5}[''""]?){1,5}(?:\s*(?:였는데|이었는데|이었어요|예요|이에요))?/g;
+  out = out.replace(quotedSeq, "");
+
+  // 3) 따옴표 없는 한글 단어 3개 콤마 나열 + 회상 마커 동반 (보수적)
+  //    예: "단어 세 개, 기억나세요? 나무, 자동차, 모자였는데" → 정답 부분 제거
+  //    매우 보수적 — 회상 컨텍스트 문장 안에서만, "세 단어/세 개/단어 N개" 마커 동반 시
+  const hasRecallMarker = /(?:세\s*개|세\s*가지|세\s*단어|단어\s*(?:세|3)\s*(?:개|가지))/.test(text);
+  if (hasRecallMarker) {
+    const bareSeq = /([가-힣]{1,5})\s*,\s*([가-힣]{1,5})\s*,\s*([가-힣]{1,5})(?:\s*(?:였는데|이었는데|이었어요|예요|이에요|이었어))?/g;
+    out = out.replace(bareSeq, "");
+  }
+
   return out.replace(/\s{2,}/g, " ").replace(/,\s*,/g, ",").trim();
 }
