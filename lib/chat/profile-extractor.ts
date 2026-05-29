@@ -63,9 +63,13 @@ const RELATION_PATTERNS: Array<{
   { pattern: /(?:손주|손자|손녀)\s*(?:이름|성함)(?:은|이)\s*([가-힣]{2,3})/, relation: "grandchild", orderIdx: null },
 ];
 
-/** 이름 추출 후 종결어미·조사 잔여 제거 (안전망) */
-function cleanName(raw: string): string {
-  return raw.replace(/(?:이야|이고|이지|이며|이에요|예요|이세요|세요|이|가|은|는|을|를|랑|이랑|야|아|어|었나|였나|이었|였)$/, "").trim();
+/** 이름 추출 후 종결어미·조사 잔여 제거 (안전망). export: 회귀 테스트용. */
+export function cleanName(raw: string): string {
+  let name = raw.replace(/(?:이야|이고|이지|이며|이에요|예요|이세요|세요|이|가|은|는|을|를|랑|이랑|야|아|어|었나|였나|이었|였)$/, "").trim();
+  // 인용 어미 "라고"가 이름에 흡수된 케이스 보정 — "민호라고"→캡처 "민호라"→"민호".
+  // 길이 3 이상일 때만 끝 "라" 제거 (2글자 라-이름 보라/세라/미라 보호). "보라라"(보라+라고)→"보라"도 자연 처리.
+  if (name.length >= 3 && name.endsWith("라")) name = name.slice(0, -1);
+  return name;
 }
 
 /** 거주/고향 패턴 */

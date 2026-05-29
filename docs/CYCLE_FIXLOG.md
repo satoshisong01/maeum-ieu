@@ -63,14 +63,16 @@
 - **검증**: `scripts/_tmp-recall.ts` — 입니다/예요/였는데 케이스 전부 자연 복원, 정상 대화(과일 나열) 오제거 0건.
 - **상태**: [x] DONE
 
-#### A-3 🟢 원본 JSON 누출 (과거 DB 흔적, 현재 코드엔 결합 JSON 요청 없음)
+#### A-3 🟢→✅ 원본 JSON 누출 예방 하드닝 (Cycle B에서 보완 완료)
 - **증상 (과거 DB, 2002 월드컵 등 옛 날짜)**: `{"text": "...", "isAnomaly": true, "analysisNote...}` 가
   사용자에게 그대로 노출.
-- **원인**: 모델이 컨텍스트의 인지분석 JSON 지시를 본문에 흘렸고 `extractText`(app/api/chat/route.ts:83)가
-  그대로 반환. 현재 코드에는 `{text,isAnomaly,...}` 결합 형태를 요청하는 곳 없음 → 옛 데이터로 추정.
-- **수정 방향(예방적 하드닝)**: `extractText`에서 본문이 JSON 객체로 파싱되거나 truncated JSON처럼 보이면
-  text/response/message 필드를 추출하거나 비워서(→ fallback) **절대 원본 JSON을 사용자에 노출하지 않도록** 방어.
-- **상태**: [ ] OPEN (예방적, 우선순위 낮음 — 라이브 미재현)
+- **원인**: 모델이 컨텍스트의 인지분석 JSON 지시를 본문에 흘렸고 `extractText`가 그대로 반환.
+- **수정 (기능적 하드닝)**: `lib/chat/sanitize.ts::salvageJsonLeak` 신규 — `extractText`가 호출.
+  본문이 JSON 객체(`{` + `"key":` 시그니처)면 text/response/message/응답 등 필드만 추출,
+  truncated JSON이면 정규식으로 text 필드 복구, 살릴 수 없으면 빈 문자열(→ fallback). 일반 텍스트는 그대로 통과.
+- **검증**: `safety-regression.ts` A-3 5케이스 PASS (full/truncated/fenced 추출, plain 통과, text없는 JSON 공백화).
+  라이브: 일반 대화("김치찌개 간이 짜") 정상 응답 유지 — 오작동 없음 확인.
+- **상태**: [x] DONE
 
 #### A-4 🔴→✅ 자살 ideation 활용형 누락 (안전 갭, 라이브 발견·수정)
 - **증상 (라이브 재현)**: "다 부질없다 그냥 조용히 **사라져버리고** 싶어" → 109 자살예방 안내 미발동,
@@ -141,3 +143,19 @@
 
 ### 결론
 2계정 교차 자연 대화에서 호칭·맥락·공감·지남력·이름충돌·환각방지 모두 정상. Cycle A의 3개 fix 외 추가 결함 없음.
+
+### Cycle B 보완 (2026-05-29 추가 — 발견 항목 보완 후 추가 테스트)
+- **A-3 JSON 누출 방어 구현** (위 A-3 [x] DONE 참조). `lib/chat/sanitize.ts` 신규 + `extractText` 연결.
+- **민호라 추출기 보완**: `profile-extractor.ts::cleanName` — 인용어미 "라고" 흡수 보정
+  (길이 ≥3 + 끝 "라" 제거, 2글자 라-이름 보라/세라/미라 보호). export하여 회귀 테스트 커버.
+- **기존 슬롯 데이터 교정**: rudtjrch `son(1)` "민호라"→"민호" (사용자 권한 승인 후 1행 UPDATE).
+  ※ 사용자 지침: 이 건은 실사용 무해(LLM이 "김민호" 정확 출력)했어서 필수 아님 — latent 데이터 정리 차원.
+- **계정 독립성 재검증 (누수 없음)**: abc 계정 "큰아들 이름?"→"민호" 응답이 **abc 본인 발화("큰아들 이름이 민호야")
+  기반 정상 데이터**임을 DB로 확인. rudtjrch에서 누수된 것 아님. (두 테스트 계정에 우연히 둘 다 민호 son 존재)
+- **회귀 테스트 확장**: `safety-regression.ts` → **26/26 PASS** (A-1/A-2/A-3/A-4 + cleanName). tsc 0 에러.
+
+### 수정/추가 파일 (Cycle B 보완)
+- `lib/chat/sanitize.ts` (신규) — salvageJsonLeak
+- `app/api/chat/route.ts` — extractText가 salvageJsonLeak 사용 (inline 함수 → lib 분리)
+- `lib/chat/profile-extractor.ts` — cleanName 라고 보정 + export
+- `scripts/safety-regression.ts` — A-3 + cleanName 케이스 추가 (총 26)

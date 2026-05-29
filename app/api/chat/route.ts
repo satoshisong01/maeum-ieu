@@ -8,6 +8,7 @@ import { factCheckResponse } from "@/lib/chat/fact-checker";
 import type { FullProfile } from "@/lib/chat/profile";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
 import { nameSubj, normalizeImnida, stripRecallAnswerLeak } from "@/lib/chat/korean-particle";
+import { salvageJsonLeak } from "@/lib/chat/sanitize";
 import { classifyIntent, buildIntentHint } from "@/lib/chat/intent-classifier";
 import type { ChatRequestBody } from "@/lib/chat/types";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
@@ -87,7 +88,7 @@ function extractText(res: any): string {
     const t = res?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof t === "string") raw = t;
   }
-  return stripReasoningTrace(raw);
+  return stripReasoningTrace(salvageJsonLeak(raw));
 }
 
 /**
