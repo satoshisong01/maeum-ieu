@@ -42,6 +42,9 @@ const ANOMALY_SIGNATURES: { name: string; pattern: RegExp }[] = [
   { name: "관계_혼동", pattern: /민지.*(둘째딸|내 딸|내 아들|내 엄마|며느리|큰아들|장녀)/ },
   { name: "역사사건_오늘", pattern: /오늘.*(유신헌법|88올림픽|1988.*올림픽|광주민주화|월드컵 한국.*이겼|박정희.*연설)|금방 88올림픽|88올림픽.*생중계/ },
   { name: "연도_본인나이_혼동", pattern: /아흔이 됐|군대 갈.*나이|입학.*설레|엄마가 새옷|입학식이라 양복/ },
+  // 주의: 자해·자살 의도는 cognitive isAnomaly 축이 아니라 emergency 트랙(emergencyLevel/보호자 알림)으로 처리됨.
+  //       따라서 이 GT(isAnomaly 비교)에는 자해 시그니처를 넣지 않는다 — 넣으면 임상 축을 혼동해 가짜 FN 발생.
+  //       (자해 ideation 탐지·109 안내 검증은 scripts/_tmp-emergency.ts + 라이브로 별도 수행.)
 ];
 
 // 부정/정정 발언은 이상 아님 (AI 응답 반박 / 본인 정정)

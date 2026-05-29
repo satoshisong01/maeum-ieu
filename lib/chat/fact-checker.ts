@@ -79,7 +79,17 @@ const COMMON_FAMILY_LABELS = new Set([
   "할머니", "할아버지", "선생님", "어르신", "민지", "수진", "수지",
 ]);
 
-function calculateGrounding(text: string, profile: FullProfile, recentUserText: string, memories: string): number {
+/**
+ * grounding 결과 — score 외에 구체 명사 후보 수(total)와 ungrounded 수도 반환.
+ * wholesale fallback이 "노이즈성 단일 명사"로 오발동하지 않도록 호출부에서 total을 게이트로 사용.
+ */
+interface GroundingDetail {
+  score: number;
+  total: number;       // 검사 대상 구체 명사 후보 수
+  ungrounded: number;  // 근거 없는 후보 수
+}
+
+function calculateGrounding(text: string, profile: FullProfile, recentUserText: string, memories: string): GroundingDetail {
   const candidates = new Set<string>();
   let m: RegExpExecArray | null;
   FACT_NOUN_PATTERN.lastIndex = 0;
@@ -91,13 +101,13 @@ function calculateGrounding(text: string, profile: FullProfile, recentUserText: 
     if (COMMON_PLACES.has(noun)) continue;
     candidates.add(noun);
   }
-  if (candidates.size === 0) return 1.0;  // 구체 명사 없으면 신뢰도 100%
+  if (candidates.size === 0) return { score: 1.0, total: 0, ungrounded: 0 };  // 구체 명사 없으면 신뢰도 100%
 
   let grounded = 0;
   for (const c of candidates) {
     if (isGrounded(c, profile, recentUserText, memories)) grounded++;
   }
-  return grounded / candidates.size;
+  return { score: grounded / candidates.size, total: candidates.size, ungrounded: candidates.size - grounded };
 }
 
 /** 응답에서 이름 후보 추출 (가족 관계 컨텍스트 있는 명사만) */
@@ -195,7 +205,8 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   if (!aiText) return result;
 
   // Phase A: grounding score 계산
-  result.groundingScore = calculateGrounding(aiText, profile, recentUserText, memories);
+  const grounding = calculateGrounding(aiText, profile, recentUserText, memories);
+  result.groundingScore = grounding.score;
 
   // 1) 가족 관계 모순 detect (경고만, 자동 수정은 위험)
   result.warnings.push(...findRelationContradictions(aiText, profile));
@@ -263,9 +274,15 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   // 사용자가 가족 정보 제공/확인 패턴 (이름 명시 + "라고 했/맞아/맞지/그렇지") — 사용자가 친 정보를 AI가 받아주는 케이스
   const userProvidedFact = /(?:아들|딸|손주|손자|손녀|며느리|사위|아내|남편|영감|안사람)[^.]{0,15}(?:이름|성함)?\s*(?:이|가|은|는)?\s*[가-힣]{2,4}(?:이?(?:라고|이라고|이야|이지|이고|이에요|이라|이래)|\s*맞|\s*지)/.test(currentUser);
   // 응급 발화 키워드 — 사용자가 신체 사고·증상·자해의도를 호소한 경우 fallback 절대 금지 (회피 답변 = 매우 위험)
-  const isEmergencyOrSafety = /미끄러|넘어져|쓰러져|쓰러졌|다쳤|부러|피가|코피|숨\s*막|숨이\s*안|가슴(?:이|을)?\s*(?:아|답답|조여|찢|쪼개|짓눌|터질)|식은땀|어지러|119|구급|약\s*(?:잘못|많이|두\s*번|또)|토하|죽고\s*싶|뛰어내|목\s*매|끝내(?:버리|고\s*싶|려)|사라지(?:고\s*싶|버리)|살기\s*싫|그만\s*살|살아서\s*뭐|살아\s*뭐|짐(?:만|이|이만)\s*(?:되|돼)|폐(?:만|를)\s*끼치|빨리\s*(?:가야|가버려)|얼른\s*죽어/.test(currentUser);
-  if (result.groundingScore < 0.15 && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact && !isEmergencyOrSafety) {
-    console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore);
+  const isEmergencyOrSafety = /미끄러|넘어져|쓰러져|쓰러졌|다쳤|부러|피가|코피|숨\s*막|숨이\s*안|가슴(?:이|을)?\s*(?:아|답답|조여|찢|쪼개|짓눌|터질)|식은땀|어지러|119|구급|약\s*(?:잘못|많이|두\s*번|또)|토하|죽고\s*싶|뛰어내|목\s*매|끝내(?:버리|고\s*싶|려)|사라(?:지|져)\s*(?:고\s*싶|버리|버려)|살기\s*싫|그만\s*살|살아서\s*뭐|살아\s*뭐|짐(?:만|이|이만)\s*(?:되|돼)|폐(?:만|를)\s*끼치|빨리\s*(?:가야|가버려)|얼른\s*죽어/.test(currentUser);
+  // wholesale 교체는 "구체 명사가 충분히 많고(>=3) 그 대부분이 근거 없음"일 때만 — 진짜 환각 밀집 응답 신호.
+  // Why: 명사 1~2개만 매칭돼 0/1=0.0 score가 나오는 노이즈 케이스에 정상 응답이 통째로 nuke되어
+  //      "방금 말씀을 자세히 알려주세요" 같은 회피성 re-ask로 오발동하던 결함(2026-05-29 라이브 재현).
+  //      정밀 검출(removeUngroundedClaims)이 이미 이름 단위로 처리하므로, 여기선 다수 ungrounded 명사일 때만 backstop.
+  const denseUngrounded = grounding.total >= 3 && grounding.ungrounded >= 3;
+  if (result.groundingScore < 0.15 && denseUngrounded && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact && !isEmergencyOrSafety) {
+    console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore,
+      JSON.stringify({ total: grounding.total, ungrounded: grounding.ungrounded }));
     result.cleaned = `${input.honorific}, 민지가 다시 한 번 여쭤볼게요. 방금 말씀하신 내용을 좀 더 자세히 알려주실 수 있으세요?`;
   } else if (result.groundingScore < 0.5) {
     console.log("[fact-check] grounding score (info only):", result.groundingScore.toFixed(2));
