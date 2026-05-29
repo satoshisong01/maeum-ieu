@@ -10,11 +10,20 @@
 > - DB 과거 데이터의 결함은 fix 이전 흔적일 수 있음 → **라이브 재현 여부로 현재 결함인지 판단**.
 > - 미해결 이슈는 `[ ] OPEN` 으로 남기고, 해결 시 `[x] DONE` 으로 갱신.
 >
+> ## ⚠️ 테스트 철학 (사용자 지침, 2026-05-29)
+> - **결함을 억지로 찾는 게 목적이 아니다.** 우리가 만든 기능을 **자연스러운 대화로 검증**하고,
+>   그 과정에서 **일반인이 봐도 이상한 응답**이 나올 때만 문제로 보고 고친다.
+> - 사람도 실수하고 잘못 말한다 — 완벽주의 잣대로 latent/이론적 결함을 몰지 말 것.
+> - **한 계정만 쓰면 편향**되므로 여러 계정으로 교차 검증 (abc@abc.com=대화 최다, rudtjrch, test_indep 등).
+> - 슬롯에 약간 지저분한 데이터가 있어도 **AI 출력이 정상이면 실사용 문제 아님** (예: 슬롯 "민호라"지만
+>   LLM이 맥락으로 "김민호" 정확 출력 → 비문제. 단 파인튜닝 데이터 추출 시점엔 정리 고려).
+>
 > ## 운영 환경 메모
 > - dev 서버: `npm run dev` (포트 3000). lib 파일 수정 시 재시작 필요할 수 있음.
 > - 서버 재시작 시 stdout 캡처: `npm run dev > dev-server.log 2>&1 &` 후 `dev-server.log` 확인.
-> - 자동 평가: `npx tsx scripts/eval-quality.ts <conversationId> <lastN>`
-> - 최근 대화 ID 조회: `npx tsx scripts/_tmp-convs.ts` (또는 DB 직접).
+> - 자동 평가: `npx tsx scripts/eval-quality.ts <conversationId> <lastN>` (인자 없으면 최근 대화)
+> - 안전망 회귀 테스트: `npx tsx scripts/safety-regression.ts` (exit 0=PASS)
+> - 최근 대화 ID 조회: DB 직접 (`Message` 의 conversationId GROUP BY MAX createdAt).
 > - Playwright 송신: `input[placeholder="메시지를 입력하세요."]`에 nativeInputValueSetter로 주입 후 `form.requestSubmit()`.
 > - 관련 메모리: `feedback_cognitive_analysis_debugging`, `project_eval_pipeline`, `feedback_safety_net_patterns`.
 
@@ -105,3 +114,30 @@
 - **`scripts/safety-regression.ts` (신규·영구)** — A-1/A-2/A-4 결정적 회귀 테스트 15케이스.
   `npx tsx scripts/safety-regression.ts` (exit 0=PASS). lib/chat 안전망 수정 후·PR 전 실행.
   (사이클 중 쓰던 임시 `_tmp-*.ts`는 이걸로 통합·삭제함.)
+
+---
+
+## 2026-05-29 · Cycle B (다계정 자연 대화 검증)
+
+### 진행 상태: ✅ 검증 통과 — 신규 fix 없음 (기능 정상 동작 확인)
+
+테스트 철학 적용: 자연스러운 대화로 기능 검증, 진짜 이상만 문제로 판단.
+
+### rudtjrch 계정 (맥락유지·반복질문)
+- 구체 정보 2건("부대찌개"+"천안 두정동") 제공 → AI가 둘 다 인지 + 새 질문 (재질문 없음) ✓
+- 짧은 답("그냥 쉬려고") → 직전 정보 재질문 없이 thread 이어감 ✓
+
+### abc@abc.com 계정 (대화 최다, 자연 대화 5턴)
+- 아침 산책 일상 → 자연 공감 + 호칭 "할아버지" 일관 ✓
+- "사람 구경하는 **재미**가 쏠쏠" → "재미"를 단어로 정확 처리(이름충돌 회피) ✓
+- 손주 그리움 → 따뜻한 공감 + 이름 환각 없음("손주분" generic) ✓
+- "오늘 무슨 요일?" → "2026년 5월 29일 금요일" 정확(실제 오늘과 일치) ✓
+- "적적함 덜하다 고맙다" → 공감 마무리, fallback 오발화 없음 ✓
+
+### 판단 보류/비문제 처리
+- rudtjrch `family_member.son(1)` 슬롯이 "민호라"(추출기가 `민호라고`→`민호라`로 캡처).
+  **그러나 AI 출력은 "김민호"로 정상** (LLM이 맥락 보정) → 실사용 문제 아님.
+  추출기 `cleanName`에 라고-quotative 처리는 *파인튜닝 데이터 정리 시점*에 옵션으로만 고려. (강제 X)
+
+### 결론
+2계정 교차 자연 대화에서 호칭·맥락·공감·지남력·이름충돌·환각방지 모두 정상. Cycle A의 3개 fix 외 추가 결함 없음.
