@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { computeOverallAvg, classifySeverity, RISK_DOMAIN_THRESHOLD } from "@/lib/health/severity";
 
 const DOMAIN_LABELS: Record<string, string> = {
   orientation_time: "시간 지남력",
@@ -67,21 +68,20 @@ export async function GET(req: Request) {
     );
   } catch { /* 테이블 없을 수 있음 */ }
 
-  // 위험 영역 (평균 1.0 이상)
+  // 위험 영역 (평균 임계 이상)
   const riskDomains = domainStats
-    .filter((d) => d.avg_score >= 1.0)
+    .filter((d) => d.avg_score >= RISK_DOMAIN_THRESHOLD)
     .map((d) => ({ domain: d.domain, label: DOMAIN_LABELS[d.domain] || d.domain, avgScore: d.avg_score, count: d.count }));
 
   // 정상 영역
   const normalDomains = domainStats
-    .filter((d) => d.avg_score < 1.0)
+    .filter((d) => d.avg_score < RISK_DOMAIN_THRESHOLD)
     .map((d) => ({ domain: d.domain, label: DOMAIN_LABELS[d.domain] || d.domain, avgScore: d.avg_score, count: d.count }));
 
-  // 전체 평균
+  // 전체 가중 평균 + 등급
   const totalAssessments = domainStats.reduce((s, d) => s + d.count, 0);
-  const overallAvg = totalAssessments > 0
-    ? domainStats.reduce((s, d) => s + d.avg_score * d.count, 0) / totalAssessments
-    : -1;
+  const overallAvg = computeOverallAvg(domainStats);
+  const severity = classifySeverity(overallAvg);
 
   // 요약 텍스트 생성
   const periodLabel = period === "month" ? "최근 30일" : "최근 7일";
@@ -97,12 +97,7 @@ export async function GET(req: Request) {
     summaryText += ` 주의가 필요한 영역: ${riskDomains.map((d) => d.label).join(", ")}.`;
   }
 
-  if (overallAvg >= 0) {
-    if (overallAvg < 0.3) summaryText += " 전반적으로 정상 범위입니다.";
-    else if (overallAvg < 0.8) summaryText += " 경미한 인지 변화가 관찰되므로 지속적인 모니터링을 권장합니다.";
-    else if (overallAvg < 1.5) summaryText += " 인지 저하 가능성이 있으므로 전문의 상담을 권장합니다.";
-    else summaryText += " 심각한 인지 저하가 의심되므로 즉시 전문의 상담이 필요합니다.";
-  }
+  if (severity.text) summaryText += " " + severity.text;
 
   return NextResponse.json({
     period: periodLabel,
@@ -112,6 +107,7 @@ export async function GET(req: Request) {
     userMessages,
     anomalyCount,
     overallAvg: overallAvg >= 0 ? Number(overallAvg.toFixed(2)) : null,
+    severityTier: severity.tier,
     totalAssessments,
     riskDomains,
     normalDomains,

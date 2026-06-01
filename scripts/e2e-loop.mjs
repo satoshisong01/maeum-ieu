@@ -22,6 +22,8 @@ for (let r = 1; r <= ROUNDS; r++) {
   console.log(`\n================= ROUND ${r} =================`);
   // 항목×강도 정밀 매트릭스 (판단 엔진)
   try { runTsx("scripts/matrix-verify.ts", ["3", `loop${r}`]); } catch (e) { console.log("matrix round err", e.message); }
+  // 종합 위험도 4단계 판정 (순수 함수)
+  try { runTsx("scripts/tier-verify.ts", [`loop${r}`]); } catch (e) { console.log("tier round err", e.message); }
   // 실제 앱 e2e
   try { run("scripts/e2e-screening.mjs", [ANOM, String(r)]); } catch (e) { console.log("anomaly round err", e.message); }
   try { run("scripts/e2e-recall.mjs", [RECALL, String(r)]); } catch (e) { console.log("recall round err", e.message); }
