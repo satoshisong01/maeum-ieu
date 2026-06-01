@@ -90,6 +90,12 @@ export function normalizeImnida(text: string, knownNames: string[] = []): string
  */
 export function stripRecallAnswerLeak(text: string): string {
   if (!text) return text;
+  // 0) 등록(외울 단어를 지금 제시하는) 발화면 단어를 보여줘야 하므로 strip 절대 금지.
+  //    예: "세 가지 단어 말씀드릴게요. 나무, 자동차, 모자. 이따 여쭤볼게요" → 단어 유지.
+  //    (이걸 안 막으면 "잘 기억해 주세요"의 '기억해'가 recallContext에 걸려 외울 단어가 지워짐 — ****이에요 버그)
+  const isRegistration = /말씀드릴게요|말씀드릴\s*테니|불러드릴게요|불러\s*드릴|들려드릴게요|들려드릴\s*테니|외워\s*(?:보세요|주세요|볼래|두세요|보실래|드릴)|잘\s*기억(?:해|하)\s*(?:주세|두세)|이따(?:가)?\s*(?:다시\s*)?(?:한\s*번\s*)?여쭤|잠깐\s*(?:만\s*)?외워|세\s*(?:개|가지)\s*(?:를)?\s*(?:말씀\s*드|불러)/.test(text);
+  if (isRegistration) return text;
+
   // 1) 회상 컨텍스트 검출 — "외운/외워드린/외워달라고/말씀드린/기억나세요" + 정답 노출 위험
   const recallContext = /(?:외워[ㄴ던드]|외운|외워달라|외워드|말씀\s*드린|아까\s*(?:드린|말씀)|기억(?:나|해))/.test(text);
   if (!recallContext) return text;
