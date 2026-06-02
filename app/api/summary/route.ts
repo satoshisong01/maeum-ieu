@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { computeOverallAvg, classifySeverity, RISK_DOMAIN_THRESHOLD } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, detectAcuteChange, RISK_DOMAIN_THRESHOLD } from "@/lib/health/severity";
 
 const DOMAIN_LABELS: Record<string, string> = {
   orientation_time: "시간 지남력",
@@ -83,6 +83,28 @@ export async function GET(req: Request) {
   const overallAvg = computeOverallAvg(domainStats);
   const severity = classifySeverity(overallAvg);
 
+  // 종단 추세 — 최근 7일 vs 베이스라인(7~35일) 비교로 급성 악화 감지
+  //   (장기 평균만 보면 "오래 정상 + 최근 급변"을 놓치는 문제 보완. 알림 연동은 추후.)
+  let trend: { status: string; delta: number; text: string } = { status: "자료부족", delta: 0, text: "" };
+  try {
+    const winQuery = (clause: string) =>
+      prisma.$queryRawUnsafe<AssessmentRow[]>(
+        `SELECT domain, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS count
+         FROM cognitive_assessments WHERE user_id = $1 AND ${clause} GROUP BY domain`,
+        userId,
+      );
+    const recentStats = await winQuery("session_date >= CURRENT_DATE - '7 days'::interval");
+    const baseStats = await winQuery(
+      "session_date < CURRENT_DATE - '7 days'::interval AND session_date >= CURRENT_DATE - '35 days'::interval",
+    );
+    trend = detectAcuteChange({
+      recentAvg: computeOverallAvg(recentStats),
+      recentCount: recentStats.reduce((s, d) => s + d.count, 0),
+      baselineAvg: computeOverallAvg(baseStats),
+      baselineCount: baseStats.reduce((s, d) => s + d.count, 0),
+    });
+  } catch { /* 테이블 없을 수 있음 */ }
+
   // 요약 텍스트 생성
   const periodLabel = period === "month" ? "최근 30일" : "최근 7일";
   let summaryText = `${periodLabel} 동안 ${activeDays}일간 대화하였으며, 총 ${userMessages}건의 발화가 있었습니다.`;
@@ -98,6 +120,7 @@ export async function GET(req: Request) {
   }
 
   if (severity.text) summaryText += " " + severity.text;
+  if (trend.status === "급성악화" || trend.status === "악화") summaryText += " " + trend.text;
 
   return NextResponse.json({
     period: periodLabel,
@@ -108,6 +131,7 @@ export async function GET(req: Request) {
     anomalyCount,
     overallAvg: overallAvg >= 0 ? Number(overallAvg.toFixed(2)) : null,
     severityTier: severity.tier,
+    trend: { status: trend.status, delta: trend.delta },
     totalAssessments,
     riskDomains,
     normalDomains,

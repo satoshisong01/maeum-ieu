@@ -18,11 +18,46 @@ export interface DomainStat {
   count: number;
 }
 
-/** 영역별 (평균, 건수)로 전체 가중 평균. 평가 없으면 -1. */
+/** 한 영역의 발화량(count)이 전체 등급을 지배하지 못하도록 가중 상한.
+ *  예: 일상 잡담이 많은 영역(score 0 다수)이 다른 영역의 이상 신호를 희석하는 것 방지. */
+export const PER_DOMAIN_WEIGHT_CAP = 15;
+
+/** 영역별 (평균, 건수)로 전체 가중 평균(영역당 가중 상한 적용). 평가 없으면 -1. */
 export function computeOverallAvg(stats: DomainStat[]): number {
-  const total = stats.reduce((s, d) => s + d.count, 0);
+  const weighted = stats.map((d) => ({ avg: d.avg_score, w: Math.min(d.count, PER_DOMAIN_WEIGHT_CAP) }));
+  const total = weighted.reduce((s, d) => s + d.w, 0);
   if (total <= 0) return -1;
-  return stats.reduce((s, d) => s + d.avg_score * d.count, 0) / total;
+  return weighted.reduce((s, d) => s + d.avg * d.w, 0) / total;
+}
+
+/** 종단 추세 — 최근 윈도우 vs 베이스라인(이전) 윈도우 비교. */
+export type TrendStatus = "급성악화" | "악화" | "안정" | "개선" | "자료부족";
+export interface TrendInput {
+  recentAvg: number;     // 최근 윈도우 overallAvg (computeOverallAvg 결과)
+  recentCount: number;   // 최근 윈도우 총 평가 건수
+  baselineAvg: number;   // 이전(베이스라인) 윈도우 overallAvg
+  baselineCount: number; // 베이스라인 윈도우 총 평가 건수
+}
+
+/**
+ * 급성 악화 감지 — 장기 평균이 낮아도 "최근 급변"을 포착.
+ * (30일 평균만 보면 "25일 정상 + 최근 5일 중증"을 놓치는 문제 해결)
+ */
+export function detectAcuteChange(t: TrendInput): { status: TrendStatus; delta: number; text: string } {
+  if (t.recentCount < 3 || t.baselineCount < 3 || t.recentAvg < 0 || t.baselineAvg < 0) {
+    return { status: "자료부족", delta: 0, text: "" };
+  }
+  const delta = Number((t.recentAvg - t.baselineAvg).toFixed(2));
+  if (delta >= 0.7 && t.recentAvg >= 0.8) {
+    return { status: "급성악화", delta, text: "최근 인지 점수가 평소 대비 급격히 악화되었습니다. 섬망 등 급성·가역적 원인 배제를 위해 빠른 진료를 권장합니다." };
+  }
+  if (delta >= 0.3) {
+    return { status: "악화", delta, text: "최근 인지 점수가 평소보다 악화되는 추세입니다. 지속적인 모니터링을 권장합니다." };
+  }
+  if (delta <= -0.3) {
+    return { status: "개선", delta, text: "최근 인지 점수가 평소보다 개선되었습니다." };
+  }
+  return { status: "안정", delta, text: "최근 인지 점수는 평소와 비슷하게 유지되고 있습니다." };
 }
 
 /** overallAvg → 4단계 등급 + 보호자 안내 문구 */
