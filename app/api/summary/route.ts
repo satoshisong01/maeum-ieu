@@ -14,6 +14,11 @@ const DOMAIN_LABELS: Record<string, string> = {
   attention_calculation: "주의력/계산",
 };
 
+// 평가 범위 명시 — 대화(음성/텍스트) 기반이라 측정 불가한 임상 영역이 있음(과신 방지)
+const NOT_ASSESSED = ["시공간 구성", "그리기(시계그리기 등)", "세밀한 실행기능"];
+const COVERAGE_NOTE = "대화 기반 선별 특성상 시공간 구성·그리기·세밀한 실행기능은 평가 범위에 포함되지 않습니다.";
+const DISCLAIMER = "본 결과는 대화 기반 인지 선별 보조 지표이며 의학적 진단이 아닙니다. 우려되시면 전문의 평가를 받으시길 권합니다.";
+
 interface AssessmentRow {
   domain: string;
   avg_score: number;
@@ -136,5 +141,7 @@ export async function GET(req: Request) {
     riskDomains,
     normalDomains,
     summaryText,
+    coverage: { assessed: Object.values(DOMAIN_LABELS), notAssessed: NOT_ASSESSED, note: COVERAGE_NOTE },
+    disclaimer: DISCLAIMER,
   });
 }

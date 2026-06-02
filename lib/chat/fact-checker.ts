@@ -260,7 +260,7 @@ export function factCheckResponse(input: CheckInput): CheckResult {
     }
 
     console.warn("[fact-check] removed ungrounded names:", JSON.stringify({
-      ungrounded, removed: result.removed.length, warnings: result.warnings,
+      ungroundedCount: ungrounded.length, removed: result.removed.length, warningCount: result.warnings.length, // PII(이름) 미로깅
       finalLength: result.cleaned.length, usedFallback: result.cleaned.length < 80 && result.cleaned.includes("헷갈렸나 봐요"),
       groundingScore: result.groundingScore.toFixed(2),
     }));

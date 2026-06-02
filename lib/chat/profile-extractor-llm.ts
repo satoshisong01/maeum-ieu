@@ -146,7 +146,8 @@ export async function extractWithLLM(params: {
     }
 
     if (result.familyAdded.length + result.factsAdded.length + result.profileUpdated.length > 0) {
-      console.log("[profile-extract:LLM]", JSON.stringify({ userId: params.userId.slice(0, 8), ...result }));
+      // PII(이름·고향·취미 값) 미로깅 — 건수만
+      console.log("[profile-extract:LLM]", JSON.stringify({ userId: params.userId.slice(0, 8), family: result.familyAdded.length, facts: result.factsAdded.length, profile: result.profileUpdated.length }));
     }
     return result;
   } catch (e) {

@@ -24,6 +24,7 @@ import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { DECEASED_FIGURES as DECEASED_FIGURES_HINT, SURREAL_BEINGS_LOOSE as SURREAL_BEINGS_HINT, RECENT_TIME_CONTACT_LOOSE as RECENT_TIME_CONTACT_HINT } from "@/lib/chat/lexicons";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
 
@@ -399,10 +400,9 @@ function buildRepetitionHint(userText: string): string {
  * Why: cognitive-analyzer의 injectJudgmentSafetyNet은 post-response DB marking 용도.
  *      AI 실제 응답에 영향을 주려면 prompt 시점 hint가 필요. 2026-05-26 rudtjrch
  *      cycle에서 "이순신 장군이 어제 동네 왔다 가셨어"에 AI가 회피 답변하던 회귀 발견.
+ *
+ * *_HINT 패턴은 lib/chat/lexicons.ts(LOOSE 변형) 단일 정의 사용.
  */
-const DECEASED_FIGURES_HINT = /(박정희|이승만|전두환|김구|김대중|노무현|이순신|세종대왕|광개토|영조|정조|숙종|태조|마더\s*테레사|히틀러|마오쩌둥|레닌|스탈린)/;
-const SURREAL_BEINGS_HINT = /(외계인|공룡|UFO|도깨비|유령|호랑이|사자|코끼리|기린)/;
-const RECENT_TIME_CONTACT_HINT = /(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주|아침|저녁|점심|새벽|밤에).*(만났|만나|왔|와서|봤|보았|먹었|마셨|했|같이|차\s*한잔|대화|이야기|놀러|들렀|다녀|머물|머무|점심|저녁\s*먹)|(만났|왔|봤|먹었|같이|놀러|들렀|다녀).*(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주)/;
 function buildAnomalyCorrectionHint(userText: string): string {
   if (!userText) return "";
   const deceased = DECEASED_FIGURES_HINT.test(userText) ? userText.match(DECEASED_FIGURES_HINT)![0] : null;
@@ -869,7 +869,7 @@ async function handleAudioMessage(params: {
   //   응급/모더레이션 매칭이 없는 경우에만 실행. 신뢰도 통과한 발화만 인지 분석에 들어가도록.
   const sttConf = evaluateSttConfidence(transcription);
   if (!sttConf.pass) {
-    console.log("[stt-confidence] failed:", sttConf.reason, "tx:", JSON.stringify(transcription).slice(0, 80));
+    console.log("[stt-confidence] failed:", sttConf.reason, "txLen:", transcription.length); // PII(발화 원문) 미로깅
     const clarification = buildClarificationReply(honorific, companionName);
     if (conversationId) {
       // 사용자 발화는 잡음/오인식이므로 따로 마커를 붙여 저장 (디버깅용)

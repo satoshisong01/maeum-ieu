@@ -7,6 +7,7 @@ import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
+import { DECEASED_FIGURES, SURREAL_BEINGS_STRICT as SURREAL_BEINGS, RECENT_TIME_CONTACT } from "./lexicons";
 
 const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문가입니다.
 아래 대화에서 사용자(고령자)의 발화만 분석하여 인지 이상 여부를 JSON으로 반환하세요.
@@ -116,6 +117,10 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
 
 [급성 변화 — 섬망 등 가역적 원인 주의]
 - 갑작스러운 심한 혼동·지남력 붕괴가 **신체 증상**(고열·오한·소변 문제/요실금·심한 어지럼·구토·최근 약 바뀜·낙상 후 등)과 **함께** 나타나면, 만성 치매가 아니라 **섬망 등 급성·가역적 의학 원인**일 수 있습니다. 인지 점수는 평소대로 기록하되, analysisNote에 "급성 변화 의심 — 섬망 등 가역적 원인 배제 위해 병원 평가 권유"를 명시하세요. (급성 변화는 의학적 응급일 수 있어 만성 인지저하와 구분이 중요합니다.)
+
+[우울·가성치매(pseudodementia) 감별 — 중요]
+- 답을 **모르는 것**과 **하기 싫어/관심 없어 안 하는 것**은 다릅니다. "다 귀찮아", "관심 없어", "그냥 모르겠어 됐어", "사는 게 의미 없어", 흥미상실·무기력·우울 표현이 **저수행과 동반**되면, 인지 저하가 아니라 **우울에 의한 가성치매**일 수 있습니다.
+- 이때는 인지 점수를 **보수적으로**(확실한 오류만 채점, 무기력성 무응답은 무판정) 매기고, analysisNote에 "우울 동반 — 가성치매 감별 및 기분 평가(GDS) 필요"를 명시하세요. 우울은 치료 가능하므로 만성 치매와 구분이 중요합니다.
 
 [예외 — isAnomaly: false로 판단해야 하는 경우]
 - 사용자가 AI의 오류를 정정하는 경우 (AI가 틀렸을 수 있음)
@@ -310,10 +315,9 @@ function extractLastAiMessage(historyText: string): string {
  * 사망인물·비현실 명시 발화는 LLM이 누락할 수 있어 휴리스틱 안전망으로 강제 marking.
  * 동작: 사용자 발화에 (사망인물 ∪ 비현실 생물) + (최근 시점 동사) 패턴이 같이 있으면
  *      judgment score=2를 강제 주입하고 isAnomaly=true 설정.
+ *
+ * DECEASED_FIGURES / SURREAL_BEINGS / RECENT_TIME_CONTACT 는 lib/chat/lexicons.ts 단일 정의 사용.
  */
-const DECEASED_FIGURES = /(박정희|이승만|전두환|김구|김대중|노무현|이순신|세종대왕|광개토|영조|정조|숙종|태조|마더\s*테레사|히틀러|마오쩌둥|레닌|스탈린)/;
-const SURREAL_BEINGS = /(외계인|공룡|UFO|도깨비|유령|화단에\s*호랑이|마당에\s*호랑이|거실에\s*사자|집에서\s*호랑이)/;
-const RECENT_TIME_CONTACT = /(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주|아침|저녁|점심).*(만났|만나|왔|와서|봤|보았|먹었|마셨|했|같이|차\s*한잔|대화|이야기)|(만났|왔|봤|먹었|같이|차\s*한잔).*(어제|오늘|방금|아까|지금|이번\s*주|지난\s*주)/;
 
 function injectJudgmentSafetyNet(
   result: CognitiveAnalysisResult,

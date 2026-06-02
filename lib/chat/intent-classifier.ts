@@ -16,6 +16,8 @@
  * 정규식 기반 (LLM 비용 절약). hintBlock에 결과 주입하여 prompt 분기.
  */
 
+import { DECEASED_FIGURES, SURREAL_BEINGS_STRICT } from "./lexicons";
+
 export type Intent = "info_request" | "emotional" | "cognitive_anomaly" | "daily";
 
 const INFO_REQUEST_PATTERNS = [
@@ -44,10 +46,9 @@ const EMOTIONAL_PATTERNS = [
 ];
 
 const COGNITIVE_ANOMALY_PATTERNS = [
-  // 사망인물 + 최근 시제
-  /(?:박정희|이승만|전두환|김구|김대중|노무현|이순신|세종|김일성|김정일|히틀러|마오쩌둥)/,
-  // 비현실 생물
-  /외계인|UFO|공룡|도깨비|유령|마당에\s*호랑이|화단에\s*호랑이/,
+  // 사망인물 + 비현실 생물 (lib/chat/lexicons.ts 공유 정의)
+  DECEASED_FIGURES,
+  SURREAL_BEINGS_STRICT,
   // 시점 혼동
   /오늘.*(?:19[5-9]\d|200\d|201\d|203\d|204\d|205\d)년|오늘이?\s*(?:19[5-9]\d|20[0-2]\d|203\d|204\d|205\d)년/,
   /지금.*(?:19[5-9]\d|200\d|201\d|203\d|204\d|205\d)년/,
