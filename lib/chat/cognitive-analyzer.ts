@@ -3,7 +3,7 @@
  * 메인 응답과 완전히 분리 — googleSearch 없이 JSON 전용 모델 사용.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
@@ -384,6 +384,30 @@ function reclassifyCalculation(
   };
 }
 
+/** 구조화 출력 스키마 — 긴 응답 truncation 시 JSON 깨짐(평가 유실) 방지. */
+const RESPONSE_SCHEMA: Schema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    isAnomaly: { type: SchemaType.BOOLEAN },
+    analysisNote: { type: SchemaType.STRING },
+    cognitiveChecks: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          domain: { type: SchemaType.STRING },
+          score: { type: SchemaType.INTEGER },
+          confidence: { type: SchemaType.NUMBER },
+          evidence: { type: SchemaType.STRING },
+          note: { type: SchemaType.STRING },
+        },
+        required: ["domain", "score"],
+      },
+    },
+  },
+  required: ["isAnomaly", "cognitiveChecks"],
+};
+
 export async function analyzeCognitive(params: {
   userMessage: string;
   assistantResponse: string;
@@ -397,7 +421,12 @@ export async function analyzeCognitive(params: {
     const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
       // 분석기 모델 — 기본 3.5. 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
       model: process.env.COGNITIVE_MODEL || "gemini-3.5-flash",
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json" },
+      generationConfig: {
+        temperature: 0, // 채점 일관성 — 같은 발화는 같은 점수(비결정성 최소화)
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
+      },
     });
 
     const historyLines = params.historyText.split("\n");
