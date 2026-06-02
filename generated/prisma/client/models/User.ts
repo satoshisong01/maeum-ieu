@@ -46,6 +46,8 @@ export type UserMinAggregateOutputType = {
   guardianName: string | null
   guardianPhone: string | null
   guardianRelation: string | null
+  guardianEmail: string | null
+  guardianWebhookUrl: string | null
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
@@ -65,6 +67,8 @@ export type UserMaxAggregateOutputType = {
   guardianName: string | null
   guardianPhone: string | null
   guardianRelation: string | null
+  guardianEmail: string | null
+  guardianWebhookUrl: string | null
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
@@ -84,6 +88,8 @@ export type UserCountAggregateOutputType = {
   guardianName: number
   guardianPhone: number
   guardianRelation: number
+  guardianEmail: number
+  guardianWebhookUrl: number
   companionName: number
   companionRelation: number
   userHonorific: number
@@ -113,6 +119,8 @@ export type UserMinAggregateInputType = {
   guardianName?: true
   guardianPhone?: true
   guardianRelation?: true
+  guardianEmail?: true
+  guardianWebhookUrl?: true
   companionName?: true
   companionRelation?: true
   userHonorific?: true
@@ -132,6 +140,8 @@ export type UserMaxAggregateInputType = {
   guardianName?: true
   guardianPhone?: true
   guardianRelation?: true
+  guardianEmail?: true
+  guardianWebhookUrl?: true
   companionName?: true
   companionRelation?: true
   userHonorific?: true
@@ -151,6 +161,8 @@ export type UserCountAggregateInputType = {
   guardianName?: true
   guardianPhone?: true
   guardianRelation?: true
+  guardianEmail?: true
+  guardianWebhookUrl?: true
   companionName?: true
   companionRelation?: true
   userHonorific?: true
@@ -257,6 +269,8 @@ export type UserGroupByOutputType = {
   guardianName: string | null
   guardianPhone: string | null
   guardianRelation: string | null
+  guardianEmail: string | null
+  guardianWebhookUrl: string | null
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
@@ -299,6 +313,8 @@ export type UserWhereInput = {
   guardianName?: Prisma.StringNullableFilter<"User"> | string | null
   guardianPhone?: Prisma.StringNullableFilter<"User"> | string | null
   guardianRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianEmail?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianWebhookUrl?: Prisma.StringNullableFilter<"User"> | string | null
   companionName?: Prisma.StringNullableFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
@@ -307,6 +323,7 @@ export type UserWhereInput = {
   accounts?: Prisma.AccountListRelationFilter
   sessions?: Prisma.SessionListRelationFilter
   conversations?: Prisma.ConversationListRelationFilter
+  medicationSchedules?: Prisma.MedicationScheduleListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -321,6 +338,8 @@ export type UserOrderByWithRelationInput = {
   guardianName?: Prisma.SortOrderInput | Prisma.SortOrder
   guardianPhone?: Prisma.SortOrderInput | Prisma.SortOrder
   guardianRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianEmail?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianWebhookUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   companionName?: Prisma.SortOrderInput | Prisma.SortOrder
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -329,6 +348,7 @@ export type UserOrderByWithRelationInput = {
   accounts?: Prisma.AccountOrderByRelationAggregateInput
   sessions?: Prisma.SessionOrderByRelationAggregateInput
   conversations?: Prisma.ConversationOrderByRelationAggregateInput
+  medicationSchedules?: Prisma.MedicationScheduleOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -346,6 +366,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   guardianName?: Prisma.StringNullableFilter<"User"> | string | null
   guardianPhone?: Prisma.StringNullableFilter<"User"> | string | null
   guardianRelation?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianEmail?: Prisma.StringNullableFilter<"User"> | string | null
+  guardianWebhookUrl?: Prisma.StringNullableFilter<"User"> | string | null
   companionName?: Prisma.StringNullableFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
@@ -354,6 +376,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   accounts?: Prisma.AccountListRelationFilter
   sessions?: Prisma.SessionListRelationFilter
   conversations?: Prisma.ConversationListRelationFilter
+  medicationSchedules?: Prisma.MedicationScheduleListRelationFilter
 }, "id" | "email">
 
 export type UserOrderByWithAggregationInput = {
@@ -368,6 +391,8 @@ export type UserOrderByWithAggregationInput = {
   guardianName?: Prisma.SortOrderInput | Prisma.SortOrder
   guardianPhone?: Prisma.SortOrderInput | Prisma.SortOrder
   guardianRelation?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianEmail?: Prisma.SortOrderInput | Prisma.SortOrder
+  guardianWebhookUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   companionName?: Prisma.SortOrderInput | Prisma.SortOrder
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -395,6 +420,8 @@ export type UserScalarWhereWithAggregatesInput = {
   guardianName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   guardianPhone?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   guardianRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  guardianEmail?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  guardianWebhookUrl?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   companionName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
@@ -414,6 +441,8 @@ export type UserCreateInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -422,6 +451,7 @@ export type UserCreateInput = {
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -436,6 +466,8 @@ export type UserUncheckedCreateInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -444,6 +476,7 @@ export type UserUncheckedCreateInput = {
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -458,6 +491,8 @@ export type UserUpdateInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -466,6 +501,7 @@ export type UserUpdateInput = {
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -480,6 +516,8 @@ export type UserUncheckedUpdateInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -488,6 +526,7 @@ export type UserUncheckedUpdateInput = {
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -502,6 +541,8 @@ export type UserCreateManyInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -521,6 +562,8 @@ export type UserUpdateManyMutationInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -540,6 +583,8 @@ export type UserUncheckedUpdateManyInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -559,6 +604,8 @@ export type UserCountOrderByAggregateInput = {
   guardianName?: Prisma.SortOrder
   guardianPhone?: Prisma.SortOrder
   guardianRelation?: Prisma.SortOrder
+  guardianEmail?: Prisma.SortOrder
+  guardianWebhookUrl?: Prisma.SortOrder
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
@@ -582,6 +629,8 @@ export type UserMaxOrderByAggregateInput = {
   guardianName?: Prisma.SortOrder
   guardianPhone?: Prisma.SortOrder
   guardianRelation?: Prisma.SortOrder
+  guardianEmail?: Prisma.SortOrder
+  guardianWebhookUrl?: Prisma.SortOrder
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
@@ -601,6 +650,8 @@ export type UserMinOrderByAggregateInput = {
   guardianName?: Prisma.SortOrder
   guardianPhone?: Prisma.SortOrder
   guardianRelation?: Prisma.SortOrder
+  guardianEmail?: Prisma.SortOrder
+  guardianWebhookUrl?: Prisma.SortOrder
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
@@ -639,6 +690,20 @@ export type NullableIntFieldUpdateOperationsInput = {
 
 export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
+}
+
+export type UserCreateNestedOneWithoutMedicationSchedulesInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutMedicationSchedulesInput, Prisma.UserUncheckedCreateWithoutMedicationSchedulesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutMedicationSchedulesInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutMedicationSchedulesNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutMedicationSchedulesInput, Prisma.UserUncheckedCreateWithoutMedicationSchedulesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutMedicationSchedulesInput
+  upsert?: Prisma.UserUpsertWithoutMedicationSchedulesInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutMedicationSchedulesInput, Prisma.UserUpdateWithoutMedicationSchedulesInput>, Prisma.UserUncheckedUpdateWithoutMedicationSchedulesInput>
 }
 
 export type UserCreateNestedOneWithoutAccountsInput = {
@@ -683,6 +748,118 @@ export type UserUpdateOneRequiredWithoutConversationsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutConversationsInput, Prisma.UserUpdateWithoutConversationsInput>, Prisma.UserUncheckedUpdateWithoutConversationsInput>
 }
 
+export type UserCreateWithoutMedicationSchedulesInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutMedicationSchedulesInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutMedicationSchedulesInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutMedicationSchedulesInput, Prisma.UserUncheckedCreateWithoutMedicationSchedulesInput>
+}
+
+export type UserUpsertWithoutMedicationSchedulesInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutMedicationSchedulesInput, Prisma.UserUncheckedUpdateWithoutMedicationSchedulesInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutMedicationSchedulesInput, Prisma.UserUncheckedCreateWithoutMedicationSchedulesInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutMedicationSchedulesInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutMedicationSchedulesInput, Prisma.UserUncheckedUpdateWithoutMedicationSchedulesInput>
+}
+
+export type UserUpdateWithoutMedicationSchedulesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutMedicationSchedulesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+}
+
 export type UserCreateWithoutAccountsInput = {
   id?: string
   name?: string | null
@@ -695,6 +872,8 @@ export type UserCreateWithoutAccountsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -702,6 +881,7 @@ export type UserCreateWithoutAccountsInput = {
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutAccountsInput = {
@@ -716,6 +896,8 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -723,6 +905,7 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutAccountsInput = {
@@ -753,6 +936,8 @@ export type UserUpdateWithoutAccountsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -760,6 +945,7 @@ export type UserUpdateWithoutAccountsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAccountsInput = {
@@ -774,6 +960,8 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -781,6 +969,7 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutSessionsInput = {
@@ -795,6 +984,8 @@ export type UserCreateWithoutSessionsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -802,6 +993,7 @@ export type UserCreateWithoutSessionsInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -816,6 +1008,8 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -823,6 +1017,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -853,6 +1048,8 @@ export type UserUpdateWithoutSessionsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -860,6 +1057,7 @@ export type UserUpdateWithoutSessionsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -874,6 +1072,8 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -881,6 +1081,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutConversationsInput = {
@@ -895,6 +1096,8 @@ export type UserCreateWithoutConversationsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -902,6 +1105,7 @@ export type UserCreateWithoutConversationsInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutConversationsInput = {
@@ -916,6 +1120,8 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   guardianName?: string | null
   guardianPhone?: string | null
   guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
@@ -923,6 +1129,7 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutConversationsInput = {
@@ -953,6 +1160,8 @@ export type UserUpdateWithoutConversationsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -960,6 +1169,7 @@ export type UserUpdateWithoutConversationsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutConversationsInput = {
@@ -974,6 +1184,8 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -981,6 +1193,7 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -992,12 +1205,14 @@ export type UserCountOutputType = {
   accounts: number
   sessions: number
   conversations: number
+  medicationSchedules: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | UserCountOutputTypeCountAccountsArgs
   sessions?: boolean | UserCountOutputTypeCountSessionsArgs
   conversations?: boolean | UserCountOutputTypeCountConversationsArgs
+  medicationSchedules?: boolean | UserCountOutputTypeCountMedicationSchedulesArgs
 }
 
 /**
@@ -1031,6 +1246,13 @@ export type UserCountOutputTypeCountConversationsArgs<ExtArgs extends runtime.Ty
   where?: Prisma.ConversationWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountMedicationSchedulesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.MedicationScheduleWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1044,6 +1266,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   guardianName?: boolean
   guardianPhone?: boolean
   guardianRelation?: boolean
+  guardianEmail?: boolean
+  guardianWebhookUrl?: boolean
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
@@ -1052,6 +1276,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   conversations?: boolean | Prisma.User$conversationsArgs<ExtArgs>
+  medicationSchedules?: boolean | Prisma.User$medicationSchedulesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -1067,6 +1292,8 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   guardianName?: boolean
   guardianPhone?: boolean
   guardianRelation?: boolean
+  guardianEmail?: boolean
+  guardianWebhookUrl?: boolean
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
@@ -1086,6 +1313,8 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   guardianName?: boolean
   guardianPhone?: boolean
   guardianRelation?: boolean
+  guardianEmail?: boolean
+  guardianWebhookUrl?: boolean
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
@@ -1105,6 +1334,8 @@ export type UserSelectScalar = {
   guardianName?: boolean
   guardianPhone?: boolean
   guardianRelation?: boolean
+  guardianEmail?: boolean
+  guardianWebhookUrl?: boolean
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
@@ -1112,11 +1343,12 @@ export type UserSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "companionName" | "companionRelation" | "userHonorific" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   conversations?: boolean | Prisma.User$conversationsArgs<ExtArgs>
+  medicationSchedules?: boolean | Prisma.User$medicationSchedulesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1128,6 +1360,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     accounts: Prisma.$AccountPayload<ExtArgs>[]
     sessions: Prisma.$SessionPayload<ExtArgs>[]
     conversations: Prisma.$ConversationPayload<ExtArgs>[]
+    medicationSchedules: Prisma.$MedicationSchedulePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1141,6 +1374,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     guardianName: string | null
     guardianPhone: string | null
     guardianRelation: string | null
+    guardianEmail: string | null
+    guardianWebhookUrl: string | null
     companionName: string | null
     companionRelation: string | null
     userHonorific: string | null
@@ -1543,6 +1778,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   accounts<T extends Prisma.User$accountsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$accountsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AccountPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   sessions<T extends Prisma.User$sessionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$sessionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SessionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   conversations<T extends Prisma.User$conversationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$conversationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ConversationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  medicationSchedules<T extends Prisma.User$medicationSchedulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$medicationSchedulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MedicationSchedulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1583,6 +1819,8 @@ export interface UserFieldRefs {
   readonly guardianName: Prisma.FieldRef<"User", 'String'>
   readonly guardianPhone: Prisma.FieldRef<"User", 'String'>
   readonly guardianRelation: Prisma.FieldRef<"User", 'String'>
+  readonly guardianEmail: Prisma.FieldRef<"User", 'String'>
+  readonly guardianWebhookUrl: Prisma.FieldRef<"User", 'String'>
   readonly companionName: Prisma.FieldRef<"User", 'String'>
   readonly companionRelation: Prisma.FieldRef<"User", 'String'>
   readonly userHonorific: Prisma.FieldRef<"User", 'String'>
@@ -2045,6 +2283,30 @@ export type User$conversationsArgs<ExtArgs extends runtime.Types.Extensions.Inte
   take?: number
   skip?: number
   distinct?: Prisma.ConversationScalarFieldEnum | Prisma.ConversationScalarFieldEnum[]
+}
+
+/**
+ * User.medicationSchedules
+ */
+export type User$medicationSchedulesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the MedicationSchedule
+   */
+  select?: Prisma.MedicationScheduleSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the MedicationSchedule
+   */
+  omit?: Prisma.MedicationScheduleOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.MedicationScheduleInclude<ExtArgs> | null
+  where?: Prisma.MedicationScheduleWhereInput
+  orderBy?: Prisma.MedicationScheduleOrderByWithRelationInput | Prisma.MedicationScheduleOrderByWithRelationInput[]
+  cursor?: Prisma.MedicationScheduleWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.MedicationScheduleScalarFieldEnum | Prisma.MedicationScheduleScalarFieldEnum[]
 }
 
 /**

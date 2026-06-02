@@ -257,3 +257,52 @@
 - `scripts/_last-msgs.mjs`(신규·검증헬퍼) — 최근 메시지 role+content (빈 응답 탐지용).
 
 ### 미push 로컬 커밋: 이전 5건 + 이번 fix(아직 커밋 안 함). push 여부는 사용자 결정 대기.
+
+---
+
+## 2026-06-02 · Cycle (gemini-3.5-flash 영어누출 + 민지누출 + 빈응답 가드)
+
+### 진행 상태: ✅ 3건 발견·수정·클린 10사이클 검증완료 (아직 커밋 안 함)
+
+기준 모델 `gemini-3.5-flash` 전환 후 적응형 10사이클(10페르소나×~30턴) 라이브 검증. 최종 클린 결과: **300턴 · 빈응답 0 · 영어누출 0 · 민지누출 0 · strict 98/100** (2.5의 93 대비↑).
+
+### 발견·수정 3건
+
+1. **영어(추론·도구코드) 누출** — 3.5 응답에 영어 thought/googleSearch 흔적 노출.
+   - 증상: `print(google_search.search(...)) thought The user...`, `Final Polish:`, `Let's check ... User:...AI:...`, `* No time labels`.
+   - 원인: `extractText`가 `res.response.text()`로 thought part까지 합침 + `stripReasoningTrace`는 **앞쪽** 비한글 세그먼트만 제거(뒤/중간 누출 미처리).
+   - fix: (Fix1) `extractText` — parts에서 `thought:true` 제외하고 text part만 추출. (Fix3) `stripReasoningTrace` — 도구코드 코드블록 제거 + 추론마커(`print(`/`google_search`/`Final Polish`/`Let's check`/`User:`/`AI:`/`the user wants` 등) 세그먼트를 **위치 무관** 제거 + 한글비율<0.3·영단어4+ 세그먼트 제거(전부 제거 시 원본 유지 가드).
+   - ⚠️ (Fix2 시도→철회) `generationConfig.thinkingConfig.thinkingBudget:0`로 thinking 억제 시도 → **추론필요 턴에서 빈응답 다발**(1·2차 스모크 빈1·회피4). 제거하니 회피 0. **Fix1+Fix3만으로 누출 0 충분** → thinkingBudget 안 씀.
+
+2. **빈 응답 저장(침묵 실패)** — 후처리 체인이 정상 응답을 통째로 깎아 빈문자열 → fallback 우회 없이 빈 저장.
+   - 원인: `route.ts` 응답경로(텍스트 ~1172 / 음성 ~940)에서 `removeUngroundedClaims`/`removeParrot`/`trimIncomplete` 등이 응답을 0자로 만들어도 그대로 `saveMessages`.
+   - fix: 후처리 직후 `if (!text || !text.trim()) text = fallback;` 가드(양 경로). 빈 말풍선 대신 graceful 재질문 멘트.
+
+3. **민지 이름 누출(잔여분)** — 클린 10사이클 Cycle 7(동반자 "햇살")에서 `"민지가 재미있는 단어 세 개..."` 1건.
+   - 원인: 프롬프트 예시의 **리터럴 "민지"**(renderSystemPrompt `{COMPANION_NAME}` 치환을 안 거침). ① `lib/chat/constants.ts` 예시 6곳. ② `route.ts` 동적 주입 힌트 `buildRecallVerificationHint`(단어회상)·`buildInfoRequestHint`(헷갈림) — Cycle 7은 "헷갈리네"로 후자 트리거.
+   - fix: constants.ts 6곳 → `{COMPANION_NAME}`. route.ts 힌트 2함수에 `companionName` 파라미터 추가 + `nameSubj(companionName)` 보간 + 호출부 4곳(텍스트·음성×2) 전달.
+
+### 회귀·검증 (영구)
+- 클린 10사이클(STAMP 1780374117365) DB ground truth: **300턴 빈0·영어0·민지0**. strict 98/100.
+- `scripts/safety-regression.ts` **30/30 PASS**, `tsc` 0.
+- `stripReasoningTrace` 단위검증 6/6(누출 6패턴 제거 + 정상한글·영문이름 보존).
+
+### 측정 교훈 (재확인)
+- **e2e 실행 중 파일 조작 절대 금지**: 1차 10사이클 도중 `_progress.mjs` 생성·gitignore 편집 → 핫리로드로 Cycle 6 **UI 읽기 오염**(빈 10건 오탐, DB는 30건 정상). 재실행은 무편집으로 클린 확보. (DB가 ground truth — e2e UI 읽기 실패와 실제 빈응답 구분은 DB로 판정.)
+
+### 수정/추가 파일
+- `app/api/chat/route.ts` — extractText(thought 제외), stripReasoningTrace(전면 강화), getTextModel(thinkingConfig 미사용), 빈응답 가드 2곳, buildRecallVerificationHint·buildInfoRequestHint companionName 파라미터화 + 호출부 4곳.
+- `lib/chat/constants.ts` — 프롬프트 예시 리터럴 "민지" 6곳 → `{COMPANION_NAME}`.
+- `app/api/tts/route.ts` — sanitizeForTts(물결표 낭독 방지, 기존 working tree).
+- `lib/chat/cognitive-analyzer.ts` — 자동기록 evidence/note 정상범위 문구(기존 working tree).
+- `scripts/e2e-adaptive.mjs` — 모델라벨 파일명/헤더, NAME_LEAK "민지"만 감지(기존 working tree).
+- `.gitignore` — `.playwright-mcp/` + `docs/리포트_*`·`검증결과_*`·`종합검증_*`·`판단검증_*` 추적 제외(생성 리포트 17 + playwright 33 untrack).
+
+### 라이브 유동형 검증 (Claude ↔ Gemini 3.5, Playwright MCP)
+- `scripts/e2e-dynamic.mjs`(신규) — LLM-in-the-loop 자동 대화(어르신=Gemini 2.5 생성기 ↔ 앱=3.5). headed 지원.
+- 추가로 **Claude(에이전트)가 직접 Playwright MCP로 어르신 역할** 수행 6턴(`cycle_test_2026`/동반자 지윤): 영어0·민지0·빈0. 헷갈림(infoHint)·단어게임(블랭킹)·시간오지남력(1950→2026 정정) 라이브 통과.
+
+### [ ] OPEN — 회상 정답 노출(memory_delayed 안전망 경계 사례)
+- 증상(라이브 재현): 어르신이 외운 단어 3개 중 2개만 회상하고 마지막을 못 떠올리자, AI가 "마지막 하나는 '소나무'였어요"라고 **정답을 알려줌**.
+- constants.ts `memory_delayed` "회상 정답 절대 노출 금지" 규칙과 충돌. 단 "손녀가 까먹은 단어 알려주기"는 일반인엔 자연스러워, [사용자 35번 데이터 추출/임상 엄밀성] 관점에서만 문제.
+- 후보 fix: 회상 미완(부분 회상/포기) 시 정답 대신 "괜찮아요, 천천히 떠올려보셔요"로 받고 노출 회피. 또는 buildInfoRequestHint와 회상 컨텍스트 충돌 구분. → 차기 사이클.

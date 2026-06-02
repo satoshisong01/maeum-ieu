@@ -52,6 +52,7 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   User: 'User',
+  MedicationSchedule: 'MedicationSchedule',
   Account: 'Account',
   Session: 'Session',
   VerificationToken: 'VerificationToken',
@@ -87,6 +88,8 @@ export const UserScalarFieldEnum = {
   guardianName: 'guardianName',
   guardianPhone: 'guardianPhone',
   guardianRelation: 'guardianRelation',
+  guardianEmail: 'guardianEmail',
+  guardianWebhookUrl: 'guardianWebhookUrl',
   companionName: 'companionName',
   companionRelation: 'companionRelation',
   userHonorific: 'userHonorific',
@@ -95,6 +98,20 @@ export const UserScalarFieldEnum = {
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const MedicationScheduleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  label: 'label',
+  times: 'times',
+  enabled: 'enabled',
+  lastTriggeredAt: 'lastTriggeredAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type MedicationScheduleScalarFieldEnum = (typeof MedicationScheduleScalarFieldEnum)[keyof typeof MedicationScheduleScalarFieldEnum]
 
 
 export const AccountScalarFieldEnum = {
@@ -150,6 +167,10 @@ export const MessageScalarFieldEnum = {
   content: 'content',
   isAnomaly: 'isAnomaly',
   analysisNote: 'analysisNote',
+  emergencyLevel: 'emergencyLevel',
+  emergencyEvidence: 'emergencyEvidence',
+  notifiedAt: 'notifiedAt',
+  speakerLabel: 'speakerLabel',
   createdAt: 'createdAt'
 } as const
 
@@ -162,6 +183,13 @@ export const SortOrder = {
 } as const
 
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
 
 
 export const QueryMode = {
@@ -178,4 +206,13 @@ export const NullsOrder = {
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 

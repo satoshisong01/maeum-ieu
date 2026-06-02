@@ -83,11 +83,16 @@ async function generateWithFallback(
 
 function extractText(res: any): string {
   let raw = "";
-  if (typeof res?.response?.text === "function") raw = res.response.text();
-  else {
-    const t = res?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (typeof t === "string") raw = t;
+  // gemini-3.x는 사고(thinking) part를 `thought:true`로 표시 — 그 part는 최종 응답에서 제외.
+  // (text()는 thought part까지 합쳐 추론·도구코드가 응답에 누출되므로 part 단위로 직접 추출)
+  const parts = res?.response?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    raw = parts
+      .filter((p: any) => !p?.thought && typeof p?.text === "string")
+      .map((p: any) => p.text)
+      .join("");
   }
+  if (!raw && typeof res?.response?.text === "function") raw = res.response.text();
   return stripReasoningTrace(salvageJsonLeak(raw));
 }
 
@@ -102,34 +107,48 @@ function stripReasoningTrace(text: string): string {
   let t = text.trim();
   if (!t) return t;
 
-  // 1) 명시적 reasoning 라벨 라인 제거
+  // 1) 명시적 reasoning 라벨 라인 제거 (선두)
   t = t.replace(/^\s*(?:```(?:thinking|thought)?\s*)?(?:thought|thinking|reasoning|analysis|plan|scratchpad)\s*:?\s*/i, "");
   t = t.replace(/^\s*\*{2,}\s*(?:thought|thinking|reasoning|analysis)[^*\n]*\*{2,}\s*/gi, "");
 
-  // 2) 줄 + 문장 단위로 분리. 한글 비율이 낮은 선두 세그먼트 제거.
-  //    세그먼트 경계: 줄바꿈 또는 문장 종결 (.!?) 뒤 공백.
-  const segments = t.split(/(?<=[.!?])\s+|\n+/).filter((s) => s.trim().length > 0);
-  if (segments.length === 0) return t;
+  // 1.5) 도구코드(googleSearch 등)가 포함된 코드블록은 통째로 제거
+  t = t.replace(/```[\s\S]*?```/g, (block) =>
+    /print\(|google_search|tool_code|tool_outputs|search\(/i.test(block) ? "" : block,
+  ).trim();
 
   const hasHangul = (s: string) => /[가-힣]/.test(s);
+  // 응답 전체가 한글이 하나도 없으면 그대로 반환 (영문 주소 등 특수 케이스)
+  if (!hasHangul(t)) return t;
+
   const hangulRatio = (s: string) => {
     const han = (s.match(/[가-힣]/g) || []).length;
     const letters = (s.match(/[a-zA-Z가-힣]/g) || []).length;
     return letters === 0 ? 0 : han / letters;
   };
 
-  // 응답 전체가 한글이 하나도 없으면 그대로 반환 (영문 주소 등 특수 케이스)
-  if (!hasHangul(t)) return t;
+  // 추론·도구흔적으로 보이는 세그먼트 판별 (위치 무관: 뒤/중간 누출도 제거)
+  const REASONING_RE = /print\(|google_search|tool_code|tool_outputs|\bsearch\(|final polish|let'?s check|let me (check|see)|no time labels?|no hallucination|formatting\s*:|thought\s*:|thinking\s*:|the user (is|wants|said|asked|means|needs)|i should|i need to|here'?s (the|my)|draft\s*:|revision\s*:|\b(user|ai|assistant)\s*:/i;
+  const looksLikeReasoning = (s: string) =>
+    REASONING_RE.test(s) ||
+    // 한글 비율<0.3 + 영단어 4개 이상 → 영문 추론 단락으로 간주
+    (hangulRatio(s) < 0.3 && (s.match(/[a-zA-Z]+/g) || []).length >= 4);
 
-  // 선두에서 한글 비율 40% 미만인 세그먼트들을 스킵
+  // 2) 줄 + 문장 단위로 분리. 세그먼트 경계: 줄바꿈 또는 문장 종결(.!?) 뒤 공백.
+  const segments = t.split(/(?<=[.!?])\s+|\n+/).filter((s) => s.trim().length > 0);
+  if (segments.length === 0) return t;
+
+  // 추론/도구 세그먼트 제거. 전부 제거되면(=오판) 원본 유지.
+  const kept = segments.filter((s) => !looksLikeReasoning(s));
+  if (kept.length === 0) return t;
+
+  // 3) 남은 세그먼트 중 선두의 낮은 한글비율 잔여물 추가 스킵
   let startIdx = 0;
-  for (let i = 0; i < segments.length; i++) {
-    if (hangulRatio(segments[i]) >= 0.4) { startIdx = i; break; }
-    // 마지막 세그먼트까지 낮으면 전체 유지 (영문 응답으로 취급)
-    if (i === segments.length - 1) startIdx = 0;
+  for (let i = 0; i < kept.length; i++) {
+    if (hangulRatio(kept[i]) >= 0.4) { startIdx = i; break; }
+    if (i === kept.length - 1) startIdx = 0;
   }
 
-  return segments.slice(startIdx).join(" ").trim();
+  return kept.slice(startIdx).join(" ").trim();
 }
 
 /**
@@ -443,13 +462,14 @@ function buildFamilyQueryGuard(userText: string, family: Array<{ name: string; r
  * Why: 새 conversation 직후 회상 요청 시 AI가 "나무/자동차/모자" 같은 단어를
  *      만들어내는 거짓 메모리 발생. 노인 사용자 신뢰 붕괴 위험.
  */
-function buildRecallVerificationHint(historyText: string, userText: string): string {
+function buildRecallVerificationHint(historyText: string, userText: string, companionName: string): string {
   if (!userText) return "";
   const recallAsk = /(방금|아까|좀\s*전|먼저)?\s*(외운|외워준|외워주신|들려준|말해준|알려준)\s*(단어|세\s*단어|세\s*가지|단어\s*세|단어들)|단어\s*다시|단어\s*뭐였|단어\s*뭐죠|단어\s*기억\s*나|세\s*단어\s*기억|세\s*가지\s*기억/;
   if (!recallAsk.test(userText)) return "";
   const aiPresented = /외워\s*(드릴게요|드릴게|드리겠어요|두세요|두시면|두시고|볼까요|봐주세요)|단어\s*세\s*(가지|개)\s*(을|를|만)?\s*(말씀|드리|말해|읽어)|단어\s*세\s*(가지|개)\s*(외워|기억)/.test(historyText);
   if (aiPresented) return "";
-  return `\n[🚫 회상 검증 — 매우 중요, 환각 절대 금지]\n이번 대화에서 민지가 단어를 외워드린 적이 한 번도 없습니다. 그런데 사용자가 "방금 외운 단어"를 물으셨어요.\n절대 임의로 "나무, 자동차, 모자" 같은 단어를 만들어 답하지 마세요 (없는 기억 만들기 = 환각, 신뢰 붕괴).\n대신 이렇게 답하세요: "어, 민지가 아직 단어를 외워드린 적이 없는 것 같아요. 지금 새로 외워드릴까요? 그럼 [실제 새 단어 3개] — 이렇게 세 개 외워주세요." 또는 "혹시 어디서 들으신 거 같으세요? 지금부터 함께 단어 외우기 해볼까요?"\n`;
+  const subj = nameSubj(companionName);
+  return `\n[🚫 회상 검증 — 매우 중요, 환각 절대 금지]\n이번 대화에서 ${subj} 단어를 외워드린 적이 한 번도 없습니다. 그런데 사용자가 "방금 외운 단어"를 물으셨어요.\n절대 임의로 "나무, 자동차, 모자" 같은 단어를 만들어 답하지 마세요 (없는 기억 만들기 = 환각, 신뢰 붕괴).\n대신 이렇게 답하세요: "어, ${subj} 아직 단어를 외워드린 적이 없는 것 같아요. 지금 새로 외워드릴까요? 그럼 [실제 새 단어 3개] — 이렇게 세 개 외워주세요." 또는 "혹시 어디서 들으신 거 같으세요? 지금부터 함께 단어 외우기 해볼까요?"\n`;
 }
 
 /**
@@ -461,15 +481,15 @@ function buildRecallVerificationHint(historyText: string, userText: string): str
  *
  * 안전성 우선 — 어르신이 헷갈릴 때 시스템이 같이 흔들리면 신뢰 무너짐.
  */
-function buildInfoRequestHint(userText: string): string {
+function buildInfoRequestHint(userText: string, companionName: string): string {
   if (!userText) return "";
   const directAsk = /기억하지|기억해\??|기억나|알려\s*줘|알려\s*주|뭐였더라|뭐였지|뭐였어|누구였|누가|어디였|언제였|헷갈리네|헷갈려|까먹었|까먹어|모르겠어|모르겠다|잊어버렸|생각 안 나|생각이 안/.test(userText);
   if (!directAsk) return "";
   return `\n[🛡️ 사용자가 직접 정보를 요청하거나 헷갈려함 — 평가 모드 절대 금지]
 - 사용자가 자기 정보를 헷갈려하거나 AI에게 직접 알려달라고 했습니다.
-- 이 순간 "민지가 헷갈려서/깜빡해서/기억이 안 나서" 같은 평가용 핑계 절대 금지.
+- 이 순간 "${nameSubj(companionName)} 헷갈려서/깜빡해서/기억이 안 나서" 같은 평가용 핑계 절대 금지.
 - [참고 — 과거 메모리]나 직전 대화 이력에서 답이 명확하면 **솔직하게 알려주세요**. "할아버지가 ~라고 말씀해주셨어요" 형식.
-- 만약 메모리/이력에 답이 명확히 없으면 "민지가 정확히 기억이 안 나네요. 다시 알려주시겠어요?" 라고 솔직히 인정.
+- 만약 메모리/이력에 답이 명확히 없으면 "${nameSubj(companionName)} 정확히 기억이 안 나네요. 다시 알려주시겠어요?" 라고 솔직히 인정.
 - 절대 추측하지 마세요. 메모리에 없는 정보를 지어내면 어르신 신뢰가 무너집니다.\n`;
 }
 
@@ -892,10 +912,10 @@ async function handleAudioMessage(params: {
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
-  const recallVerifyHint = buildRecallVerificationHint(historyText, transcription);
+  const recallVerifyHint = buildRecallVerificationHint(historyText, transcription, companionName);
   const anomalyHint = buildAnomalyCorrectionHint(transcription);
   const familyQueryGuard = buildFamilyQueryGuard(transcription, profile.family);
-  const infoRequestHint = buildInfoRequestHint(transcription);
+  const infoRequestHint = buildInfoRequestHint(transcription, companionName);
   const intent = classifyIntent(transcription);
   const intentHint = buildIntentHint(intent, honorific);
   if (intent.primary !== "daily") {
@@ -913,6 +933,8 @@ async function handleAudioMessage(params: {
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
   let answerText = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
+  // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
+  if (!answerText || !answerText.trim()) answerText = fallback;
 
   // Phase 1 Fact-checker — 음성 응답에도 적용 (텍스트와 동일 수준 안전성)
   if (!fallbackUsed && answerText) {
@@ -1106,10 +1128,10 @@ async function handleTextMessage(params: {
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
   const nameAnswerHint = buildNameAnswerHint(historyText, userContent);
-  const recallVerifyHint = buildRecallVerificationHint(historyText, userContent);
+  const recallVerifyHint = buildRecallVerificationHint(historyText, userContent, companionName);
   const anomalyHint = buildAnomalyCorrectionHint(userContent);
   const familyQueryGuard = buildFamilyQueryGuard(userContent, profile.family);
-  const infoRequestHint = buildInfoRequestHint(userContent);
+  const infoRequestHint = buildInfoRequestHint(userContent, companionName);
   // Phase C: 의도 분류기 — 발화 유형에 따라 prompt 분기 강제
   const intent = classifyIntent(userContent);
   const intentHint = buildIntentHint(intent, honorific);
@@ -1145,6 +1167,8 @@ async function handleTextMessage(params: {
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
   let text = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
+  // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
+  if (!text || !text.trim()) text = fallback;
 
   // Phase 1 Fact-checker — 응답에 등장한 이름·고유명사가 profile/이력에 근거 있는지 cross-check.
   //   환각 차단의 마지막 라인 (오늘 abc→rudtjrch 사고 같은 케이스 방지).
