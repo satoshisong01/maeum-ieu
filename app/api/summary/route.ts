@@ -110,6 +110,36 @@ export async function GET(req: Request) {
     });
   } catch { /* 테이블 없을 수 있음 */ }
 
+  // B4: 개인별 기준선(최초 14일 고정) 대비 현재(최근 14일) — 롤링 추세가 놓치는 "완만한 장기 저하" 감지.
+  //   (롤링은 매주≈지난주라 서서히 나빠지면 "안정"으로 보임. 고정 기준선 비교로 보완.)
+  let baselineTrend: { status: string; delta: number; text: string } = { status: "자료부족", delta: 0, text: "" };
+  try {
+    const span = await prisma.$queryRawUnsafe<{ days: number }[]>(
+      `SELECT (MAX(session_date) - MIN(session_date))::int AS days FROM cognitive_assessments WHERE user_id = $1`,
+      userId,
+    );
+    if ((span[0]?.days ?? 0) >= 21) { // 기준선·최근이 구분되려면 최소 ~3주 데이터
+      const earliest = await prisma.$queryRawUnsafe<AssessmentRow[]>(
+        `SELECT domain, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS count
+         FROM cognitive_assessments
+         WHERE user_id = $1 AND session_date < (SELECT MIN(session_date) + INTERVAL '14 days' FROM cognitive_assessments WHERE user_id = $1)
+         GROUP BY domain`,
+        userId,
+      );
+      const recent14 = await prisma.$queryRawUnsafe<AssessmentRow[]>(
+        `SELECT domain, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS count
+         FROM cognitive_assessments WHERE user_id = $1 AND session_date >= CURRENT_DATE - '14 days'::interval GROUP BY domain`,
+        userId,
+      );
+      const r = detectAcuteChange({
+        recentAvg: computeOverallAvg(recent14), recentCount: recent14.reduce((s, d) => s + d.count, 0),
+        baselineAvg: computeOverallAvg(earliest), baselineCount: earliest.reduce((s, d) => s + d.count, 0),
+      });
+      const declined = r.status === "급성악화" || r.status === "악화";
+      baselineTrend = { status: r.status, delta: r.delta, text: declined ? "최초 평가 시점(개인 기준선) 대비 인지 점수가 저하되었습니다. 전문의 평가를 권합니다." : r.text };
+    }
+  } catch { /* 테이블 없을 수 있음 */ }
+
   // 요약 텍스트 생성
   const periodLabel = period === "month" ? "최근 30일" : "최근 7일";
   let summaryText = `${periodLabel} 동안 ${activeDays}일간 대화하였으며, 총 ${userMessages}건의 발화가 있었습니다.`;
@@ -126,6 +156,7 @@ export async function GET(req: Request) {
 
   if (severity.text) summaryText += " " + severity.text;
   if (trend.status === "급성악화" || trend.status === "악화") summaryText += " " + trend.text;
+  else if (baselineTrend.status === "급성악화" || baselineTrend.status === "악화") summaryText += " " + baselineTrend.text;
 
   return NextResponse.json({
     period: periodLabel,
@@ -137,6 +168,7 @@ export async function GET(req: Request) {
     overallAvg: overallAvg >= 0 ? Number(overallAvg.toFixed(2)) : null,
     severityTier: severity.tier,
     trend: { status: trend.status, delta: trend.delta },
+    baselineTrend: { status: baselineTrend.status, delta: baselineTrend.delta },
     totalAssessments,
     riskDomains,
     normalDomains,
