@@ -917,7 +917,7 @@ async function handleAudioMessage(params: {
   // Phase 1 Fact-checker — 음성 응답에도 적용 (텍스트와 동일 수준 안전성)
   if (!fallbackUsed && answerText) {
     const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific, currentUserText: transcription });
+    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription });
     if (checked.cleaned !== answerText) {
       console.warn("[fact-checker:audio] cleaned response. removed:", checked.removed.length);
       answerText = checked.cleaned || answerText;
@@ -1150,7 +1150,7 @@ async function handleTextMessage(params: {
   //   환각 차단의 마지막 라인 (오늘 abc→rudtjrch 사고 같은 케이스 방지).
   if (!fallbackUsed && text) {
     const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific, currentUserText: userContent });
+    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent });
     if (checked.cleaned !== text) {
       console.warn("[fact-checker] cleaned response. removed sentences:", checked.removed.length);
       text = checked.cleaned || text; // 모두 삭제되면 fallback 우회용으로 원본 유지

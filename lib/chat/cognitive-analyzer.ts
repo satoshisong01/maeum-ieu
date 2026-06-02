@@ -400,7 +400,23 @@ export async function analyzeCognitive(params: {
       }));
     }
 
-    const res = await model.generateContent(`${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${userForAnalysis}\nAI: ${params.assistantResponse}`);
+    const promptText = `${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${userForAnalysis}\nAI: ${params.assistantResponse}`;
+    // transient 장애(503/429/네트워크) 시 재시도 — Gemini 일시 과부하로 인지 평가가 통째 유실되는 것 방지.
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await model.generateContent(promptText);
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const transient = /\b(503|429)\b|Service Unavailable|overloaded|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT|deadline/i.test(msg);
+        if (transient && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
     const raw = parseResult(res.response.text().trim());
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
