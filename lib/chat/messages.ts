@@ -14,11 +14,14 @@ export async function saveCognitiveAssessments(
 ): Promise<void> {
   if (checks.length === 0) return;
   const sessionDate = toKstDateString(new Date());
-  for (const check of checks) {
+  for (let i = 0; i < checks.length; i++) {
+    const check = checks[i];
     await prisma.$executeRawUnsafe(
       `INSERT INTO cognitive_assessments (id, user_id, message_id, conversation_id, domain, score, confidence, evidence, note, session_date, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, NOW())`,
-      `ca_${messageId}_${check.domain}_${Date.now()}`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      // 결정적 id(메시지+도메인+인덱스) — 같은 메시지 재분석 시 중복 INSERT 차단(count 왜곡·등급 오류 방지)
+      `ca_${messageId}_${check.domain}_${i}`,
       userId, messageId, conversationId,
       check.domain, check.score, check.confidence, check.evidence, check.note, sessionDate,
     );
