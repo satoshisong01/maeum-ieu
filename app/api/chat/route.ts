@@ -34,15 +34,16 @@ function getApiKey(): string {
 }
 
 /** 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수) */
-function getTextModel(systemInstruction: string) {
-  // 대화 모델은 googleSearch가 필수이므로 항상 Gemini API 사용
-  // (파인튜닝 모델에는 googleSearch가 없어 실시간 정보를 가져오지 못함)
+function getTextModel(systemInstruction: string, enableSearch: boolean = true) {
+  // googleSearch는 실시간 정보(info_request: 뉴스·날씨·사실조회)에만 필요.
+  // 일상 대화·공감·인지 응답엔 불필요하므로 그 턴엔 비활성해 지연·검색 비용 절감.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tools: any = enableSearch ? [{ googleSearch: {} }] : undefined;
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
     model: "gemini-3.5-flash",
     systemInstruction,
     generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-    // @ts-expect-error -- googleSearch SDK 타입 미반영
-    tools: [{ googleSearch: {} }],
+    tools,
   });
 }
 
@@ -911,8 +912,9 @@ async function handleAudioMessage(params: {
   });
   if (moderated) return moderated as NextResponse;
 
-  // 2단계: 변환된 텍스트로 대화 모델 호출 (텍스트 모델 — googleSearch 포함)
-  const model = getTextModel(systemPrompt);
+  // 2단계: 변환된 텍스트로 대화 모델 호출. info_request만 googleSearch 활성(그 외 비활성, 비용·지연 절감)
+  const intent = classifyIntent(transcription);
+  const model = getTextModel(systemPrompt, intent.intents.includes("info_request"));
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
@@ -920,7 +922,6 @@ async function handleAudioMessage(params: {
   const anomalyHint = buildAnomalyCorrectionHint(transcription);
   const familyQueryGuard = buildFamilyQueryGuard(transcription, profile.family);
   const infoRequestHint = buildInfoRequestHint(transcription, companionName);
-  const intent = classifyIntent(transcription);
   const intentHint = buildIntentHint(intent, honorific);
   if (intent.primary !== "daily") {
     console.log("[intent:audio]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
@@ -1127,7 +1128,9 @@ async function handleTextMessage(params: {
   });
   if (moderated) return moderated as NextResponse;
 
-  const model = getTextModel(systemPrompt);
+  // 의도 분류 먼저 — info_request(실시간 정보)만 googleSearch 활성, 그 외엔 비활성(비용·지연 절감)
+  const intent = classifyIntent(userContent);
+  const model = getTextModel(systemPrompt, intent.intents.includes("info_request"));
 
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
@@ -1136,8 +1139,7 @@ async function handleTextMessage(params: {
   const anomalyHint = buildAnomalyCorrectionHint(userContent);
   const familyQueryGuard = buildFamilyQueryGuard(userContent, profile.family);
   const infoRequestHint = buildInfoRequestHint(userContent, companionName);
-  // Phase C: 의도 분류기 — 발화 유형에 따라 prompt 분기 강제
-  const intent = classifyIntent(userContent);
+  // Phase C: 의도 분류기 — 발화 유형에 따라 prompt 분기 강제 (intent는 위에서 분류)
   const intentHint = buildIntentHint(intent, honorific);
   if (intent.primary !== "daily") {
     console.log("[intent]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
