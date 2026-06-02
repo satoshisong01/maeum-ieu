@@ -200,3 +200,60 @@
 6. **인지이상 감지 + 부드러운 정정** — "박정희 생중계 봤어" → isAnomaly:true + "오래전 돌아가신 분…옛날 연설/꿈?" + 무릎 이어감 ✓
 
 호칭(할머니)·동반자(지윤) 일관, 맥락 연속성(무릎 4→5→6턴) 자연스러움. **추가 fix 불필요.**
+
+---
+
+## 2026-06-01 · 이어가기(핸드오프) 메모 — 인지 선별 적응형 검증
+
+### 현재 상태
+- **앱 포트: :3100** (⚠️ :3000은 다른 프로젝트 energy-platform가 점유 중). dev: `npm run dev -- -p 3100 > dev-server-3100.log 2>&1 &`
+- 검증 페르소나 계정: `cycle_test_2026@example.com` / `test1234!` (동반자 지윤·손녀·호칭 할머니). 다른 e2e 계정도 test1234!.
+- 로컬 커밋 5건이 origin보다 앞섬(미push): 762be8b/c130777/dc23a8a/2d8b37c/3a0f155.
+
+### 검증 도구(스크립트)
+- `scripts/matrix-verify.ts` — 항목×강도 매트릭스(판단 엔진 직접). 100%.
+- `scripts/tier-verify.ts` — 4단계 등급(정상/경증/중증/고위험) 경계·시나리오. 35/35.
+- `scripts/e2e-screening.mjs` `e2e-recall.mjs` `e2e-tier.mjs` — 실제 앱 Playwright e2e.
+- `scripts/e2e-loop.mjs` — 연속 루프(matrix+tier+anomaly+recall). 누적 `docs/리포트_누적.md`.
+- `scripts/safety-regression.ts` — 안전망 26케이스.
+
+### 적응형(양방향) 대화 검증 방법 (핵심)
+- **Playwright MCP로 한 턴씩 직접 조작**: navigate :3100/login → 로그인 → "글씨로 대화하기" → 입력창에 nativeInputValueSetter로 주입 후 form.requestSubmit() → AI 응답 읽고 어르신 페르소나로 적응 응답.
+- 점수 확인: DB `cognitive_assessments`(domain/score) + `[cognitive-analysis]` 서버 로그.
+
+### 이번 적응형 세션서 발견·수정한 버그 2건 (커밋됨)
+1. 시간 지남력 **근소 날짜오차 오탐**(정상 "5월 말"을 주의로) → cognitive-analyzer 시간섹션 보완 (2d8b37c).
+2. 단어 등록 시 **외울 단어가 ****로 사라짐**(stripRecallAnswerLeak가 "기억해주세요"에 오발동) → 등록 가드 추가 (3a0f155).
+
+### 다음 할 일 (이어서)
+- 적응형 양방향 대화를 **훨씬 길게(수십 턴), 여러 페르소나/계정으로** 반복 (장소·100-7 연속빼기·따라말하기 등 미시연 항목 포함).
+- 발견 이슈는 원인분석→수정→`safety-regression`+`matrix-verify`로 회귀 확인→보고서(`docs/리포트_적응형대화_검증`) 보강.
+- 마지막에 로컬 커밋 push 여부 결정.
+
+---
+
+## 2026-06-01 · Cycle (적응형 장기 세션 #2) — fact-checker 동반자 이름 버그 2건
+
+### 진행 상태: ✅ 버그 2건 발견·수정·회귀완료 (아직 커밋 안 함)
+
+`cycle_test_2026`(동반자 지윤) 한 계정에서 6영역 정상/이상 혼합 12턴 적응형 대화 (`docs/리포트_적응형대화_검증.md` §9).
+- 정상 5/5 → score 0 (오탐 0), 이상 4/4 → score 2, 종합등급 0.846→1.167(중증) 단조 상승.
+
+### 발견·수정 버그 2건 (둘 다 root cause = **fact-checker가 동적 동반자 이름을 모름**)
+1. **이름 누출**: `lib/chat/fact-checker.ts` grounding fallback 3곳 하드코딩 "민지" → 커스텀 동반자(지윤)인데 "민지가…" 노출.
+   fix: `CheckInput.companionName` 추가 + 호출부(route.ts 텍스트·음성 2곳) 전달 + `nameSubj(companionName)` 동적화.
+2. **응답 공백화(침묵 실패, 더 심각)**: fact-checker가 AI 자기지칭 "지윤이도…"의 "지윤"을 ungrounded 가족이름으로 오판→문장 통삭제→**빈 응답 저장**(어르신 화면 빈 말풍선). `NAME_STOPWORDS`엔 기본 "민지"만 있고 커스텀 미포함.
+   fix: ungrounded 루프에서 `stripNameSuffix(name)===selfName(=companionName) → continue`(자기이름 항상 grounded). 라이브 재전송으로 정상 응답 복구 확인.
+
+### 회귀 (영구)
+- `scripts/safety-regression.ts` A-6 섹션 4케이스 추가 → **26→30/30 PASS**.
+- `scripts/matrix-verify.ts` **26/27**(분석기 미변경, calc2b 1회 무판정=기존 비결정성). `tsc` 0.
+
+### 수정/추가 파일
+- `lib/chat/fact-checker.ts` — CheckInput.companionName, selfName 제외 가드, fallback 3곳 동적화, nameSubj import.
+- `app/api/chat/route.ts` — factCheckResponse 호출 2곳에 companionName 전달.
+- `scripts/safety-regression.ts` — A-6 4케이스(+selfName 보존).
+- `scripts/_check-scores.mjs`(신규·검증헬퍼) — 이메일별 최근 발화×assessment + overallAvg 종합등급. `node scripts/_check-scores.mjs <email> [n]`.
+- `scripts/_last-msgs.mjs`(신규·검증헬퍼) — 최근 메시지 role+content (빈 응답 탐지용).
+
+### 미push 로컬 커밋: 이전 5건 + 이번 fix(아직 커밋 안 함). push 여부는 사용자 결정 대기.
