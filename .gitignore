@@ -45,3 +45,12 @@ vertex-key*.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright MCP 콘솔 로그 (throwaway — git 추적 제외)
+.playwright-mcp/
+
+# 자동 생성 검증 리포트 (로컬 산출물 — git 추적 제외, 핵심 문서 PLAN/CYCLE_FIXLOG 등은 유지)
+docs/리포트_*
+docs/검증결과_*
+docs/종합검증_*
+docs/판단검증_*

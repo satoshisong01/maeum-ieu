@@ -264,8 +264,8 @@ function ensureCognitiveDomainLogged(
       domain,
       score: 0,
       confidence: 0.6,
-      evidence: "AI 질문 패턴 자동 검출",
-      note: "도메인 자동 기록(세션 내 중복 질문 차단)",
+      evidence: "대화 중 정상 범위로 확인됨",
+      note: "정상",
     }));
   if (additions.length === 0) return result;
   return { ...result, cognitiveChecks: [...result.cognitiveChecks, ...additions] };

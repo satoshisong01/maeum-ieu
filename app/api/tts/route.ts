@@ -109,6 +109,19 @@ async function synthesizeWithGemini(text: string, voice: string): Promise<{ audi
   throw lastErr instanceof Error ? lastErr : new Error("Gemini TTS all models failed");
 }
 
+/**
+ * TTS 합성 전 텍스트 정리 — 음성으로 읽으면 어색한 기호 제거.
+ * 예: "~"(물결표 계열)가 "물결표"로 낭독되는 문제. 공백으로 치환해 낭독 방지 +
+ *     "1~2" 같은 숫자 범위가 "12"로 병합되는 것 방지. 별표(마크다운 잔여)도 정리.
+ */
+function sanitizeForTts(s: string): string {
+  return s
+    .replace(/[~～〜〰]/g, " ") // ~ ～ 〜 〰 → 공백
+    .replace(/\*+/g, " ")                     // 마크다운 별표 잔여 → 공백("별표" 낭독 방지)
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -116,7 +129,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const text: string = (body?.text || "").toString().trim();
+  const text: string = sanitizeForTts((body?.text || "").toString());
   if (!text) return NextResponse.json({ error: "text 필수" }, { status: 400 });
   if (text.length > MAX_TEXT_LENGTH) {
     return NextResponse.json({ error: `text는 ${MAX_TEXT_LENGTH}자 이하여야 합니다.` }, { status: 400 });

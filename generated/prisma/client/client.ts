@@ -47,6 +47,13 @@ export { Prisma }
  */
 export type User = Prisma.UserModel
 /**
+ * Model MedicationSchedule
+ * 일과/복약 알림 스케줄. 한 사용자에 여러 약 등록 가능.
+ * times: ["09:00", "13:00", "20:00"] (KST 24시간 표기)
+ * lastTriggeredAt: 마지막 알림 발송 시각 (같은 슬롯 중복 발송 차단용)
+ */
+export type MedicationSchedule = Prisma.MedicationScheduleModel
+/**
  * Model Account
  * 
  */

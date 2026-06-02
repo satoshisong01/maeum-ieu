@@ -1,2 +1,0 @@
-[     250ms] [WARNING]  [33m[1m⚠[22m[39m Runtime config is deprecated and will be removed in Next.js 16. Please remove the usage of "next/config" from your project. @ https://ssl.pstatic.net/shoppingsearch/static/pc/pc-260420-132317/_next/static/chunks/pages/_app-3897bb75f377adf9.js:45
-[     994ms] [WARNING] setPolicyInfo {versionInfo: Object, sdkInfo: Object, sentryInfo: Object} @ https://ssl.pstatic.net/shoppingsearch/static/pc/pc-260420-132317/_next/static/chunks/pages/_app-3897bb75f377adf9.js:45

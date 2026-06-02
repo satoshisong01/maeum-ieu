@@ -24,6 +24,8 @@ const PW = "test1234!";
 const CYCLES = parseInt(process.argv[2] || "10", 10);
 const HEADED = process.argv[4] === "headed" || process.argv[3] === "headed";
 const STAMP = Date.now();
+// 리포트 구분용 모델 라벨(실제 사용 모델은 앱 코드 기준). 예: MODEL_LABEL=gemini-3.5-flash
+const MODEL_LABEL = process.env.MODEL_LABEL || "gemini-3.5-flash";
 
 // 페르소나: 커스텀 동반자 이름(받침 유/무 섞음) + 호칭 + 성별. 이름 누출 fix를 다양한 이름으로 검증.
 const PERSONAS = [
@@ -187,13 +189,9 @@ function detectAnomalies(ai, persona) {
   if (!ai || ai.length === 0) { flags.push("EMPTY(빈 응답)"); return flags; }
   if (ai.includes("****") || /\*\*\s*이에요|\*\*\s*예요/.test(ai)) flags.push("BLANK(**** 블랭킹)");
   if (/\{[^}]*"(text|isAnomaly|score|response|analysisNote)"/.test(ai) || /"isAnomaly"\s*:/.test(ai)) flags.push("JSON_LEAK");
-  // 타인 동반자 이름 누출: 다른 페르소나 이름 또는 기본 '민지'가 등장하는데 내 동반자가 아님
-  const others = ["민지", ...PERSONAS.map((p) => p.companion)].filter((n) => n !== persona.companion);
-  for (const n of others) {
-    // 이름 + 친근조사/서술 패턴으로만(가족 이름 우연 일치 줄이기)
-    const re = new RegExp(`${n}(?:이|가|이가|이는|는|이도|예요|이에요|아|야)`);
-    if (re.test(ai)) { flags.push(`NAME_LEAK(${n})`); break; }
-  }
+  // 실제 누출 신호: 하드코딩 기본 이름 "민지"가 (내 동반자가 아닌데) AI 자기지칭으로 등장.
+  // 페르소나 이름이 일반명사(햇살/보람/봄이 등)여도 오탐 안 나도록 "민지"만 검사.
+  if (persona.companion !== "민지" && /민지(?:이?(?:가|는|도|예요|에요|이에요)|이|아|야)/.test(ai)) flags.push("NAME_LEAK(민지)");
   // 호칭 오류: 반대 호칭으로 사용자를 직접 부름
   const opp = persona.honorific === "할머니" ? "할아버지" : "할머니";
   if (new RegExp(`${opp}[,!\\s]`).test(ai) && !new RegExp(persona.honorific).test(ai)) flags.push(`HONORIFIC(${opp})`);
@@ -209,10 +207,10 @@ async function main() {
   let totalStrict = 0, totalStrictHit = 0;
   let totalTurns = 0, totalEmpty = 0, totalLeak = 0;
 
-  const reportPath = `docs/리포트_적응형루프_${CYCLES}cycles.md`;
-  report.push(`# 적응형 장기 대화 루프 검증 — ${CYCLES} 사이클`);
+  const reportPath = `docs/리포트_적응형루프_${CYCLES}cycles_${MODEL_LABEL}.md`;
+  report.push(`# 적응형 장기 대화 루프 검증 — ${CYCLES} 사이클 (모델: ${MODEL_LABEL})`);
   report.push("");
-  report.push(`- 생성: ${new Date().toISOString()} · 사이클당 ~28턴(6영역 정상/이상 혼합) · 커스텀 동반자 이름 ${CYCLES}종`);
+  report.push(`- 생성: ${new Date().toISOString()} · **기준 모델: ${MODEL_LABEL}** · 사이클당 ~28턴(6영역 정상/이상 혼합) · 커스텀 동반자 이름 ${CYCLES}종`);
   report.push("");
 
   const browser = await chromium.launch({ headless: !HEADED, slowMo: HEADED ? 60 : 0 });
@@ -361,10 +359,10 @@ async function main() {
     "");
 
   const out = report.join("\n");
-  const path = `docs/리포트_적응형루프_${CYCLES}cycles.md`;
+  const path = reportPath;
   fs.writeFileSync(path, out, "utf-8");
   const cum = "docs/리포트_누적.md";
-  const summary = `| ${new Date().toISOString().slice(0, 19)} | adaptive-loop | ${CYCLES}cyc | ${totalTurns}턴 | strict ${totalStrictHit}/${totalStrict} · 빈응답${totalEmpty} · 누출${totalLeak} · 이상${anomalyLog.length} |\n`;
+  const summary = `| ${new Date().toISOString().slice(0, 19)} | adaptive-loop(${MODEL_LABEL}) | ${CYCLES}cyc | ${totalTurns}턴 | strict ${totalStrictHit}/${totalStrict} · 빈응답${totalEmpty} · 누출${totalLeak} · 이상${anomalyLog.length} |\n`;
   if (!fs.existsSync(cum)) fs.writeFileSync(cum, "# e2e 누적 검증 요약\n\n| 시각(UTC) | 테스트 | 라운드 | 규모 | 정확도 |\n|---|---|---|---|---|\n", "utf-8");
   fs.appendFileSync(cum, summary, "utf-8");
 

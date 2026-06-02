@@ -20,8 +20,18 @@ export type MessageModel = runtime.Types.Result.DefaultSelection<Prisma.$Message
 
 export type AggregateMessage = {
   _count: MessageCountAggregateOutputType | null
+  _avg: MessageAvgAggregateOutputType | null
+  _sum: MessageSumAggregateOutputType | null
   _min: MessageMinAggregateOutputType | null
   _max: MessageMaxAggregateOutputType | null
+}
+
+export type MessageAvgAggregateOutputType = {
+  emergencyLevel: number | null
+}
+
+export type MessageSumAggregateOutputType = {
+  emergencyLevel: number | null
 }
 
 export type MessageMinAggregateOutputType = {
@@ -31,6 +41,10 @@ export type MessageMinAggregateOutputType = {
   content: string | null
   isAnomaly: boolean | null
   analysisNote: string | null
+  emergencyLevel: number | null
+  emergencyEvidence: string | null
+  notifiedAt: Date | null
+  speakerLabel: string | null
   createdAt: Date | null
 }
 
@@ -41,6 +55,10 @@ export type MessageMaxAggregateOutputType = {
   content: string | null
   isAnomaly: boolean | null
   analysisNote: string | null
+  emergencyLevel: number | null
+  emergencyEvidence: string | null
+  notifiedAt: Date | null
+  speakerLabel: string | null
   createdAt: Date | null
 }
 
@@ -51,10 +69,22 @@ export type MessageCountAggregateOutputType = {
   content: number
   isAnomaly: number
   analysisNote: number
+  emergencyLevel: number
+  emergencyEvidence: number
+  notifiedAt: number
+  speakerLabel: number
   createdAt: number
   _all: number
 }
 
+
+export type MessageAvgAggregateInputType = {
+  emergencyLevel?: true
+}
+
+export type MessageSumAggregateInputType = {
+  emergencyLevel?: true
+}
 
 export type MessageMinAggregateInputType = {
   id?: true
@@ -63,6 +93,10 @@ export type MessageMinAggregateInputType = {
   content?: true
   isAnomaly?: true
   analysisNote?: true
+  emergencyLevel?: true
+  emergencyEvidence?: true
+  notifiedAt?: true
+  speakerLabel?: true
   createdAt?: true
 }
 
@@ -73,6 +107,10 @@ export type MessageMaxAggregateInputType = {
   content?: true
   isAnomaly?: true
   analysisNote?: true
+  emergencyLevel?: true
+  emergencyEvidence?: true
+  notifiedAt?: true
+  speakerLabel?: true
   createdAt?: true
 }
 
@@ -83,6 +121,10 @@ export type MessageCountAggregateInputType = {
   content?: true
   isAnomaly?: true
   analysisNote?: true
+  emergencyLevel?: true
+  emergencyEvidence?: true
+  notifiedAt?: true
+  speakerLabel?: true
   createdAt?: true
   _all?: true
 }
@@ -125,6 +167,18 @@ export type MessageAggregateArgs<ExtArgs extends runtime.Types.Extensions.Intern
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: MessageAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: MessageSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: MessageMinAggregateInputType
@@ -155,6 +209,8 @@ export type MessageGroupByArgs<ExtArgs extends runtime.Types.Extensions.Internal
   take?: number
   skip?: number
   _count?: MessageCountAggregateInputType | true
+  _avg?: MessageAvgAggregateInputType
+  _sum?: MessageSumAggregateInputType
   _min?: MessageMinAggregateInputType
   _max?: MessageMaxAggregateInputType
 }
@@ -166,8 +222,14 @@ export type MessageGroupByOutputType = {
   content: string
   isAnomaly: boolean | null
   analysisNote: string | null
+  emergencyLevel: number | null
+  emergencyEvidence: string | null
+  notifiedAt: Date | null
+  speakerLabel: string | null
   createdAt: Date
   _count: MessageCountAggregateOutputType | null
+  _avg: MessageAvgAggregateOutputType | null
+  _sum: MessageSumAggregateOutputType | null
   _min: MessageMinAggregateOutputType | null
   _max: MessageMaxAggregateOutputType | null
 }
@@ -197,6 +259,10 @@ export type MessageWhereInput = {
   content?: Prisma.StringFilter<"Message"> | string
   isAnomaly?: Prisma.BoolNullableFilter<"Message"> | boolean | null
   analysisNote?: Prisma.StringNullableFilter<"Message"> | string | null
+  emergencyLevel?: Prisma.IntNullableFilter<"Message"> | number | null
+  emergencyEvidence?: Prisma.StringNullableFilter<"Message"> | string | null
+  notifiedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  speakerLabel?: Prisma.StringNullableFilter<"Message"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
   conversation?: Prisma.XOR<Prisma.ConversationScalarRelationFilter, Prisma.ConversationWhereInput>
 }
@@ -208,6 +274,10 @@ export type MessageOrderByWithRelationInput = {
   content?: Prisma.SortOrder
   isAnomaly?: Prisma.SortOrderInput | Prisma.SortOrder
   analysisNote?: Prisma.SortOrderInput | Prisma.SortOrder
+  emergencyLevel?: Prisma.SortOrderInput | Prisma.SortOrder
+  emergencyEvidence?: Prisma.SortOrderInput | Prisma.SortOrder
+  notifiedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  speakerLabel?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   conversation?: Prisma.ConversationOrderByWithRelationInput
 }
@@ -222,6 +292,10 @@ export type MessageWhereUniqueInput = Prisma.AtLeast<{
   content?: Prisma.StringFilter<"Message"> | string
   isAnomaly?: Prisma.BoolNullableFilter<"Message"> | boolean | null
   analysisNote?: Prisma.StringNullableFilter<"Message"> | string | null
+  emergencyLevel?: Prisma.IntNullableFilter<"Message"> | number | null
+  emergencyEvidence?: Prisma.StringNullableFilter<"Message"> | string | null
+  notifiedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  speakerLabel?: Prisma.StringNullableFilter<"Message"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
   conversation?: Prisma.XOR<Prisma.ConversationScalarRelationFilter, Prisma.ConversationWhereInput>
 }, "id">
@@ -233,10 +307,16 @@ export type MessageOrderByWithAggregationInput = {
   content?: Prisma.SortOrder
   isAnomaly?: Prisma.SortOrderInput | Prisma.SortOrder
   analysisNote?: Prisma.SortOrderInput | Prisma.SortOrder
+  emergencyLevel?: Prisma.SortOrderInput | Prisma.SortOrder
+  emergencyEvidence?: Prisma.SortOrderInput | Prisma.SortOrder
+  notifiedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  speakerLabel?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   _count?: Prisma.MessageCountOrderByAggregateInput
+  _avg?: Prisma.MessageAvgOrderByAggregateInput
   _max?: Prisma.MessageMaxOrderByAggregateInput
   _min?: Prisma.MessageMinOrderByAggregateInput
+  _sum?: Prisma.MessageSumOrderByAggregateInput
 }
 
 export type MessageScalarWhereWithAggregatesInput = {
@@ -249,6 +329,10 @@ export type MessageScalarWhereWithAggregatesInput = {
   content?: Prisma.StringWithAggregatesFilter<"Message"> | string
   isAnomaly?: Prisma.BoolNullableWithAggregatesFilter<"Message"> | boolean | null
   analysisNote?: Prisma.StringNullableWithAggregatesFilter<"Message"> | string | null
+  emergencyLevel?: Prisma.IntNullableWithAggregatesFilter<"Message"> | number | null
+  emergencyEvidence?: Prisma.StringNullableWithAggregatesFilter<"Message"> | string | null
+  notifiedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
+  speakerLabel?: Prisma.StringNullableWithAggregatesFilter<"Message"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Message"> | Date | string
 }
 
@@ -258,6 +342,10 @@ export type MessageCreateInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
   conversation: Prisma.ConversationCreateNestedOneWithoutMessagesInput
 }
@@ -269,6 +357,10 @@ export type MessageUncheckedCreateInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
 }
 
@@ -278,6 +370,10 @@ export type MessageUpdateInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   conversation?: Prisma.ConversationUpdateOneRequiredWithoutMessagesNestedInput
 }
@@ -289,6 +385,10 @@ export type MessageUncheckedUpdateInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -299,6 +399,10 @@ export type MessageCreateManyInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
 }
 
@@ -308,6 +412,10 @@ export type MessageUpdateManyMutationInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -318,6 +426,10 @@ export type MessageUncheckedUpdateManyInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -338,7 +450,15 @@ export type MessageCountOrderByAggregateInput = {
   content?: Prisma.SortOrder
   isAnomaly?: Prisma.SortOrder
   analysisNote?: Prisma.SortOrder
+  emergencyLevel?: Prisma.SortOrder
+  emergencyEvidence?: Prisma.SortOrder
+  notifiedAt?: Prisma.SortOrder
+  speakerLabel?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+}
+
+export type MessageAvgOrderByAggregateInput = {
+  emergencyLevel?: Prisma.SortOrder
 }
 
 export type MessageMaxOrderByAggregateInput = {
@@ -348,6 +468,10 @@ export type MessageMaxOrderByAggregateInput = {
   content?: Prisma.SortOrder
   isAnomaly?: Prisma.SortOrder
   analysisNote?: Prisma.SortOrder
+  emergencyLevel?: Prisma.SortOrder
+  emergencyEvidence?: Prisma.SortOrder
+  notifiedAt?: Prisma.SortOrder
+  speakerLabel?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -358,7 +482,15 @@ export type MessageMinOrderByAggregateInput = {
   content?: Prisma.SortOrder
   isAnomaly?: Prisma.SortOrder
   analysisNote?: Prisma.SortOrder
+  emergencyLevel?: Prisma.SortOrder
+  emergencyEvidence?: Prisma.SortOrder
+  notifiedAt?: Prisma.SortOrder
+  speakerLabel?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+}
+
+export type MessageSumOrderByAggregateInput = {
+  emergencyLevel?: Prisma.SortOrder
 }
 
 export type MessageCreateNestedManyWithoutConversationInput = {
@@ -413,6 +545,10 @@ export type MessageCreateWithoutConversationInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
 }
 
@@ -422,6 +558,10 @@ export type MessageUncheckedCreateWithoutConversationInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
 }
 
@@ -461,6 +601,10 @@ export type MessageScalarWhereInput = {
   content?: Prisma.StringFilter<"Message"> | string
   isAnomaly?: Prisma.BoolNullableFilter<"Message"> | boolean | null
   analysisNote?: Prisma.StringNullableFilter<"Message"> | string | null
+  emergencyLevel?: Prisma.IntNullableFilter<"Message"> | number | null
+  emergencyEvidence?: Prisma.StringNullableFilter<"Message"> | string | null
+  notifiedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  speakerLabel?: Prisma.StringNullableFilter<"Message"> | string | null
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
 }
 
@@ -470,6 +614,10 @@ export type MessageCreateManyConversationInput = {
   content: string
   isAnomaly?: boolean | null
   analysisNote?: string | null
+  emergencyLevel?: number | null
+  emergencyEvidence?: string | null
+  notifiedAt?: Date | string | null
+  speakerLabel?: string | null
   createdAt?: Date | string
 }
 
@@ -479,6 +627,10 @@ export type MessageUpdateWithoutConversationInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -488,6 +640,10 @@ export type MessageUncheckedUpdateWithoutConversationInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -497,6 +653,10 @@ export type MessageUncheckedUpdateManyWithoutConversationInput = {
   content?: Prisma.StringFieldUpdateOperationsInput | string
   isAnomaly?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   analysisNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  emergencyLevel?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  emergencyEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  notifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  speakerLabel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -509,6 +669,10 @@ export type MessageSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   content?: boolean
   isAnomaly?: boolean
   analysisNote?: boolean
+  emergencyLevel?: boolean
+  emergencyEvidence?: boolean
+  notifiedAt?: boolean
+  speakerLabel?: boolean
   createdAt?: boolean
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["message"]>
@@ -520,6 +684,10 @@ export type MessageSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
   content?: boolean
   isAnomaly?: boolean
   analysisNote?: boolean
+  emergencyLevel?: boolean
+  emergencyEvidence?: boolean
+  notifiedAt?: boolean
+  speakerLabel?: boolean
   createdAt?: boolean
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["message"]>
@@ -531,6 +699,10 @@ export type MessageSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
   content?: boolean
   isAnomaly?: boolean
   analysisNote?: boolean
+  emergencyLevel?: boolean
+  emergencyEvidence?: boolean
+  notifiedAt?: boolean
+  speakerLabel?: boolean
   createdAt?: boolean
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["message"]>
@@ -542,10 +714,14 @@ export type MessageSelectScalar = {
   content?: boolean
   isAnomaly?: boolean
   analysisNote?: boolean
+  emergencyLevel?: boolean
+  emergencyEvidence?: boolean
+  notifiedAt?: boolean
+  speakerLabel?: boolean
   createdAt?: boolean
 }
 
-export type MessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "conversationId" | "role" | "content" | "isAnomaly" | "analysisNote" | "createdAt", ExtArgs["result"]["message"]>
+export type MessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "conversationId" | "role" | "content" | "isAnomaly" | "analysisNote" | "emergencyLevel" | "emergencyEvidence" | "notifiedAt" | "speakerLabel" | "createdAt", ExtArgs["result"]["message"]>
 export type MessageInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
 }
@@ -568,6 +744,10 @@ export type $MessagePayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     content: string
     isAnomaly: boolean | null
     analysisNote: string | null
+    emergencyLevel: number | null
+    emergencyEvidence: string | null
+    notifiedAt: Date | null
+    speakerLabel: string | null
     createdAt: Date
   }, ExtArgs["result"]["message"]>
   composites: {}
@@ -999,6 +1179,10 @@ export interface MessageFieldRefs {
   readonly content: Prisma.FieldRef<"Message", 'String'>
   readonly isAnomaly: Prisma.FieldRef<"Message", 'Boolean'>
   readonly analysisNote: Prisma.FieldRef<"Message", 'String'>
+  readonly emergencyLevel: Prisma.FieldRef<"Message", 'Int'>
+  readonly emergencyEvidence: Prisma.FieldRef<"Message", 'String'>
+  readonly notifiedAt: Prisma.FieldRef<"Message", 'DateTime'>
+  readonly speakerLabel: Prisma.FieldRef<"Message", 'String'>
   readonly createdAt: Prisma.FieldRef<"Message", 'DateTime'>
 }
     
