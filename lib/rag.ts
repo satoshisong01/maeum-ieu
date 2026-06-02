@@ -36,8 +36,11 @@ export async function searchMemories(
   const rawNouns = queryText.match(/[가-힣]{2,5}/g) || [];
   const nouns = Array.from(new Set(rawNouns.map(stripParticle).filter(w => w.length >= 2 && !STOP.has(w))));
   // 매칭 명사 개수 합산 → keyword_score (다중 명사 일치 우선)
-  const keywordScore = nouns.length > 0
-    ? nouns.slice(0, 5).map(n => `(CASE WHEN me.content_text ILIKE '%${n.replace(/'/g, "''")}%' THEN 1 ELSE 0 END)`).join(" + ")
+  // 방어적 파라미터화 — 명사를 SQL에 직접 끼우지 않고 바인드($4+).
+  //   (입력이 [가-힣]{2,5}로 제한돼 현재도 인젝션 불가하나, 정규식 변경 시 대비한 defense-in-depth)
+  const nounParams = nouns.slice(0, 5);
+  const keywordScore = nounParams.length > 0
+    ? nounParams.map((_, i) => `(CASE WHEN me.content_text ILIKE '%' || $${i + 4} || '%' THEN 1 ELSE 0 END)`).join(" + ")
     : "0";
 
   // pgvector cosine + 키워드 가중 결합:
@@ -65,7 +68,8 @@ export async function searchMemories(
      LIMIT $3`,
     userId,
     vectorStr,
-    limit
+    limit,
+    ...nounParams,
   );
 
   if (!rows?.length) return "";
