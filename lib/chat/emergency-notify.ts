@@ -13,6 +13,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import dns from "node:dns/promises";
 
 export interface NotifyPayload {
   userId: string;
@@ -65,7 +66,47 @@ function buildWebhookBody(payload: NotifyPayload): unknown {
   };
 }
 
+/** IPv4가 사설·예약·메타데이터 대역인지 */
+function isPrivateIPv4(ip: string): boolean {
+  const p = ip.split(".").map(Number);
+  if (p.length !== 4 || p.some((n) => Number.isNaN(n))) return true; // 비정상 → 차단
+  const [a, b] = p;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;            // link-local + 클라우드 메타데이터(169.254.169.254)
+  if (a === 172 && b >= 16 && b <= 31) return true;   // 172.16/12
+  if (a === 192 && b === 168) return true;            // 192.168/16
+  if (a === 100 && b >= 64 && b <= 127) return true;  // CGNAT
+  return false;
+}
+
+/**
+ * SSRF 방어 — 보호자 웹훅 URL이 내부/사설/메타데이터로 향하지 않는지 검증.
+ * 호스트네임을 실제 IP로 해석해 사설 대역이면 차단(DNS rebinding 방어). 해석 실패 시 차단.
+ */
+async function isSafeWebhookUrl(rawUrl: string): Promise<boolean> {
+  let u: URL;
+  try { u = new URL(rawUrl); } catch { return false; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  try {
+    const addrs = await dns.lookup(host, { all: true });
+    if (!addrs.length) return false;
+    for (const { address, family } of addrs) {
+      if (family === 4 && isPrivateIPv4(address)) return false;
+      const a = address.toLowerCase();
+      if (family === 6 && (a === "::1" || a.startsWith("fc") || a.startsWith("fd") || a.startsWith("fe80"))) return false;
+      if (family === 6 && a.startsWith("::ffff:") && isPrivateIPv4(a.replace("::ffff:", ""))) return false;
+    }
+  } catch { return false; }
+  return true;
+}
+
 async function sendWebhook(url: string, body: unknown): Promise<{ ok: boolean; status?: number; error?: string }> {
+  if (!(await isSafeWebhookUrl(url))) {
+    console.warn("[emergency-notify] 안전하지 않은 웹훅 URL 차단(SSRF 방어)");
+    return { ok: false, error: "unsafe webhook url blocked" };
+  }
   try {
     const res = await fetch(url, {
       method: "POST",

@@ -23,6 +23,7 @@ import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-c
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // ─── Gemini 모델 ────────────────────────────────────────────────────────────
 
@@ -1222,6 +1223,15 @@ export async function POST(req: Request) {
     const body = (await req.json()) as ChatRequestBody;
     const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx } = body;
     const userId = session.user.id;
+
+    // 고비용 엔드포인트 폭주 방어 — 단일 계정 분당 40회 (정상 대화는 충분, 자동화 남용 차단)
+    const rl = checkRateLimit(`chat:${userId}`, 40, 60_000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "잠시 후 다시 시도해주세요." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
+      );
+    }
 
     const timeCtx = getTimeContext(ctx?.currentTime);
     const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
