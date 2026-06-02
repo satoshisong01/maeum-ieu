@@ -222,7 +222,8 @@ export async function extractAndSaveProfile(input: ExtractInput): Promise<Extrac
   }
 
   if (result.familyAdded.length + result.factsAdded.length + result.profileUpdated.length > 0) {
-    console.log("[profile-extract]", JSON.stringify({ userId: input.userId.slice(0, 8), ...result }));
+    // PII(이름·고향·취미 값) 미로깅 — 건수만
+    console.log("[profile-extract]", JSON.stringify({ userId: input.userId.slice(0, 8), family: result.familyAdded.length, facts: result.factsAdded.length, profile: result.profileUpdated.length }));
   }
 
   // Phase B: 정규식 결과 0건 + 가족·일상 키워드 포함 시 LLM 호출로 보강
