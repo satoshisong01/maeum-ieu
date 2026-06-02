@@ -381,7 +381,7 @@ export async function analyzeCognitive(params: {
 
   try {
     const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json" },
     });
 

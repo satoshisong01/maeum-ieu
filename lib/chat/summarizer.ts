@@ -15,7 +15,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
 
-const SUMMARY_MODEL = "gemini-2.5-flash";
+const SUMMARY_MODEL = "gemini-3.5-flash";
 export type SummaryLevel = "weekly" | "monthly" | "yearly";
 
 const SUMMARY_PROMPT = `당신은 노인 인지 케어 시스템의 대화 요약가입니다. 아래 대화를 분석해 두 가지를 출력하세요.

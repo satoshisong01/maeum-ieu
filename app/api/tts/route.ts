@@ -25,7 +25,6 @@ const MAX_TEXT_LENGTH = 1000;
 
 // Gemini TTS fallback 모델 chain (Cloud TTS 실패 시)
 const GEMINI_TTS_MODELS = [
-  "gemini-2.5-flash-preview-tts",
   "gemini-3.1-flash-tts-preview",
 ];
 
