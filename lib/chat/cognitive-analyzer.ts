@@ -381,7 +381,8 @@ export async function analyzeCognitive(params: {
 
   try {
     const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      model: "gemini-3.5-flash",
+      // 분석기 모델 — 기본 3.5. 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
+      model: process.env.COGNITIVE_MODEL || "gemini-3.5-flash",
       generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json" },
     });
 
