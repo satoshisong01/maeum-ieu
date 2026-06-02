@@ -736,8 +736,11 @@ async function runCognitiveAnalysis(params: {
   try {
     const analysis = await analyzeCognitive({ userMessage, assistantResponse, historyText, envBlock });
 
-    // Gemini가 isAnomaly: false를 줘도, score >= 2인 check가 있으면 강제 이상징후 판정
-    const hasHighScore = analysis.cognitiveChecks.some((c) => c.score >= 2);
+    // Gemini가 isAnomaly: false를 줘도, "신뢰할 만한" score >= 2 check가 있으면 강제 이상징후 판정.
+    //   저신뢰(confidence < 0.6) score 2는 오경보(보호자 불필요 알림) 위험이 커 강제하지 않음.
+    //   단 점수 자체는 cognitive_assessments에 그대로 기록되어 종단 추세엔 반영됨.
+    const HIGH_SCORE_MIN_CONF = 0.6;
+    const hasHighScore = analysis.cognitiveChecks.some((c) => c.score >= 2 && (c.confidence ?? 0.5) >= HIGH_SCORE_MIN_CONF);
     const isAnomaly = analysis.isAnomaly || hasHighScore;
 
     console.log("[cognitive-analysis]", JSON.stringify({
