@@ -839,6 +839,40 @@ async function transcribeAudio(audioData: string, audioMimeType: string): Promis
 }
 
 /** 4) 음성 요청 — 2단계: STT → 대화 모델 */
+/**
+ * 응답 후처리 파이프라인 — 11단 변환을 명시적 순서로 실행 + 단계별 관측.
+ * 기존 중첩 1줄 호출(양 핸들러 중복)을 단일화. 어떤 단계가 응답을 통째로 비우면 로깅(빈응답 버그 원인 추적).
+ * 순서는 load-bearing이므로 변경 주의(removeUngroundedClaims/removeParrot이 빈 문자열을 만들 수 있어 호출부 가드 필수).
+ */
+function postProcessReply(
+  rawText: string,
+  opts: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string },
+): string {
+  const { userText, companionName, ctx, honorific, family, prevAi } = opts;
+  const stages: Array<[string, (t: string) => string]> = [
+    ["trimIncomplete", (t) => trimIncomplete(t)],
+    ["removeTimeLabels", (t) => removeTimeLabels(t)],
+    ["removeParrot", (t) => removeParrot(t, userText, companionName)],
+    ["removeUngroundedClaims", (t) => removeUngroundedClaims(t, ctx)],
+    ["normalizeHonorific", (t) => normalizeHonorific(t, honorific)],
+    ["normalizeFamilyChildHonorific", (t) => normalizeFamilyChildHonorific(t, ctx)],
+    ["fixChildGenderHonorific", (t) => fixChildGenderHonorific(t, family)],
+    ["fixWordChainStart", (t) => fixWordChainStart(t)],
+    ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
+    ["normalizeImnida", (t) => normalizeImnida(t)],
+    ["stripRecallAnswerLeak", (t) => stripRecallAnswerLeak(t)],
+  ];
+  let text = rawText;
+  for (const [name, fn] of stages) {
+    const before = text;
+    text = fn(text);
+    if (before.trim() && !text.trim()) {
+      console.warn(`[post-process] '${name}' 단계가 응답을 빈 문자열로 만듦(직전 길이 ${before.length}) → 호출부 fallback 가드 작동`);
+    }
+  }
+  return text;
+}
+
 async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
   companionName: string; companionRelation: string;
@@ -938,7 +972,7 @@ async function handleAudioMessage(params: {
   const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let answerText = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), transcription, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
+  let answerText = fallbackUsed ? rawText : postProcessReply(rawText, { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi });
   // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
   if (!answerText || !answerText.trim()) answerText = fallback;
 
@@ -1173,7 +1207,7 @@ async function handleTextMessage(params: {
   }
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let text = fallbackUsed ? rawText : stripRecallAnswerLeak(normalizeImnida(removeRepeatedOpening(fixWordChainStart(fixChildGenderHonorific(normalizeFamilyChildHonorific(normalizeHonorific(removeUngroundedClaims(removeParrot(removeTimeLabels(trimIncomplete(rawText)), userContent, companionName), ctx), honorific), ctx), profile.family)), prevAi)));
+  let text = fallbackUsed ? rawText : postProcessReply(rawText, { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi });
   // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
   if (!text || !text.trim()) text = fallback;
 
