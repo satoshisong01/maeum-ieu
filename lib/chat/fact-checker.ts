@@ -15,6 +15,7 @@
  */
 
 import type { FullProfile } from "./profile";
+import { nameSubj } from "./korean-particle";
 
 const HONORIFIC_TAG = /(?:아드님|따님|손자|손녀|아들|딸|장남|차남|장녀|차녀|첫째|둘째|셋째|넷째|막내)/;
 
@@ -51,6 +52,7 @@ interface CheckInput {
   recentUserText: string;   // 최근 N턴 user 발화 join
   memories: string;          // RAG retrieve 결과
   honorific: string;         // 사용자 호칭 (할아버지 등)
+  companionName?: string;    // 동반자 이름 (지윤 등) — fallback 멘트에서 자기 호칭으로 사용. 누락 시 "민지" 기본.
   currentUserText?: string;  // 직전 사용자 발화 — 공감/일상 패턴이면 grounding fallback 적용 제외
 }
 
@@ -218,7 +220,11 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   // 이름 후보로 매칭됐어도 사용자 발화에 등장한 이름이면 ungrounded 처리 안 함.
   const candidates = extractNameCandidates(aiText);
   const ungrounded: string[] = [];
+  // 동반자(AI) 자기 이름은 항상 grounded — "지윤이도 놀랄 거예요" 같은 자기지칭을 가족 이름으로 오판해
+  // 문장째 삭제하던 결함 방지(2026-06-01 라이브: 커스텀 이름 "지윤" 응답이 공백화). 기본 "민지"는 stopword에 이미 포함.
+  const selfName = input.companionName ? stripNameSuffix(input.companionName) : "";
   for (const name of candidates) {
+    if (selfName && stripNameSuffix(name) === selfName) continue;
     if (!isFamilyContextGrounded(name, profile, recentUserText)) {
       // 사용자가 그 이름을 직접 발화한 경우 (사망인물 정정 등) — 보존
       if (input.currentUserText && input.currentUserText.includes(stripNameSuffix(name))) continue;
@@ -243,18 +249,19 @@ export function factCheckResponse(input: CheckInput): CheckResult {
     // 너무 많이 잘려서 응답이 짧아지면(20자 미만), 안전한 fallback 메시지로 대체.
     // "재미/영민" 같은 환각 이름이 응답의 핵심이었을 때 깨진 결과 노출 방지.
     if (result.cleaned.length < 20) {
+      const selfSubj = nameSubj(input.companionName || "민지");  // "지윤이가" / "민지가"
       const askedFamilyInfo = /가족|아들|딸|손주|아드님|따님|아내|남편/.test(input.recentUserText) ||
                               /이름|누구|뭐였|기억하|알려/.test(input.recentUserText);
       if (askedFamilyInfo) {
-        result.cleaned = `${input.honorific}, 죄송해요. 가족분 정보를 민지가 정확히 알지 못해서요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
+        result.cleaned = `${input.honorific}, 죄송해요. 가족분 정보를 ${selfSubj} 정확히 알지 못해서요. 혹시 다시 한 번 말씀해주실 수 있으세요?`;
       } else {
-        result.cleaned = `${input.honorific}, 민지가 잠시 헷갈렸나 봐요. 다시 한 번 말씀해주실 수 있으세요?`;
+        result.cleaned = `${input.honorific}, ${selfSubj} 잠시 헷갈렸나 봐요. 다시 한 번 말씀해주실 수 있으세요?`;
       }
     }
 
     console.warn("[fact-check] removed ungrounded names:", JSON.stringify({
       ungrounded, removed: result.removed.length, warnings: result.warnings,
-      finalLength: result.cleaned.length, usedFallback: result.cleaned.length < 80 && result.cleaned.includes("민지가"),
+      finalLength: result.cleaned.length, usedFallback: result.cleaned.length < 80 && result.cleaned.includes("헷갈렸나 봐요"),
       groundingScore: result.groundingScore.toFixed(2),
     }));
   } else if (result.warnings.length > 0) {
@@ -283,7 +290,7 @@ export function factCheckResponse(input: CheckInput): CheckResult {
   if (result.groundingScore < 0.15 && denseUngrounded && result.cleaned.length > 120 && !isEmotionalOrCasual && !userProvidedFact && !isEmergencyOrSafety) {
     console.warn("[fact-check] very low grounding score, replacing:", result.groundingScore,
       JSON.stringify({ total: grounding.total, ungrounded: grounding.ungrounded }));
-    result.cleaned = `${input.honorific}, 민지가 다시 한 번 여쭤볼게요. 방금 말씀하신 내용을 좀 더 자세히 알려주실 수 있으세요?`;
+    result.cleaned = `${input.honorific}, ${nameSubj(input.companionName || "민지")} 다시 한 번 여쭤볼게요. 방금 말씀하신 내용을 좀 더 자세히 알려주실 수 있으세요?`;
   } else if (result.groundingScore < 0.5) {
     console.log("[fact-check] grounding score (info only):", result.groundingScore.toFixed(2));
   }

@@ -93,5 +93,35 @@ console.log("\n[extractor] cleanName quotative 라고 fix");
   check('"영민이고" → 영민', cleanName("영민이고") === "영민", cleanName("영민이고"));
 }
 
+// ── A-6: fact-check fallback이 커스텀 동반자 이름을 사용(하드코딩 "민지" 누출 방지) ──
+// 2026-06-01 적응형 라이브에서 발견: 동반자 "지윤" 계정인데 grounding fallback이 "민지가 …"로
+// 엉뚱한 이름을 노출. fallback 멘트가 input.companionName을 따라야 함.
+console.log("\n[A-6] fact-check fallback uses custom companion name (no hardcoded 민지)");
+{
+  const emptyProfile: any = { family: [], profile: null };
+  // 단일 ungrounded 이름 문장 → strip 후 <20자 → fallback 발동. recentUserText가 가족/이름 질문.
+  const r = factCheckResponse({
+    aiText: "준호 아드님이세요!", profile: emptyProfile, recentUserText: "막내아들 이름이 뭐였지",
+    memories: "", honorific: "할머니", companionName: "지윤", currentUserText: "막내아들 이름이 뭐였지",
+  });
+  check("fallback에 커스텀 이름 '지윤이가' 포함", r.cleaned.includes("지윤이가"), r.cleaned);
+  check("fallback에 하드코딩 '민지' 미포함", !r.cleaned.includes("민지"), r.cleaned);
+  // companionName 미지정 시 기존 기본값 "민지가" 유지(하위호환)
+  const rDefault = factCheckResponse({
+    aiText: "준호 아드님이세요!", profile: emptyProfile, recentUserText: "막내아들 이름이 뭐였지",
+    memories: "", honorific: "할머니", currentUserText: "막내아들 이름이 뭐였지",
+  });
+  check("companionName 미지정 시 기본 '민지가' 유지", rDefault.cleaned.includes("민지가"), rDefault.cleaned);
+
+  // 핵심: 동반자 자기 이름은 ungrounded로 strip 금지(응답 공백화 방지).
+  // 2026-06-01 라이브: 커스텀 "지윤" 자기지칭 문장이 통째 삭제→빈 응답 저장됨.
+  const rSelf = factCheckResponse({
+    aiText: "할머니, 계산이 조금 잘못된 것 같아요. 지윤이도 같이 다시 세어볼게요!",
+    profile: emptyProfile, recentUserText: "콩나물 샀는데 거스름돈", memories: "",
+    honorific: "할머니", companionName: "지윤", currentUserText: "콩나물 삼천원어치 샀는데 거스름돈 이만원 받았어",
+  });
+  check("동반자 자기이름 '지윤' 문장 보존(삭제 금지)", rSelf.cleaned.includes("지윤") && rSelf.cleaned.length > 20, rSelf.cleaned);
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
