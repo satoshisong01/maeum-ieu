@@ -11,7 +11,11 @@
 import "dotenv/config";
 import fs from "fs";
 import { analyzeCognitive } from "../lib/chat/cognitive-analyzer";
-import { classifySeverity } from "../lib/health/severity";
+import { classifySeverity, computeOverallAvg } from "../lib/health/severity";
+
+// 산출 경로 — 패치/버전별 reports 폴더 (env로 오버라이드 가능)
+const OUT_DIR = process.env.REPORT_DIR || "docs/reports/2026-06-02_gemini-3.5-flash";
+fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const ENV = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]
 - 현재 한국 시각: 2026년 6월 2일 화요일 오후 2시 10분
@@ -247,8 +251,8 @@ async function runLevel(title, cases, evalFn, fileName) {
   lines.push("");
   lines.push(`### 정확도: ${hit}/${cases.length} (${((hit / cases.length) * 100).toFixed(1)}%)`);
   lines.push("");
-  fs.writeFileSync(`docs/${fileName}`, lines.join("\n"), "utf-8");
-  console.log(`\n저장: docs/${fileName} — ${hit}/${cases.length}`);
+  fs.writeFileSync(`${OUT_DIR}/${fileName}`, lines.join("\n"), "utf-8");
+  console.log(`\n저장: ${OUT_DIR}/${fileName} — ${hit}/${cases.length}`);
   return { hit, tot: cases.length };
 }
 
@@ -265,14 +269,21 @@ async function runHighRisk() {
     lines.push("");
     lines.push("| AI 질문 | 어르신 대답 | 판단(domain:score) |");
     lines.push("|---------|-------------|---------------------|");
-    const allScores = [];
+    // production(computeOverallAvg)과 동일하게: 도메인별 평균 → 도메인 가중(상한) 평균
+    const domainScores = {};
+    let n = 0;
     for (const ans of p.answers) {
       const r = await judge({ q: ans.q, a: ans.a, d: "" });
-      for (const c of r.checks) allScores.push(c.score);
+      for (const c of r.checks) { (domainScores[c.domain] ||= []).push(c.score); n++; }
       lines.push(`| ${ans.q} | ${ans.a} | ${fmtChecks(r.checks)} |`);
       process.stdout.write(`\r[고위험] ${p.name} ...      `);
     }
-    const avg = allScores.length ? allScores.reduce((s, x) => s + x, 0) / allScores.length : -1;
+    const domainStats = Object.values(domainScores).map((arr) => ({
+      avg_score: arr.reduce((s, x) => s + x, 0) / arr.length,
+      count: arr.length,
+    }));
+    const avg = computeOverallAvg(domainStats); // production과 동일 계산
+    const allScores = { length: n };
     const tier = classifySeverity(avg).tier;
     const ok = tier === p.targetTier;
     if (ok) hit++;
@@ -284,8 +295,8 @@ async function runHighRisk() {
   lines.push(`### 등급 분류 정확도: ${hit}/${PROFILES.length}`);
   lines.push(`- 그중 **고위험 집중 케이스: ${hr.length}개** (사망인물·시대착오·장소혼동+계산붕괴·비현실·지남력붕괴·혼합 등 다양한 누적 시나리오)`);
   lines.push(`- 고위험은 발화 단위 점수가 아니라 누적평균 ≥1.5의 종합등급이므로, 단일 발화 케이스가 아닌 누적 프로파일로 검증함.`);
-  fs.writeFileSync("docs/판단검증_고위험.md", lines.join("\n"), "utf-8");
-  console.log(`\n저장: docs/판단검증_고위험.md — ${hit}/${PROFILES.length}`);
+  fs.writeFileSync(`${OUT_DIR}/판단검증_고위험.md`, lines.join("\n"), "utf-8");
+  console.log(`\n저장: ${OUT_DIR}/판단검증_고위험.md — ${hit}/${PROFILES.length}`);
   return { hit, tot: PROFILES.length };
 }
 
