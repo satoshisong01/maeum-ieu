@@ -1,0 +1,36 @@
+/**
+ * API 경계 입력 검증(Zod) — 타입 안전성 + 크기/길이 상한으로 오용·DoS 방어.
+ * permissive: 알 수 없는 키는 strip(거부 X)해 정상 요청을 깨지 않음. 알려진 필드만 bound.
+ */
+import { z } from "zod";
+
+export const ChatRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.string().max(20),
+        content: z.string().max(5000),
+        createdAt: z.string().max(40).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
+  conversationId: z.string().max(100).optional(),
+  isInitialGreeting: z.boolean().optional(),
+  isReturningGreeting: z.boolean().optional(),
+  audio: z
+    .object({
+      data: z.string().max(15_000_000), // base64 음성(~10MB raw) 상한 — 과대 페이로드 차단
+      mimeType: z.string().max(60),
+    })
+    .optional(),
+  context: z
+    .object({
+      currentTime: z.string().max(40).optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+    })
+    .optional(),
+});
+
+export type ChatRequestValidated = z.infer<typeof ChatRequestSchema>;

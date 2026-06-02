@@ -8,7 +8,8 @@ import bcrypt from "bcryptjs";
 export const authOptions: NextAuthOptions = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma 7.x와 @auth/prisma-adapter 타입 불일치 해결
   adapter: PrismaAdapter(prisma as any) as Adapter,
-  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
+  // 민감 건강데이터 — 세션 14일(기존 30일에서 단축) + 일일 롤링 갱신(활성 사용자는 재로그인 거의 없음)
+  session: { strategy: "jwt", maxAge: 14 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
   pages: {
     signIn: "/login",
   },
