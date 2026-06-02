@@ -88,7 +88,7 @@ export async function extractWithLLM(params: {
 
   try {
     const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json" },
     });
     const prompt = LLM_PROMPT.replace("{USER_MESSAGE}", params.userMessage.slice(0, 500));

@@ -37,7 +37,7 @@ function getTextModel(systemInstruction: string) {
   // 대화 모델은 googleSearch가 필수이므로 항상 Gemini API 사용
   // (파인튜닝 모델에는 googleSearch가 없어 실시간 정보를 가져오지 못함)
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     systemInstruction,
     generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
     // @ts-expect-error -- googleSearch SDK 타입 미반영
@@ -799,7 +799,7 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
 /** 음성 → 텍스트 변환 (STT 전용) */
 async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
   const sttModel = new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: { temperature: 0, maxOutputTokens: 1024 },
   });
 
