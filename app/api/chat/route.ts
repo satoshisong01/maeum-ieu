@@ -11,6 +11,7 @@ import { nameSubj, normalizeImnida, stripRecallAnswerLeak } from "@/lib/chat/kor
 import { salvageJsonLeak } from "@/lib/chat/sanitize";
 import { classifyIntent, buildIntentHint } from "@/lib/chat/intent-classifier";
 import type { ChatRequestBody } from "@/lib/chat/types";
+import { ChatRequestSchema } from "@/lib/chat/validation";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
@@ -1225,7 +1226,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = (await req.json()) as ChatRequestBody;
+    const parsed = ChatRequestSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "잘못된 요청 형식입니다." }, { status: 400 });
+    }
+    const body = parsed.data as ChatRequestBody;
     const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx } = body;
     const userId = session.user.id;
 
