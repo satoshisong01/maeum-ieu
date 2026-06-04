@@ -14,6 +14,7 @@
  */
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { GoogleGenAI } from "@google/genai";
 import textToSpeech from "@google-cloud/text-to-speech";
 import { authOptions } from "@/lib/auth";
@@ -126,6 +127,12 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+
+  // 고비용 TTS 폭주 방어 — 계정당 분당 40회
+  const rl = checkRateLimit(`tts:${session.user.id}`, 40, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
   }
 
   const body = await req.json().catch(() => ({}));
