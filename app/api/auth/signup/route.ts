@@ -2,11 +2,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { normalizeTimes } from "@/lib/chat/medication";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 interface MedicationDraftInput { label?: string; times?: unknown; enabled?: boolean }
 
 export async function POST(req: Request) {
   try {
+    // 미인증 엔드포인트 — IP 기준 가입 폭주/봇 방어 (분당 10회)
+    const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] || req.headers.get("x-real-ip") || "unknown").trim();
+    const rl = checkRateLimit(`signup:${ip}`, 10, 60_000);
+    if (!rl.ok) {
+      return NextResponse.json({ error: "잠시 후 다시 시도해 주세요." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
+    }
+
     const body = await req.json();
     const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, medicationDrafts } = body as {
       email?: string;
