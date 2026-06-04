@@ -307,3 +307,44 @@
 - 원인: ① constants.ts memory_delayed 규칙이 "정답 같이 노출" 케이스만 막고 "회상 실패 후 정답 채워주기"는 미커버. ② "[사용자 정보 혼동 시 정보 제공]" 규칙이 인지검사 단어에까지 과적용. ③ stripRecallAnswerLeak이 다중단어 노출만 잡고 단일단어 확인은 미검출.
 - fix: ① memory_delayed에 "회상 실패 시에도 정답 노출 금지" 규칙 + 위로 응답 가이드 추가. ② 정보제공 규칙에 "자전적 정보에만 해당, 인지검사 항목 제외" carve-out. ③ stripRecallAnswerLeak에 "마지막/나머지 하나는 X였어요" 단일단어 구조적 차단(단어/회상 맥락 한정).
 - 검증: 단위 6/6(누출 3 제거·안전 3 보존), tsc 0, safety 30/30.
+
+---
+
+## 2026-06-02 · 전반 점검(Opus 4.8 + 아키텍처·보안 에이전트) — 종합 개선
+
+> 사용자 요청: "시간문제처럼 전반적으로 개선할 점을 훑어 점검·수정하고, 보호자 알림(C2) 제외 코드 가능한 것 모두 처리 + 테스트 + 보고서."
+> Opus 4.8 직접 리뷰(임상 검출 핵심) + architect 에이전트(아키텍처) + security-architect 에이전트(보안) 3축 점검 후 수정.
+
+### ✅ 해결(커밋)
+| 항목 | 등급 | 내용 | 커밋 |
+|------|------|------|------|
+| 임상 교란변수 5건 | HIGH | 음력·세는나이·자가정정→정답·청력·교육(학력보정) 오탐 차단 | b7bfd01 |
+| 섬망(급성 혼동) | HIGH | 신체증상+급성혼동 동반 시 가역원인 의심 노트 | b7bfd01 |
+| H3 멱등성 | HIGH | cognitive_assessments 결정적 id + ON CONFLICT(중복 INSERT→등급왜곡 차단) | b7bfd01 |
+| 웹훅 SSRF + rate limit | HIGH | 가디언 웹훅 사설/메타데이터 IP 차단 + chat 40/분 | b7bfd01 |
+| **C1 급성 악화 감지** | CRIT | 최근 vs 베이스라인 윈도우 비교 + 도메인 가중상한 | af7de2d |
+| H2 분석기 견고화 | HIGH | responseSchema(truncation 평가유실 방지) + temp 0 | 69d16f7 |
+| M3 confidence 게이트 | MED | 저신뢰 score2 강제anomaly 억제(오경보 감소) | 6e78318 |
+| H4 검증 정합 | HIGH | judgment-verify 등급계산을 production(computeOverallAvg)과 일치 | 73b3b55 |
+| M2 googleSearch 조건부 | MED | info_request 의도에만 검색(비용·지연 절감) | 08477aa |
+| #8 보안 | MED | 보안헤더·비번최소·rag SQL 방어적 파라미터화 | 99684e8 |
+| **#9 판단검증 2배** | — | 워크플로(생성→적대적검증) 65→110케이스, 분석기 110/110 | 0709c49 |
+| #7 lexicon 통합 | LOW | 사망인물·비현실·최근접촉 3~4중복 → lexicons.ts(STRICT/LOOSE) | b504466 |
+| B1 PII 로깅 마스킹 | MED | 발화원문·가족이름·고향/취미 값 로그 제거(건수만) | b504466 |
+| B2 가성치매 감별 | MED | 우울성 저수행 ≠ 인지저하 → 보수채점+GDS 노트 | b504466 |
+| B3 평가범위 명시 | MED | summary에 평가불가(시공간·그리기·실행기능)+disclaimer | b504466 |
+| **B4 영구 베이스라인** | CRIT | 최초 14일 고정 기준선 대비 현재 → 완만한 장기 저하 감지 | c4d7b75 |
+| B5/B6/B7 보안 | MED | Zod 경계검증·JWT 30→14일·CSP 헤더 | 944a704 |
+| #6/H1 후처리 파이프라인 | HIGH | 11단 체인 → 명시적 순서+단계별 관측 로깅+중복제거 | 06fa22c |
+
+### 검증
+- judgment-verify 109/110(확장; 경증 1건 "잠깐 헷갈렸네"류는 0/1 임상경계로 분석기가 정상 판정—방어가능, 회귀 아님), matrix-verify 81/81(100%), safety-regression 30/30, tsc 0 전부 통과.
+- SQL injection(rag) 에이전트 CRITICAL 주장은 **과장**으로 확인(입력이 [가-힣]만이라 악용불가) → 방어적 파라미터화만.
+
+### [ ] 미해결 / 보류 (코드 너머·제품 결정 필요)
+- **[보류] C2 인지등급 → 보호자 알림**: 알림 방식 논의 중(사용자). C1/B4가 급성·장기 저하를 *감지*하나, 보호자 *전달* 경로는 C2 개발 전까지 비어 있음. → notifyGuardian을 trend.status/baselineTrend.status 소비하도록 연결 필요(디바운스 포함).
+- **[ ] 동의(consent) 모델 + 저장 암호화(at-rest)**: 취약계층 건강데이터 규제 대응 — 인프라·정책 결정 필요.
+- **[ ] M1 핸들러 병합**: handleAudioMessage/handleTextMessage ~90% 중복. 음성·텍스트 미세차이 유실 위험 커 신중한 별도 작업 필요(build*Hint·history 모듈 추출 포함).
+- **[ ] cognitive_assessments Prisma 마이그레이션 편입**: 현재 raw SQL이라 db push가 drop 위험(과거 데이터 유실 이력). UNIQUE(message_id,domain)도 정식 제약으로.
+- **[ ] CSP 런타임 검증**: next.config 변경이라 dev 재시작 후 화면 로드·콘솔 위반 확인 필요.
+- **[ ] 경증 경계 케이스 노이즈**: "잠깐 헷갈렸네"류 0/1 경계는 temp0에서도 가끔 flip(임상적으로 모호). 테스트 영향 미미.
