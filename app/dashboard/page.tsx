@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { computeOverallAvg, TIER_BOUNDS } from "@/lib/health/severity";
 
 interface CognitiveAssessment {
   domain: string; score: number; confidence: number;
@@ -85,8 +86,9 @@ export default function DashboardPage() {
   }
 
   const totalChecks = cognitive?.domainAverages.reduce((s, d) => s + d.count, 0) ?? 0;
-  const overallAvg = totalChecks > 0 ? cognitive!.domainAverages.reduce((s, d) => s + d.avg_score * d.count, 0) / totalChecks : -1;
-  const oi = overallAvg < 0 ? -1 : overallAvg < 0.5 ? 0 : overallAvg < 1.5 ? 1 : 2;
+  // 종합 평균·등급 경계는 lib/health/severity.ts 단일 출처 사용(요약 리포트·CDR 카드와 동일 산식).
+  const overallAvg = computeOverallAvg(cognitive?.domainAverages ?? []);
+  const oi = overallAvg < 0 ? -1 : overallAvg < TIER_BOUNDS.normal ? 0 : overallAvg < TIER_BOUNDS.moderate ? 1 : 2;
 
   // 평가된 영역 수 (최소 3개 영역에서 각 2회 이상 평가되어야 신뢰할 수 있음)
   const evaluatedDomains = (cognitive?.domainAverages ?? []).filter((d) => d.count >= 2).length;
@@ -96,9 +98,9 @@ export default function DashboardPage() {
   const getCdrLevel = (avg: number): { level: string; desc: string; color: string; bgColor: string } => {
     if (avg < 0) return { level: "-", desc: "아직 평가 데이터가 부족합니다. 대화를 더 진행해주세요.", color: "text-zinc-400", bgColor: "bg-zinc-50" };
     if (!isReliable) return { level: "판정 보류", desc: `데이터가 부족하여 정확한 판정이 어렵습니다. 최소 3개 이상 영역에서 충분한 대화가 필요합니다. (현재 ${evaluatedDomains}개 영역, ${totalChecks}회 평가)`, color: "text-zinc-500", bgColor: "bg-zinc-50" };
-    if (avg < 0.3) return { level: "CDR 0", desc: "정상 — 인지 기능에 특이 사항이 없습니다", color: "text-green-700", bgColor: "bg-green-50" };
-    if (avg < 0.8) return { level: "CDR 0.5", desc: "관찰 필요 — 경미한 인지 변화가 관찰됩니다. 지속적인 모니터링을 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
-    if (avg < 1.5) return { level: "CDR 1", desc: "경도 인지 저하 의심 — 전문의 상담을 권장합니다. 단, AI 분석은 참고용이며 정확한 진단은 전문의만 가능합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
+    if (avg < TIER_BOUNDS.normal) return { level: "CDR 0", desc: "정상 — 인지 기능에 특이 사항이 없습니다", color: "text-green-700", bgColor: "bg-green-50" };
+    if (avg < TIER_BOUNDS.mild) return { level: "CDR 0.5", desc: "관찰 필요 — 경미한 인지 변화가 관찰됩니다. 지속적인 모니터링을 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
+    if (avg < TIER_BOUNDS.moderate) return { level: "CDR 1", desc: "경도 인지 저하 의심 — 전문의 상담을 권장합니다. 단, AI 분석은 참고용이며 정확한 진단은 전문의만 가능합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
     return { level: "CDR 2+", desc: "인지 저하 가능성 높음 — 전문의 상담을 강력히 권장합니다. 본 결과는 AI 기반 선별 검사이며, 최종 진단은 반드시 전문의 상담이 필요합니다", color: "text-red-700", bgColor: "bg-red-50" };
   };
   const cdr = getCdrLevel(overallAvg);
@@ -305,7 +307,7 @@ export default function DashboardPage() {
               {Object.keys(DOMAIN_LABELS).map((domain) => {
                 const item = cognitive.domainAverages.find((d) => d.domain === domain);
                 const avg = item?.avg_score ?? -1;
-                const ci = avg < 0 ? -1 : avg < 0.5 ? 0 : avg < 1.5 ? 1 : 2;
+                const ci = avg < 0 ? -1 : avg < TIER_BOUNDS.normal ? 0 : avg < TIER_BOUNDS.moderate ? 1 : 2;
                 return (
                   <div key={domain}>
                     <div className="mb-1 flex justify-between">

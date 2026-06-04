@@ -135,6 +135,7 @@ export default function ChatPage() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const vadFrameRef = useRef<number>(0);
+  const audioCtxRef = useRef<AudioContext | null>(null); // VAD용 AudioContext — stopRecording/언마운트에서 명시적 close (누수 방지)
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
   const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
@@ -144,6 +145,19 @@ export default function ChatPage() {
     currentTime: new Date().toISOString(),
     ...locationRef.current,
   }), []);
+
+  // 언마운트 시 미디어 자원 해제 — /chat 이탈(대시보드 이동 등) 후 마이크 점유·AudioContext 누수 방지.
+  useEffect(() => {
+    return () => {
+      try { if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+      if (vadFrameRef.current) cancelAnimationFrame(vadFrameRef.current);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+    };
+  }, []);
 
   const createId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -707,7 +721,10 @@ export default function ChatPage() {
       recorder.start();
 
       // VAD: 음량 모니터링 → 2초 침묵 시 자동 전송
+      // 기존 컨텍스트가 남아 있으면 닫고 새로 생성 — ref에 보관해 stopRecording/언마운트에서 정리.
+      if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); }
       const audioCtx = new AudioContext();
+      audioCtxRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;
@@ -768,9 +785,10 @@ export default function ChatPage() {
 
   /** 녹음 중지. discard=true면 진행 중이던 녹음 블롭을 서버로 전송하지 않고 버림. */
   const stopRecording = useCallback((opts?: { discard?: boolean }) => {
-    // VAD 정리
+    // VAD 정리 — RAF·타이머를 멈추면 그 안의 audioCtx.close()가 안 불리므로 여기서 직접 닫는다(누수 방지).
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
     if (vadFrameRef.current) { cancelAnimationFrame(vadFrameRef.current); vadFrameRef.current = 0; }
+    if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
 
     if (opts?.discard) discardNextRef.current = true;
 

@@ -118,7 +118,9 @@ export async function GET(req: Request) {
       `SELECT (MAX(session_date) - MIN(session_date))::int AS days FROM cognitive_assessments WHERE user_id = $1`,
       userId,
     );
-    if ((span[0]?.days ?? 0) >= 21) { // 기준선·최근이 구분되려면 최소 ~3주 데이터
+    // 기준선(최초 14일)·최근(최근 14일) 두 윈도우가 겹쳐 같은 평가가 이중집계되지 않으려면
+    // span ≥ 28일 필요(today-MIN ≥ MAX-MIN ≥ 28 ⇒ recent 하한 today-14 ≥ MIN+14 = earliest 상한, 항상 분리).
+    if ((span[0]?.days ?? 0) >= 28) {
       const earliest = await prisma.$queryRawUnsafe<AssessmentRow[]>(
         `SELECT domain, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS count
          FROM cognitive_assessments
