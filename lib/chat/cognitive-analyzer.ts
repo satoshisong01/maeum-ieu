@@ -197,7 +197,8 @@ function extractPrevUserMessage(historyText: string): string {
   const lines = historyText.split("\n").filter((l) => l.trim().length > 0);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
-    const m = line.match(/^\s*(?:사용자|user|User|USER)\s*[:：]\s*(.+)$/);
+    // buildHistoryText가 붙이는 "[방금]/[15시간 전]" 시간라벨 접두사 허용 (route.ts와 동일).
+    const m = line.match(/^\s*(?:\[[^\]]+\]\s*)?(?:사용자|user|User|USER)\s*[:：]\s*(.+)$/);
     if (m) return m[1].trim();
   }
   return "";
@@ -212,6 +213,8 @@ function validateMemoryImmediate(
   if (!memCheck || memCheck.score === 0) return result;
 
   const prevUser = extractPrevUserMessage(historyText);
+  // 직전 사용자 발화를 못 찾으면 유사도 판정 불가 → LLM 판정을 무조건 제거하지 않고 보존(거짓음성 방어).
+  if (!prevUser) return result;
   const sim = similarity(userMessage, prevUser);
 
   if (sim < 0.8) {
@@ -305,7 +308,8 @@ const NUMERIC_REPLY_PATTERN = /^\s*(?:\d+|[영일이삼사오육칠팔구십백�
 function extractLastAiMessage(historyText: string): string {
   const lines = historyText.split("\n").filter((l) => l.trim().length > 0);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = lines[i].match(/^\s*(?:AI|assistant|Assistant|민지|ai)\s*[:：]\s*(.+)$/);
+    // 시간라벨 접두사 "[방금] AI: ..." 허용 (route.ts extractLastAiMessage와 동일).
+    const m = lines[i].match(/^\s*(?:\[[^\]]+\]\s*)?(?:AI|assistant|Assistant|민지|ai)\s*[:：]\s*(.+)$/);
     if (m) return m[1].trim();
   }
   return "";
@@ -319,6 +323,11 @@ function extractLastAiMessage(historyText: string): string {
  * DECEASED_FIGURES / SURREAL_BEINGS / RECENT_TIME_CONTACT 는 lib/chat/lexicons.ts 단일 정의 사용.
  */
 
+// 미디어·회상 맥락 — '직접 접촉'이 아니라 시청·독서·회상이므로 안전망 제외.
+//   예) "어제 이순신 다큐 봤어", "세종대왕 책 읽다 점심 먹었어", "박정희 시절 이야기 했어" → 정상.
+//   (RECENT_TIME_CONTACT의 동사군에 봤/먹었/했/이야기가 포함돼 정상 발화를 score 2로 오탐하던 것을 차단.)
+const NON_CONTACT_CONTEXT = /다큐|다큐멘터리|영화|드라마|사극|연속극|위인전|동화|소설|책|TV|티비|텔레비전|tv|뉴스|방송|기사|신문|사진|초상화|그림|유튜브|영상|박물관|전시|역사|시절|시대|옛날|예전|그\s*때|당시/;
+
 function injectJudgmentSafetyNet(
   result: CognitiveAnalysisResult,
   userMessage: string,
@@ -328,6 +337,8 @@ function injectJudgmentSafetyNet(
   if (!hasDeceasedOrSurreal) return result;
   const isRecentContact = RECENT_TIME_CONTACT.test(text) || SURREAL_BEINGS.test(text);
   if (!isRecentContact) return result;
+  // 미디어/회상 맥락이면 직접 접촉 묘사가 아니므로 안전망 강제 마킹 제외.
+  if (NON_CONTACT_CONTEXT.test(text)) return result;
 
   const already = result.cognitiveChecks.find((c) => c.domain === "judgment");
   if (already && already.score >= 2) return result;

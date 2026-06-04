@@ -282,7 +282,9 @@ function normalizeFamilyChildHonorific(text: string, ctx: string): string {
     familiar.add(m[1]);
   }
   // 2) 가족 관계 + 이름 패턴 (받침 없는 이름까지 포함: "큰아들이 재미", "둘째가 영민")
-  const familyRelationPattern = /(?:큰?아들|장남|차남|막내아들|딸|장녀|차녀|막내딸|첫째|둘째|셋째|넷째|막내|손자|손녀|아내|남편)(?:이?|가|는|이름은?|은|이름이)\s*([가-힣]{2,3})(?:이고|이며|이지|이야|고|이에요|예요|이|$|\s)/g;
+  //    이름 캡처는 lazy({2,3}?) + 조사를 trailing에 명시 분리 — 이전엔 greedy라 "큰아들 재미는"의
+  //    조사 '는'을 이름에 흡수("재미는")해 '씨' 제거가 실패했음.
+  const familyRelationPattern = /(?:큰?아들|장남|차남|막내아들|딸|장녀|차녀|막내딸|첫째|둘째|셋째|넷째|막내|손자|손녀|아내|남편)(?:이?|가|는|이름은?|은|이름이)\s*([가-힣]{2,3}?)(?:이고|이며|이지|이야|이에요|예요|야|은|는|이|가|을|를|고|$|\s)/g;
   while ((m = familyRelationPattern.exec(ctx)) !== null) {
     familiar.add(m[1]);
   }

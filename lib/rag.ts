@@ -32,7 +32,11 @@ export async function searchMemories(
     "내가", "너는", "내일", "이번", "지난", "그래", "거지", "뭐지", "뭐가", "어떤", "어떻"]);
   // 자주 쓰이는 조사 끝부분 제거 (화분도 → 화분, 마당에 → 마당)
   // 조사 + 복수형 + 흔한 동사 어미 제거
-  const stripParticle = (w: string) => w.replace(/(?:이랑|에서|으로|에게|한테|라고|이라|들이|들을|들도|들|이|가|은|는|을|를|에|로|와|과|도|만|랑|하고|까지|부터|마저|께|어서|아서|면서|으니|니까|네요|어요|아요|예요|이에요)$/, "");
+  const stripParticle = (w: string) => {
+    const s = w.replace(/(?:이랑|에서|으로|에게|한테|라고|이라|들이|들을|들도|들|이|가|은|는|을|를|에|로|와|과|도|만|랑|하고|까지|부터|마저|께|어서|아서|면서|으니|니까|네요|어요|아요|예요|이에요)$/, "");
+    // 절단 결과가 1글자면 원형 명사가 깨진 것(예: "사과"→"사") — 원형 유지해 keyword_score 탈락 방지.
+    return s.length >= 2 ? s : w;
+  };
   const rawNouns = queryText.match(/[가-힣]{2,5}/g) || [];
   const nouns = Array.from(new Set(rawNouns.map(stripParticle).filter(w => w.length >= 2 && !STOP.has(w))));
   // 매칭 명사 개수 합산 → keyword_score (다중 명사 일치 우선)

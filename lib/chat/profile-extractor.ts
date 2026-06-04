@@ -80,6 +80,13 @@ const RESIDENCE_PATTERNS: Array<{ pattern: RegExp; key: "residence" | "hometown"
   { pattern: /([가-힣]{2,6})\s*에서\s*(?:태어났|자랐)/, key: "hometown" },
 ];
 
+// 거주지 오추출 차단 — "혼자/외롭게 살아요"의 부사는 지명이 아니므로 residence로 저장 금지.
+//   (행정구역 접미사가 optional이라 접미사 없는 부사가 그대로 잡혀 프로필 환각을 유발했음.)
+const RESIDENCE_STOPWORD = new Set([
+  "혼자", "혼자서", "둘이", "셋이", "같이", "함께", "외롭게", "외로이", "쓸쓸히", "조용히",
+  "대충", "그냥", "편하게", "편안히", "행복하게", "건강하게", "근근이", "겨우", "여기", "거기",
+]);
+
 /** 배우자 사별 패턴 */
 const SPOUSE_PATTERNS = [
   /(?:안사람|아내|집사람|마누라|와이프|남편|바깥양반)\s*(?:이|가|은|는)?\s*(?:먼저\s*)?(?:떠난|돌아가신|먼저\s*간|먼저\s*떠나)/,
@@ -174,7 +181,7 @@ export async function extractAndSaveProfile(input: ExtractInput): Promise<Extrac
   // 2) 거주/고향
   for (const { pattern, key } of RESIDENCE_PATTERNS) {
     const m = text.match(pattern);
-    if (m && m[1] && m[1].length >= 2 && m[1].length <= 6 && !STOPWORD_NAME.has(m[1])) {
+    if (m && m[1] && m[1].length >= 2 && m[1].length <= 6 && !STOPWORD_NAME.has(m[1]) && !RESIDENCE_STOPWORD.has(m[1])) {
       try {
         await upsertProfile(input.userId, { [key]: m[1] });
         result.profileUpdated.push(`${key}=${m[1]}`);

@@ -75,7 +75,9 @@ export function gwaWa(word: string): string {
  */
 export function normalizeImnida(text: string, knownNames: string[] = []): string {
   if (!text) return text;
-  return text.replace(/([가-힣]{2,4})(이에요|이예요)\b/g, (match, name: string) => {
+  // 끝 경계는 한글 친화 lookahead 사용 — ASCII \b는 직전 글자 '요'(한글)가 \w가 아니라
+  // 문장 끝·공백·구두점 뒤에서 매칭이 항상 실패했음(死). 다음 글자가 한글이 아닐 때만 정규화.
+  return text.replace(/([가-힣]{2,4})(이에요|이예요)(?![가-힣])/g, (match, name: string) => {
     if (hasJongseong(name)) return `${name}이에요`;
     return `${name}예요`;
   });
@@ -123,8 +125,14 @@ export function stripRecallAnswerLeak(text: string): string {
   //    매우 보수적 — 회상 컨텍스트 문장 안에서만, "세 단어/세 개/단어 N개" 마커 동반 시
   const hasRecallMarker = /(?:세\s*개|세\s*가지|세\s*단어|단어\s*(?:세|3)\s*(?:개|가지))/.test(text);
   if (hasRecallMarker) {
-    const bareSeq = new RegExp(`([가-힣]{1,5})\\s*,\\s*([가-힣]{1,5})\\s*,\\s*([가-힣]{1,5})${COPULA_TAIL}`, "g");
-    out = out.replace(bareSeq, "");
+    // 카운터 마커("세 개"/"세 가지")가 콤마로 바로 이어지면 카운터는 보존하고 뒤 정답 3개만 제거.
+    //   "단어 세 개, 나무, 자동차, 모자였는데" → "단어 세 개" (이전엔 '개,나무,자동차'를 잘못 잡아
+    //    정답 '모자'가 누출되고 '세 개'가 '세 '로 깨졌음).
+    const bareSeq = new RegExp(
+      `((?:세|3)\\s*(?:개|가지|단어)\\s*,\\s*)?([가-힣]{1,5})\\s*,\\s*([가-힣]{1,5})\\s*,\\s*([가-힣]{1,5})${COPULA_TAIL}`,
+      "g",
+    );
+    out = out.replace(bareSeq, (_full, counter?: string) => (counter ? counter.replace(/\s*,\s*$/, "") : ""));
   }
 
   // 4) 정답 제거로 생긴 끊긴 lead-in 정리 — "단어 세 개는 ." / "세 가지는 ." 처럼

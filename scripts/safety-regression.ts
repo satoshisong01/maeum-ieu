@@ -11,7 +11,7 @@
  */
 import "dotenv/config";
 import { factCheckResponse } from "../lib/chat/fact-checker";
-import { stripRecallAnswerLeak } from "../lib/chat/korean-particle";
+import { stripRecallAnswerLeak, normalizeImnida } from "../lib/chat/korean-particle";
 import { detectEmergency } from "../lib/chat/emergency";
 import { salvageJsonLeak } from "../lib/chat/sanitize";
 import { cleanName } from "../lib/chat/profile-extractor";
@@ -53,6 +53,10 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
   // 정상 대화 오제거 금지
   const c3 = stripRecallAnswerLeak("좋아하시는 과일은 사과, 배, 포도 맞으시죠?");
   check("normal fruit list untouched", c3.includes("사과") && c3.includes("포도"), c3);
+  // 카운터 콤마형 — "세 개, A, B, C였는데" (이전엔 '개,나무,자동차'를 잘못 잡아 '모자' 누출 + '세 ' 비문)
+  const c4 = stripRecallAnswerLeak("아까 외워드린 단어 세 개, 나무, 자동차, 모자였는데 기억나세요?");
+  check("counter-comma 정답 누출 없음", !c4.includes("나무") && !c4.includes("자동차") && !c4.includes("모자"), c4);
+  check("counter-comma '세 ' 비문 없음", !/세\s+,/.test(c4) && c4.includes("세 개"), c4);
 }
 
 // ── A-4: 자살 ideation 활용형 ─────────────────────────────────────────────
@@ -121,6 +125,30 @@ console.log("\n[A-6] fact-check fallback uses custom companion name (no hardcode
     honorific: "할머니", companionName: "지윤", currentUserText: "콩나물 삼천원어치 샀는데 거스름돈 이만원 받았어",
   });
   check("동반자 자기이름 '지윤' 문장 보존(삭제 금지)", rSelf.cleaned.includes("지윤") && rSelf.cleaned.length > 20, rSelf.cleaned);
+}
+
+// ── #7: normalizeImnida 받침없는 이름 '이에요'→'예요' (이전 \b 앵커로 항상 무동작이던 死 로직) ──
+console.log("\n[normalizeImnida] 받침없는 이름 '이에요'→'예요' (이전 \\b로 死)");
+{
+  check("'수지이에요' → '수지예요'", normalizeImnida("수지이에요") === "수지예요", normalizeImnida("수지이에요"));
+  check("'저는 민지이에요!' → '민지예요'", normalizeImnida("저는 민지이에요!") === "저는 민지예요!", normalizeImnida("저는 민지이에요!"));
+  check("'영희이에요.' → '영희예요.'", normalizeImnida("영희이에요.") === "영희예요.", normalizeImnida("영희이에요."));
+  // 받침 있는 이름은 '이에요' 유지(회귀 금지)
+  check("받침이름 '수진이에요' 유지", normalizeImnida("수진이에요") === "수진이에요", normalizeImnida("수진이에요"));
+}
+
+// ── #11: 가족 순서 모순 검출 부활 (아드님/따님 존칭 형태 + order 없을 때 오매칭 금지) ──
+console.log("\n[relation-contradiction] 가족 순서 모순 검출 (아드님 존칭)");
+{
+  const prof: any = { family: [{ name: "영수", relation: "son", orderIdx: 2 }], profile: null };
+  const fcWarn = (aiText: string) =>
+    factCheckResponse({ aiText, profile: prof, recentUserText: "", memories: "", honorific: "할머니", currentUserText: "" }).warnings;
+  // 영수는 둘째인데 "큰 아드님 영수" → 모순 경고 발생(존칭 형태에서도 검출돼야 함)
+  const w1 = fcWarn("큰 아드님 영수가 오셨다니 반갑네요");
+  check("아드님 순서모순 검출", w1.some((w) => w.includes("relation_mismatch:영수")), JSON.stringify(w1));
+  // 순서 표현 없으면 오매칭 금지 ("그 아들 철수가" → relation_mismatch 없음)
+  const w2 = fcWarn("그 아들 철수가 잘 지낸다니 다행이에요");
+  check("순서표현 없으면 모순경고 없음", !w2.some((w) => w.startsWith("relation_mismatch")), JSON.stringify(w2));
 }
 
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);

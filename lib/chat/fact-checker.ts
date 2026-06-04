@@ -186,11 +186,14 @@ function findRelationContradictions(text: string, profile: FullProfile): string[
   // 패턴: "큰 아드님 X" 또는 "X 아드님 (첫째)"
   for (const { tag: orderTag, expected } of ORDER_TAGS) {
     for (const { tag: relTag, relation } of RELATION_TAGS) {
-      const re = new RegExp(`${orderTag.source}\\s*${relTag.source}\\s*(?:은|는|이|가|이름은?|성함은?)?\\s*([가-힣]{2,4})`, "g");
+      // orderTag·relTag를 각각 (?:...)로 감싸 alternation 경계 고정 — 이전엔
+      // "${order}\s*아드님 | 아들\s*…name"으로 쪼개져 '아드님' 형태에서 이름 미포착 + order 없이 오매칭됐음.
+      // 이름은 lazy({2,4}?) + 조사 trailing 분리로 종조사(영수가→영수) 흡수 방지.
+      const re = new RegExp(`(?:${orderTag.source})\\s*(?:${relTag.source})\\s*(?:은|는|이|가|이름은?|성함은?)?\\s*([가-힣]{2,4}?)(?:이고|이며|이에요|예요|이라|입니다|은|는|이|가|을|를|도|씨|$|[\\s.,!?])`, "g");
       let m: RegExpExecArray | null;
       while ((m = re.exec(text)) !== null) {
         const name = m[1];
-        if (!name || NAME_STOPWORDS.has(name)) continue;
+        if (!name || name.length < 2 || NAME_STOPWORDS.has(name)) continue;
         const member = profile.family.find((f) => f.name === name && f.relation === relation);
         if (member && member.orderIdx != null && member.orderIdx !== expected) {
           warnings.push(`relation_mismatch:${name} expected_order=${expected} actual=${member.orderIdx}`);
