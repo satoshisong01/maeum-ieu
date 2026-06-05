@@ -41,10 +41,15 @@ function getTextModel(systemInstruction: string, enableSearch: boolean = true) {
   // 일상 대화·공감·인지 응답엔 불필요하므로 그 턴엔 비활성해 지연·검색 비용 절감.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tools: any = enableSearch ? [{ googleSearch: {} }] : undefined;
+  // gemini-3.5-flash는 thinking 모델 — 기본(무제한) thinking 예산이면 출력 전 ~10초 추론(응답 지연 주범).
+  //   thinkingBudget을 낮은 양수로 제한해 추론시간 단축(첫 응답 빨라짐). 0은 빈응답 유발이라 금지(THINKING_BUDGET>0).
+  //   responseDelay 측정으로 도입(2026-06-05). 품질 저하 시 상향.
+  const THINKING_BUDGET = 512;
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
     model: "gemini-3.5-flash",
     systemInstruction,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { temperature: 0.7, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: THINKING_BUDGET } } as any,
     tools,
   });
 }
@@ -891,6 +896,7 @@ function streamCompanionReply(opts: {
   post: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string };
   fact: { profile: FullProfile; recentUserText: string; memories: string; honorific: string; companionName: string; currentUserText: string };
   extra?: Record<string, unknown>;
+  timings?: Record<string, number>; // 계측(있으면 done에 실어 보냄)
   onComplete: (fullText: string, fallbackUsed: boolean) => Promise<void>;
 }): Response {
   const SENTENCE_RE = /[^.!?…。\n]*[.!?…。\n]+/g;
@@ -900,6 +906,7 @@ function streamCompanionReply(opts: {
       const send = (o: unknown) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`)); } catch { /* closed */ } };
       // 메타(예: transcription)를 먼저 보내 클라이언트가 사용자 발화를 즉시 표시하게 함
       if (opts.extra && Object.keys(opts.extra).length > 0) send({ type: "meta", ...opts.extra });
+      if (opts.timings) opts.timings.genStartMs = Math.round(performance.now() - opts.timings.start);
       let raw = "";
       let buffer = "";
       let spokenAny = false;
@@ -907,7 +914,10 @@ function streamCompanionReply(opts: {
         const s = sentence.trim();
         if (!s) return;
         const safe = postProcessReply(s, opts.post).trim();
-        if (safe) { send({ type: "chunk", text: safe }); spokenAny = true; }
+        if (safe) {
+          if (opts.timings && !opts.timings.ttfChunkMs) opts.timings.ttfChunkMs = Math.round(performance.now() - opts.timings.start);
+          send({ type: "chunk", text: safe }); spokenAny = true;
+        }
       };
       const flush = (final: boolean) => {
         SENTENCE_RE.lastIndex = 0;
@@ -935,7 +945,9 @@ function streamCompanionReply(opts: {
         }
         if (!fullText || !fullText.trim()) fullText = opts.fallback;
         if (!spokenAny) send({ type: "chunk", text: fullText }); // 스트림에 아무것도 못 내보냈으면 fallback이라도 말함
-        send({ type: "done", text: fullText, ...(opts.extra || {}) });
+        if (opts.timings) opts.timings.totalMs = Math.round(performance.now() - opts.timings.start);
+        const includeTiming = opts.timings && process.env.DEBUG_TIMING === "1"; // 측정용(기본 off)
+        send({ type: "done", text: fullText, ...(opts.extra || {}), ...(includeTiming ? { timing: opts.timings } : {}) });
         await opts.onComplete(fullText, false).catch((e) => console.error("[stream:onComplete]", e));
       } catch (e) {
         console.warn("[stream] generate error:", (e as Error).message);
@@ -959,8 +971,9 @@ async function handleAudioMessage(params: {
   audioData: string; audioMimeType: string; historyText: string; memories: string;
   messages: { role: string; content: string; createdAt?: string }[];
   profile: FullProfile;
+  timings?: Record<string, number>;
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages, profile } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages, profile, timings } = params;
 
   // 1단계: 음성 → 텍스트 변환
   let transcription = "";
@@ -1060,6 +1073,7 @@ async function handleAudioMessage(params: {
     post: { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi },
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription },
     extra: { transcription, ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}) },
+    timings,
     onComplete: async (answerText) => {
       if (!conversationId) return;
       const { userMsgId } = await saveMessages({
@@ -1205,8 +1219,9 @@ async function handleTextMessage(params: {
   messages: { role: string; content: string; createdAt?: string }[];
   companionName: string; companionRelation: string; honorific: string;
   profile: FullProfile;
+  timings?: Record<string, number>;
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile } = params;
+  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings } = params;
 
   // 응급 발화 감지 — moderation보다 먼저
   const emergency = await evaluateEmergency({ userContent, conversationId });
@@ -1277,6 +1292,7 @@ async function handleTextMessage(params: {
     post: { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi },
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent },
     extra: emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : undefined,
+    timings,
     onComplete: async (text) => {
       if (!conversationId || !userContent) return;
       const { userMsgId } = await saveMessages({
@@ -1323,21 +1339,28 @@ export async function POST(req: Request) {
       );
     }
 
+    const _t: Record<string, number> = { start: performance.now() };
     const timeCtx = getTimeContext(ctx?.currentTime);
+    let _m = performance.now();
     const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
+    _t.weatherMs = Math.round(performance.now() - _m);
+    _m = performance.now();
     const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx, mode,
     });
+    _t.promptMs = Math.round(performance.now() - _m);
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
 
     const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
     const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
+    _m = performance.now();
     const [memories, historyText] = await Promise.all([
       fetchMemories(userId, lastUserMessage),
       Promise.resolve(buildHistoryText(messages ?? [])),
     ]);
+    _t.memoriesMs = Math.round(performance.now() - _m);
 
     if (!audio?.data && lastUserMessage && isDateTimeQuestion(lastUserMessage)) {
       return handleDateTimeQuestion(lastUserMessage, honorific, conversationId, userId, ctx?.currentTime);
@@ -1346,11 +1369,11 @@ export async function POST(req: Request) {
     if (audio?.data && audio?.mimeType) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
-        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [], profile,
+        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [], profile, timings: _t,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific, profile });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific, profile, timings: _t });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });

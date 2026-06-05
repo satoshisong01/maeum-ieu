@@ -366,10 +366,14 @@ export default function ChatPage() {
             const ev = buf.slice(0, idx); buf = buf.slice(idx + 2);
             const dl = ev.split("\n").find((l) => l.startsWith("data:"));
             if (!dl) continue;
-            let data: { type?: string; text?: string; transcription?: string };
+            let data: { type?: string; text?: string; transcription?: string; timing?: Record<string, number> };
             try { data = JSON.parse(dl.slice(5).trim()); } catch { continue; }
             if (data.type === "meta") {
               if (data.transcription) { transcription = data.transcription; onMeta?.(data.transcription); }
+            } else if (data.type === "done" && data.timing) {
+              (window as unknown as { __lastTiming?: Record<string, number> }).__lastTiming = data.timing;
+              if (data.text) fullText = data.text;
+              if (data.transcription) transcription = data.transcription;
             } else if (data.type === "chunk" && data.text) {
               fullText = fullText ? `${fullText} ${data.text}` : data.text;
               if (!shown) { shown = true; setLoading(false); }
