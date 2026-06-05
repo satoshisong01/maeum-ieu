@@ -18,6 +18,8 @@ export const ChatRequestSchema = z.object({
   conversationId: z.string().max(100).optional(),
   isInitialGreeting: z.boolean().optional(),
   isReturningGreeting: z.boolean().optional(),
+  mode: z.enum(["user", "pro"]).optional(), // 선별 모드(전문가 검사 시행 / 사용자 대화)
+
   audio: z
     .object({
       data: z.string().max(15_000_000), // base64 음성(~10MB raw) 상한 — 과대 페이로드 차단

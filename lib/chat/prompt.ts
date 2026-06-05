@@ -1,6 +1,6 @@
 /** 프롬프트 조립 */
 
-import type { TimeContext, WeatherContext } from "./types";
+import type { TimeContext, WeatherContext, ScreeningMode } from "./types";
 import { renderSystemPrompt, COMPANION_DEFAULTS } from "./constants";
 import { prisma } from "@/lib/prisma";
 import { toKstDateString } from "./time";
@@ -49,6 +49,39 @@ async function getTodayAssessedDomains(userId: string): Promise<string[]> {
   } catch { return []; }
 }
 
+/**
+ * 전문가(검사 시행) 모드 가이드 — 공신력 있는 표준 인지선별(MMSE-K/MoCA-K) 문항을 변형 없이 그대로,
+ * 정해진 순서로 한 문항씩 시행. 의사·관리사가 사람이 하던 검사를 대신/보조하는 용도.
+ * (음성으로 시행 가능한 항목만; 시공간 구성·읽기·쓰기·그리기는 음성 불가라 제외.)
+ */
+function buildProGuideBlock(companionName: string, completedKo: string[], remainingKo: string[], remainingCount: number): string {
+  if (remainingCount === 0) {
+    return `\n[검사 시행 모드 — 오늘 표준 인지선별 항목 시행 완료]
+오늘 음성으로 시행 가능한 7개 영역 평가가 모두 끝났습니다. **추가 인지 문항을 출제하지 말고**, "오늘 검사는 여기까지입니다, 수고하셨습니다" 정도의 짧은 마무리만 하세요.`;
+  }
+  return `\n[검사 시행 모드 — 표준화 인지선별 검사 (전문가·관리사용). 반드시 준수]
+지금 ${companionName}은(는) 친근한 잡담 동반자가 아니라, **표준화된 인지선별 검사(MMSE-K/MoCA-K)를 시행하는 검사자**입니다.
+
+**시행 원칙(엄수)**
+1. 공감·잡담은 한 문장 이내로 최소화. **한 응답에 딱 한 문항만** 또렷하고 정확하게 질문한다.
+2. 아래 표준 문항을 **그대로** 읽는다. 임의로 쉽게 바꾸거나, 보기를 주거나, 힌트를 주지 않는다.
+3. 사용자가 답하면 정답 여부를 평가하거나 알려주지 않는다(채점은 시스템이 함). "네", "다음 질문 드리겠습니다" 정도로 중립적으로 받고 바로 다음 문항으로.
+4. 회상 문항에서 사용자가 못 맞혀도 **정답을 알려주지 않는다**(검사 무효화 방지).
+5. 정해진 순서대로 진행한다.
+
+**오늘 이미 시행한 영역(다시 묻지 말 것)**: ${completedKo.length ? completedKo.join(", ") : "없음"}
+**다음 시행할 영역(이 순서대로 하나씩)**: ${remainingKo.join(" → ")}
+
+**표준 문항(해당 영역 차례에 그대로 사용)**
+- 시간 지남력: "올해가 몇 년도입니까? 지금은 무슨 계절입니까? 몇 월 며칠이고 무슨 요일입니까?"
+- 장소 지남력: "지금 계신 곳이 어디입니까? 무슨 시·도이고, 어떤 장소(집/병원 등)입니까?"
+- 즉시 기억(등록): "지금부터 단어 세 개를 불러드리겠습니다. 끝까지 듣고 따라 말씀하신 뒤 기억해 두세요. ‘나무, 자동차, 모자’. 따라 해 보세요."
+- 주의·계산: "100에서 7을 빼면 얼마입니까? 거기서 또 7을 빼면요? (계속 7씩 빼서 다섯 번까지)" (또는 "‘삼천리강산’을 거꾸로 말씀해 보세요.")
+- 지연 기억(회상): "조금 전에 외워 두시라고 말씀드린 단어 세 개가 무엇이었습니까?"
+- 언어: "1분 동안 생각나는 동물 이름을 최대한 많이 말씀해 보세요." / "제가 말하는 문장을 그대로 따라 해 보세요: ‘백문이 불여일견’."
+- 판단력: "길에서 다른 사람의 주민등록증을 주우셨다면 어떻게 하시겠습니까?"`;
+}
+
 export interface PromptParts {
   systemPrompt: string;
   envBlock: string;
@@ -64,8 +97,9 @@ export async function buildSystemPrompt(params: {
   conversationId?: string;
   timeCtx: TimeContext;
   weather: WeatherContext;
+  mode?: ScreeningMode;
 }): Promise<PromptParts> {
-  const { userId, conversationId, timeCtx, weather } = params;
+  const { userId, conversationId, timeCtx, weather, mode = "user" } = params;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -113,7 +147,9 @@ export async function buildSystemPrompt(params: {
   const remainingKo = remaining.map((d) => DOMAIN_KO[d] || d);
 
   let guideBlock: string;
-  if (remaining.length === 0) {
+  if (mode === "pro") {
+    guideBlock = buildProGuideBlock(companionName, completedKo, remainingKo, remaining.length);
+  } else if (remaining.length === 0) {
     guideBlock = `\n[🚫 인지 선별 — 오늘 분량 종료. 절대 어기지 마세요]
 오늘 7개 영역(시간/장소/즉시기억/지연기억/언어/판단/계산) 평가가 모두 끝났습니다.
 **이번 응답에 인지 질문을 단 한 개라도 포함하면 안 됩니다.**

@@ -1267,7 +1267,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "잘못된 요청 형식입니다." }, { status: 400 });
     }
     const body = parsed.data as ChatRequestBody;
-    const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx } = body;
+    const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx, mode } = body;
     const userId = session.user.id;
 
     // 고비용 엔드포인트 폭주 방어 — 단일 계정 분당 40회 (정상 대화는 충분, 자동화 남용 차단)
@@ -1282,7 +1282,7 @@ export async function POST(req: Request) {
     const timeCtx = getTimeContext(ctx?.currentTime);
     const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
     const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
-      userId, conversationId, timeCtx, weather: weatherCtx,
+      userId, conversationId, timeCtx, weather: weatherCtx, mode,
     });
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
