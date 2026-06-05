@@ -106,6 +106,19 @@ function parseAudioResponse(data: unknown): { text: string; transcription: strin
   };
 }
 
+/** TTS 문장 분할 — 종결부호 기준으로 쪼개되 너무 짧은 조각은 앞 문장에 합침. 첫 문장부터 재생해 첫 소리까지 지연 단축. */
+function splitForTts(text: string): string[] {
+  const parts = text.split(/(?<=[.!?…。])\s+/).map((s) => s.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    const prevShort = out.length > 0 && out[out.length - 1].replace(/\s/g, "").length < 6;
+    const curShort = p.replace(/\s/g, "").length < 6;
+    if (out.length > 0 && (prevShort || curShort)) out[out.length - 1] = `${out[out.length - 1]} ${p}`;
+    else out.push(p);
+  }
+  return out.length > 0 ? out : [text];
+}
+
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -141,6 +154,7 @@ export default function ChatPage() {
   messagesRef.current = messages;
   const screeningModeRef = useRef(screeningMode); // 전송 콜백 stale 클로저 방지
   screeningModeRef.current = screeningMode;
+  const speakGenRef = useRef(0); // speak 세대 카운터 — 새 발화가 이전 TTS 파이프라인을 취소
   const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
 
   /** API 호출 시 사용할 현재 시간·위치 컨텍스트 */
@@ -231,28 +245,32 @@ export default function ChatPage() {
       }
     };
 
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: ttsText }),
-      });
-      if (!res.ok) throw new Error(`tts ${res.status}`);
-      const data = (await res.json()) as { audioBase64: string; mimeType: string };
-      const audio = new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
-      audio.onended = releaseLock;
-      audio.onerror = releaseLock;
-      audioElRef.current = audio;
-      onReady?.();
+    // 문장 단위 파이프라인 — 첫 문장부터 재생(첫 소리까지 지연 단축), 다음 문장은 재생 중 미리 생성.
+    //   서버 안전망(postProcessReply·factCheck)을 이미 통과한 전체 응답을 문장으로 쪼개 재생만 분할 → 안전망 무손상.
+    const myGen = ++speakGenRef.current;
+    const isCancelled = () => speakGenRef.current !== myGen;
+    const sentences = splitForTts(ttsText);
+
+    const fetchAudio = async (s: string): Promise<HTMLAudioElement | null> => {
       try {
-        await audio.play();
-      } catch {
-        releaseLock();
-      }
-    } catch (e) {
-      console.warn("[chat] TTS fallback to Web Speech:", (e as Error).message);
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: s }),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { audioBase64: string; mimeType: string };
+        return new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      } catch { return null; }
+    };
+    const playToEnd = (audio: HTMLAudioElement) => new Promise<void>((resolve) => {
+      let done = false;
+      const fin = () => { if (!done) { done = true; resolve(); } };
+      audio.onended = fin; audio.onerror = fin; audio.onpause = fin; // 새 speak이 pause하면 즉시 진행
+      audio.play().catch(fin);
+    });
+    const webSpeechFallback = () => {
       onReady?.();
-      // Web Speech 폴백: utterance.onend / onerror로 락 해제
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(ttsText);
         utter.lang = "ko-KR";
@@ -263,6 +281,29 @@ export default function ChatPage() {
       } else {
         releaseLock();
       }
+    };
+
+    try {
+      let nextPromise = fetchAudio(sentences[0]);
+      let started = false;
+      for (let i = 0; i < sentences.length; i++) {
+        const audio = await nextPromise;
+        // 다음 문장을 재생과 병렬로 미리 생성(끊김 최소화)
+        nextPromise = i + 1 < sentences.length ? fetchAudio(sentences[i + 1]) : Promise.resolve(null);
+        if (isCancelled()) return; // 새 발화 시작됨 — 락은 새 speak이 관리
+        if (!audio) {
+          if (!started && i === 0) { webSpeechFallback(); return; } // 첫 문장부터 실패 → 전체 Web Speech
+          continue; // 중간 문장 실패는 건너뜀
+        }
+        if (!started) { started = true; onReady?.(); }
+        audioElRef.current = audio;
+        await playToEnd(audio);
+        if (isCancelled()) return;
+      }
+      releaseLock();
+    } catch (e) {
+      console.warn("[chat] TTS 파이프라인 오류:", (e as Error).message);
+      releaseLock();
     }
   }, []);
 
@@ -738,7 +779,7 @@ export default function ChatPage() {
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const SILENCE_THRESHOLD = 15; // 음량 기준 (0~255)
-      const SILENCE_DURATION = 2000; // 침묵 지속 시간 (ms)
+      const SILENCE_DURATION = 1500; // 침묵 지속 시간 (ms) — 응답 속도 위해 2000→1500 단축(노인 발화 끊김 고려한 중간값, 끊기면 상향)
       let speechDetected = false;
 
       const checkSilence = () => {
