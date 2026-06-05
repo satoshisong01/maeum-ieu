@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { toKstDateString } from "./time";
 import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./profile";
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
+import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
 
 /**
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
@@ -185,6 +186,18 @@ export async function buildSystemPrompt(params: {
    - ❌ 절대 금지: 인지 질문 없이 일상 대화만 5턴 이상 — 이 경우 시스템 본 기능 미작동.
    인지 질문은 **공감 1~2문장 뒤**에 자연 어순으로 끼워 넣으세요. "확인하려고 묻는다"는 인상 금지.
    질문 없이 호응만 해도 되는 턴은 1~2턴까지만. 그 이후엔 반드시 평가 질문 포함.`;
+  }
+
+  // 사용자 모드: 반복 방지를 위해 미리 만든 정적 질문 풀에서 다음 영역 후보를 주입(풀 준비됐을 때만).
+  //   LLM이 매번 자체 출제하면 비슷한 질문이 반복됨 → 풀에서 다양한 후보를 골라 쓰게 함.
+  if (mode === "user" && remaining.length > 0 && isBankReady()) {
+    const poolLines = remaining.slice(0, 3).map((d) => {
+      const qs = sampleQuestionsForDomain(d, 3).map((q) => q.text);
+      return qs.length ? `· [${DOMAIN_KO[d] || d}] ${qs.join("  /  ")}` : "";
+    }).filter(Boolean);
+    if (poolLines.length) {
+      guideBlock += `\n\n[준비된 질문 후보 — 반복 방지용 미리 만든 풀. 이 중에서 골라 자연 대화에 녹여 쓰세요(매 턴 다른 것, 똑같은 표현 반복 금지)]\n${poolLines.join("\n")}`;
+    }
   }
 
   // Phase 1: 구조화된 사용자 프로필 블록 + 과거 대화 요약본 (Phase 3)
