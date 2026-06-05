@@ -875,6 +875,83 @@ function postProcessReply(
   return text;
 }
 
+/**
+ * 스트리밍 응답 — LLM을 generateContentStream으로 받아 문장이 완성될 때마다 SSE로 내보내
+ * 클라이언트가 첫 문장부터 바로 말하게 한다(체감 지연 최소화).
+ *
+ * 안전망: 말해지는(spoken) 문장은 문장단위 postProcessReply로 누출 차단(빈 결과 문장은 skip),
+ *        저장·분석되는 canonical 전체 텍스트는 전체 postProcessReply + factCheck로 처리.
+ *        (factCheck의 환각-이름 grounding은 전체 기준이라 음성엔 narrow한 잔여 위험 — Stage 2 트레이드오프)
+ */
+function streamCompanionReply(opts: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  model: { generateContentStream: (p: any) => Promise<{ stream: AsyncIterable<{ text: () => string }> }> };
+  contents: unknown;
+  fallback: string;
+  post: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string };
+  fact: { profile: FullProfile; recentUserText: string; memories: string; honorific: string; companionName: string; currentUserText: string };
+  extra?: Record<string, unknown>;
+  onComplete: (fullText: string, fallbackUsed: boolean) => Promise<void>;
+}): Response {
+  const SENTENCE_RE = /[^.!?…。\n]*[.!?…。\n]+/g;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (o: unknown) => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`)); } catch { /* closed */ } };
+      // 메타(예: transcription)를 먼저 보내 클라이언트가 사용자 발화를 즉시 표시하게 함
+      if (opts.extra && Object.keys(opts.extra).length > 0) send({ type: "meta", ...opts.extra });
+      let raw = "";
+      let buffer = "";
+      let spokenAny = false;
+      const emitSafe = (sentence: string) => {
+        const s = sentence.trim();
+        if (!s) return;
+        const safe = postProcessReply(s, opts.post).trim();
+        if (safe) { send({ type: "chunk", text: safe }); spokenAny = true; }
+      };
+      const flush = (final: boolean) => {
+        SENTENCE_RE.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        let lastEnd = 0;
+        while ((m = SENTENCE_RE.exec(buffer)) !== null) { emitSafe(m[0]); lastEnd = SENTENCE_RE.lastIndex; }
+        buffer = buffer.slice(lastEnd);
+        if (final && buffer.trim()) { emitSafe(buffer); buffer = ""; }
+      };
+      try {
+        const result = await opts.model.generateContentStream(opts.contents);
+        for await (const chunk of result.stream) {
+          let piece = "";
+          try { piece = (typeof chunk.text === "function" ? chunk.text() : "") || ""; } catch { piece = ""; } // 차단/빈 청크에서 throw 방지
+          if (!piece) continue;
+          raw += piece; buffer += piece;
+          flush(false);
+        }
+        flush(true);
+        // 저장·분석용 canonical 전체 텍스트 — 전체 안전망 + factCheck
+        let fullText = raw.trim() ? postProcessReply(raw, opts.post) : "";
+        if (fullText.trim()) {
+          const fc = factCheckResponse({ aiText: fullText, ...opts.fact });
+          if (fc.cleaned !== fullText) { console.warn("[fact-checker:stream] cleaned. removed:", fc.removed.length); fullText = fc.cleaned || fullText; }
+        }
+        if (!fullText || !fullText.trim()) fullText = opts.fallback;
+        if (!spokenAny) send({ type: "chunk", text: fullText }); // 스트림에 아무것도 못 내보냈으면 fallback이라도 말함
+        send({ type: "done", text: fullText, ...(opts.extra || {}) });
+        await opts.onComplete(fullText, false).catch((e) => console.error("[stream:onComplete]", e));
+      } catch (e) {
+        console.warn("[stream] generate error:", (e as Error).message);
+        if (!spokenAny) send({ type: "chunk", text: opts.fallback });
+        send({ type: "done", text: opts.fallback, ...(opts.extra || {}) });
+        await opts.onComplete(opts.fallback, true).catch((err) => console.error("[stream:onComplete:fallback]", err));
+      } finally {
+        try { controller.close(); } catch { /* already closed */ }
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" },
+  });
+}
+
 async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
   companionName: string; companionRelation: string;
@@ -971,54 +1048,39 @@ async function handleAudioMessage(params: {
   const contents = buildChatContents({ messages, currentUserMessage: currentUserMsg, memories, hintBlock });
 
   const fallback = buildFallbackMessage(honorific, companionName);
-  const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let answerText = fallbackUsed ? rawText : postProcessReply(rawText, { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi });
-  // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
-  if (!answerText || !answerText.trim()) answerText = fallback;
+  const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
 
-  // Phase 1 Fact-checker — 음성 응답에도 적용 (텍스트와 동일 수준 안전성)
-  if (!fallbackUsed && answerText) {
-    const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: answerText, profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription });
-    if (checked.cleaned !== answerText) {
-      console.warn("[fact-checker:audio] cleaned response. removed:", checked.removed.length);
-      answerText = checked.cleaned || answerText;
-    }
-  }
-
-  if (conversationId) {
-    const { userMsgId } = await saveMessages({
-      conversationId, userId,
-      userContent: transcription || "(음성 메시지)",
-      assistantContent: answerText,
-      emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
-      emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
-    });
-    // L2 응급은 백그라운드 알림 (LLM은 이미 부드러운 권유 멘트 포함)
-    if (emergency.effectiveLevel === 2) {
-      notifyGuardian({
-        userId, userName: honorific, messageId: userMsgId, level: 2,
-        category: emergency.result.category, content: transcription,
-        aiReply: answerText, createdAt: new Date(),
-      }).then((r) => {
-        if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
-      }).catch((e) => console.error("[emergency-notify] L2 error:", e));
-    }
-    // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
-    runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
-    // Phase 1 프로필 추출 — 음성 발화에서도 가족·고향·취미 자동 추출
-    if (transcription) {
-      extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
-      // Phase 3 요약 트리거
-      maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
-    }
-  }
-
-  return NextResponse.json({
-    text: answerText, transcription, role: "assistant",
-    ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}),
+  // 스트리밍 응답 — 음성도 첫 문장부터 SSE로. transcription은 done 이벤트(extra)로 전달.
+  return streamCompanionReply({
+    model,
+    contents: { contents },
+    fallback,
+    post: { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi },
+    fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription },
+    extra: { transcription, ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}) },
+    onComplete: async (answerText) => {
+      if (!conversationId) return;
+      const { userMsgId } = await saveMessages({
+        conversationId, userId,
+        userContent: transcription || "(음성 메시지)",
+        assistantContent: answerText,
+        emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+        emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+      });
+      if (emergency.effectiveLevel === 2) {
+        notifyGuardian({
+          userId, userName: honorific, messageId: userMsgId, level: 2,
+          category: emergency.result.category, content: transcription, aiReply: answerText, createdAt: new Date(),
+        }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+      }
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      if (transcription) {
+        extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
+        maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
+      }
+    },
   });
 }
 
@@ -1203,53 +1265,35 @@ async function handleTextMessage(params: {
   }
 
   const fallback = buildFallbackMessage(honorific, companionName);
-  const { text: rawText, fallbackUsed } = await generateWithFallback(model, { contents }, fallback);
-  if (process.env.DEBUG_INPUT === "1") {
-    console.log("[DEBUG-RAW-RESPONSE]", JSON.stringify({ rawText: rawText?.slice(0, 500), fallbackUsed }));
-  }
   const ctx = `${memories || ""}\n${historyText || ""}\n${userContent || ""}`;
   const prevAi = extractLastAiMessage(historyText);
-  let text = fallbackUsed ? rawText : postProcessReply(rawText, { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi });
-  // 후처리 체인이 정상 응답을 통째로 깎아내 빈 문자열이 된 경우 → fallback 멘트로 대체 (빈 응답 저장·UI 공백 방지)
-  if (!text || !text.trim()) text = fallback;
+  const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
 
-  // Phase 1 Fact-checker — 응답에 등장한 이름·고유명사가 profile/이력에 근거 있는지 cross-check.
-  //   환각 차단의 마지막 라인 (오늘 abc→rudtjrch 사고 같은 케이스 방지).
-  if (!fallbackUsed && text) {
-    const recentUserText = messages.filter((m) => m.role === "user").slice(-6).map((m) => m.content).join(" ");
-    const checked = factCheckResponse({ aiText: text, profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent });
-    if (checked.cleaned !== text) {
-      console.warn("[fact-checker] cleaned response. removed sentences:", checked.removed.length);
-      text = checked.cleaned || text; // 모두 삭제되면 fallback 우회용으로 원본 유지
-    }
-  }
-
-  if (conversationId && userContent) {
-    const { userMsgId } = await saveMessages({
-      conversationId, userId, userContent, assistantContent: text,
-      emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
-      emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
-    });
-    if (emergency.effectiveLevel === 2) {
-      notifyGuardian({
-        userId, userName: honorific, messageId: userMsgId, level: 2,
-        category: emergency.result.category, content: userContent,
-        aiReply: text, createdAt: new Date(),
-      }).then((r) => {
-        if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
-      }).catch((e) => console.error("[emergency-notify] L2 error:", e));
-    }
-    // 인지 분석은 백그라운드 — 응답 속도에 영향 주지 않음
-    runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
-    // Phase 1 프로필 추출 — 사용자 발화에서 가족·고향·취미 등 자동 추출 (백그라운드)
-    extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
-    // Phase 3 요약 트리거 — 메시지 50건+ 누적 시 weekly 생성 + 계층 rollup (백그라운드)
-    maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
-  }
-
-  return NextResponse.json({
-    text, role: "assistant",
-    ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}),
+  // 스트리밍 응답 — 첫 문장부터 SSE로 내보내 클라이언트가 바로 말하게 함. 저장·분석은 onComplete(전체 안전망 후).
+  return streamCompanionReply({
+    model,
+    contents: { contents },
+    fallback,
+    post: { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi },
+    fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent },
+    extra: emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : undefined,
+    onComplete: async (text) => {
+      if (!conversationId || !userContent) return;
+      const { userMsgId } = await saveMessages({
+        conversationId, userId, userContent, assistantContent: text,
+        emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+        emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+      });
+      if (emergency.effectiveLevel === 2) {
+        notifyGuardian({
+          userId, userName: honorific, messageId: userMsgId, level: 2,
+          category: emergency.result.category, content: userContent, aiReply: text, createdAt: new Date(),
+        }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+      }
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
+      maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
+    },
   });
 }
 
