@@ -86,26 +86,6 @@ function displayMessageContent(content: string): string {
   return content;
 }
 
-/** API 응답에서 TTS용 text와 받아쓰기용 transcription 안전 추출 (마크다운 JSON 대응) */
-function parseAudioResponse(data: unknown): { text: string; transcription: string } {
-  const fallback = { text: "", transcription: "" };
-  if (!data || typeof data !== "object" || !("text" in data)) return fallback;
-  const obj = data as { text?: unknown; transcription?: unknown };
-  let text = obj.text;
-  let transcription = obj.transcription;
-  if (typeof text === "string" && (text.includes("```") || text.includes("{"))) {
-    const extracted = extractJsonFromResponse(text);
-    if (extracted) {
-      text = extracted.text;
-      transcription = extracted.transcription || (typeof transcription === "string" ? transcription : "");
-    }
-  }
-  return {
-    text: typeof text === "string" ? text : "",
-    transcription: typeof transcription === "string" ? transcription : "",
-  };
-}
-
 /** TTS 문장 분할 — 종결부호 기준으로 쪼개되 너무 짧은 조각은 앞 문장에 합침. 첫 문장부터 재생해 첫 소리까지 지연 단축. */
 function splitForTts(text: string): string[] {
   const parts = text.split(/(?<=[.!?…。])\s+/).map((s) => s.trim()).filter(Boolean);
@@ -306,6 +286,109 @@ export default function ChatPage() {
       releaseLock();
     }
   }, []);
+
+  /** 스트리밍 TTS — 문장을 push하는 대로 순차 재생(다음 것 미리 생성). finish() 후 큐가 비면 락 해제. SSE 응답용. */
+  const speakStream = useCallback((): { push: (s: string) => void; finish: () => void } => {
+    if (audioElRef.current) { try { audioElRef.current.pause(); } catch { /* ignore */ } audioElRef.current = null; }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    turnLockRef.current = true;
+    const myGen = ++speakGenRef.current;
+    const isCancelled = () => speakGenRef.current !== myGen;
+    const releaseLock = () => {
+      turnLockRef.current = false;
+      if (sessionActiveRef.current && alwaysOnRef.current) {
+        wakeArmedRef.current = true; setWakeArmed(true);
+        setTimeout(() => startRecordingRef.current(), 600);
+      }
+    };
+    const fetchAudio = async (s: string): Promise<HTMLAudioElement | null> => {
+      try {
+        const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: s }) });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { audioBase64: string; mimeType: string };
+        return new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
+      } catch { return null; }
+    };
+    const playToEnd = (audio: HTMLAudioElement) => new Promise<void>((resolve) => {
+      let done = false; const fin = () => { if (!done) { done = true; resolve(); } };
+      audio.onended = fin; audio.onerror = fin; audio.onpause = fin; audio.play().catch(fin);
+    });
+    const queue: string[] = [];
+    let producing = true;
+    let wake: (() => void) | null = null;
+    void (async () => {
+      let pending: Promise<HTMLAudioElement | null> | null = null;
+      while (true) {
+        if (!pending) {
+          if (queue.length === 0) {
+            if (!producing) break;
+            await new Promise<void>((r) => { wake = r; });
+            continue;
+          }
+          pending = fetchAudio(queue.shift() as string);
+        }
+        const audio = await pending;
+        pending = queue.length > 0 ? fetchAudio(queue.shift() as string) : null; // 다음 문장 미리 생성
+        if (isCancelled()) return;
+        if (audio) { audioElRef.current = audio; await playToEnd(audio); if (isCancelled()) return; }
+      }
+      if (pending) { const a = await pending; if (a && !isCancelled()) { audioElRef.current = a; await playToEnd(a); } }
+      if (!isCancelled()) releaseLock();
+    })();
+    return {
+      push: (s: string) => { const t = (s || "").trim(); if (t) { queue.push(t); if (wake) { wake(); wake = null; } } },
+      finish: () => { producing = false; if (wake) { wake(); wake = null; } },
+    };
+  }, []);
+
+  /** SSE 스트리밍 응답을 소비하며 문장단위 TTS 재생 + UI 텍스트 실시간 갱신. {text, transcription, emergency} 반환. */
+  const streamAndSpeak = useCallback(async (res: Response, assistantId: string, onMeta?: (transcription: string) => void): Promise<{ text: string; transcription?: string }> => {
+    const player = speakStream();
+    const upsert = (content: string) => setMessages((prev) =>
+      prev.some((m) => m.id === assistantId)
+        ? prev.map((m) => (m.id === assistantId ? { ...m, content } : m))
+        : [...prev, { id: assistantId, role: "assistant", content }],
+    );
+    let fullText = "";
+    let transcription: string | undefined;
+    let shown = false;
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const ev = buf.slice(0, idx); buf = buf.slice(idx + 2);
+            const dl = ev.split("\n").find((l) => l.startsWith("data:"));
+            if (!dl) continue;
+            let data: { type?: string; text?: string; transcription?: string };
+            try { data = JSON.parse(dl.slice(5).trim()); } catch { continue; }
+            if (data.type === "meta") {
+              if (data.transcription) { transcription = data.transcription; onMeta?.(data.transcription); }
+            } else if (data.type === "chunk" && data.text) {
+              fullText = fullText ? `${fullText} ${data.text}` : data.text;
+              if (!shown) { shown = true; setLoading(false); }
+              upsert(fullText);
+              player.push(data.text);
+            } else if (data.type === "done") {
+              if (data.text) fullText = data.text;
+              if (data.transcription) transcription = data.transcription;
+            }
+          }
+        }
+      }
+    } finally {
+      player.finish();
+    }
+    setLoading(false);
+    if (fullText) upsert(fullText);
+    return { text: fullText, transcription };
+  }, [speakStream]);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -523,19 +606,12 @@ export default function ChatPage() {
         });
 
         if (!res.ok) {
-          const data = await res.json();
+          const data = await res.json().catch(() => ({} as { error?: string }));
           throw new Error(data.error ?? "오류");
         }
 
-        const data = await res.json();
-        // 음성이 준비되는 시점에 텍스트도 동시 노출 (시각/청각 타이밍 동기화)
-        await speak(data.text, () => {
-          setMessages((prev) => [
-            ...prev,
-            { id: assistantId, role: "assistant", content: data.text },
-          ]);
-          setLoading(false);
-        });
+        // SSE 스트리밍 소비 — 첫 문장부터 재생 + UI 텍스트 실시간 갱신
+        await streamAndSpeak(res, assistantId);
         setAiSpeaking(false);
         return;
       } catch (e) {
@@ -554,7 +630,7 @@ export default function ChatPage() {
       setLoading(false);
       setAiSpeaking(false);
     },
-    [loading, conversationId, messages, createId, speak, getContext]
+    [loading, conversationId, messages, createId, streamAndSpeak, getContext]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -639,35 +715,20 @@ export default function ChatPage() {
             mode: screeningModeRef.current,
           }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "오류");
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({} as { error?: string }));
+          throw new Error(d.error ?? "오류");
+        }
 
-        const { text: textToSpeak, transcription: transcriptionText } = parseAudioResponse(data);
-
-        // 사용자 transcription은 즉시 화면 갱신 (placeholder 대체)
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === placeholderId
-              ? { ...m, content: transcriptionText || "(음성 메시지)" }
-              : m
-          )
-        );
-
-        // 세션 종료 명령 감지 — "그만/조용히/끝내자" 등
-        const userSaidEnd = transcriptionText && SESSION_END_PATTERN.current.test(transcriptionText);
-
-        const aiText = textToSpeak || "(답변 없음)";
-        await speak(aiText, () => {
-          setMessages((prev) => [
-            ...prev,
-            { id: createId(), role: "assistant", content: aiText },
-          ]);
-          setLoading(false);
+        // SSE 스트리밍 — transcription(meta)으로 사용자 placeholder 즉시 갱신 + 첫 문장부터 재생
+        const assistantId = createId();
+        const { transcription: transcriptionText } = await streamAndSpeak(res, assistantId, (tr) => {
+          setMessages((prev) => prev.map((m) => (m.id === placeholderId ? { ...m, content: tr || "(음성 메시지)" } : m)));
         });
         setAiSpeaking(false);
 
-        // 종료 명령이면 세션 비활성화 → wake 대기로 복귀
-        if (userSaidEnd) {
+        // 종료 명령 감지 — "그만/조용히/끝내자" 등
+        if (transcriptionText && SESSION_END_PATTERN.current.test(transcriptionText)) {
           sessionActiveRef.current = false;
           setSessionActive(false);
         }
@@ -689,7 +750,7 @@ export default function ChatPage() {
         setAiSpeaking(false);
       }
     },
-    [conversationId, loading, speak, getContext]
+    [conversationId, loading, streamAndSpeak, getContext]
   );
 
   const startRecording = useCallback(async () => {
