@@ -111,6 +111,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user"); // 사용자=대화형 / 전문가=표준검사 시행
   const [loading, setLoading] = useState(false);
   const [micAllowed, setMicAllowed] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
@@ -138,6 +139,8 @@ export default function ChatPage() {
   const audioCtxRef = useRef<AudioContext | null>(null); // VAD용 AudioContext — stopRecording/언마운트에서 명시적 close (누수 방지)
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
+  const screeningModeRef = useRef(screeningMode); // 전송 콜백 stale 클로저 방지
+  screeningModeRef.current = screeningMode;
   const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
 
   /** API 호출 시 사용할 현재 시간·위치 컨텍스트 */
@@ -474,6 +477,7 @@ export default function ChatPage() {
               ({ role, content, createdAt }) => ({ role, content, createdAt })
             ),
             context: getContext(),
+            mode: screeningModeRef.current,
           }),
         });
 
@@ -591,6 +595,7 @@ export default function ChatPage() {
               createdAt,
             })),
             context: getContext(),
+            mode: screeningModeRef.current,
           }),
         });
         const data = await res.json();
@@ -854,6 +859,22 @@ export default function ChatPage() {
           마음<br />이음
         </h1>
         <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 text-[10px] dark:border-zinc-700 dark:bg-zinc-800" title="사용자=일상 대화형 선별 / 전문가=표준 검사 시행">
+            <button
+              type="button"
+              onClick={() => setScreeningMode("user")}
+              className={screeningMode === "user" ? "rounded-md bg-white px-1.5 py-0.5 font-semibold text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-blue-300" : "px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400"}
+            >
+              사용자
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreeningMode("pro")}
+              className={screeningMode === "pro" ? "rounded-md bg-white px-1.5 py-0.5 font-semibold text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-blue-300" : "px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400"}
+            >
+              전문가
+            </button>
+          </div>
           <ThemeToggle />
           <Link
             href="/dashboard"
