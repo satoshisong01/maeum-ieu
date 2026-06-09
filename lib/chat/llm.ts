@@ -2,7 +2,7 @@
  * Gemini 모델·응답 추출 유틸 — 대화 LLM(getTextModel) + 응답 텍스트 정제(extractText/stripReasoningTrace).
  * route.ts에서 분리(2026-06-05 리팩토링). 동작 변경 없음.
  */
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { nameSubj } from "@/lib/chat/korean-particle";
 import { salvageJsonLeak } from "@/lib/chat/sanitize";
 
@@ -10,6 +10,39 @@ export function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
   return key;
+}
+
+/**
+ * 안전필터 차단 해제.
+ * 노인 일상 대화 도메인에선 화투·고스톱·약주·"패가 안 보인다" 같은 어르신 일상어가
+ * 안전필터에 도박/유해로 오탐되어 응답을 비워버림(=빈응답 → 폴백 멘트). 어르신껜 정상 대화이므로 차단 해제.
+ * 실제 유해 출력 방지는 앱 자체 모더레이션(응급·욕설 감지)과 응답 후처리(postProcessReply)가 담당.
+ */
+export const COMPANION_SAFETY_SETTINGS = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
+/**
+ * 경로별 토큰 사용량 로깅 — `DEBUG_USAGE=1`일 때만 출력. 비용 원인 추적용.
+ * generateContent 결과(`{response:{usageMetadata}}`)와 stream 집계 응답(`{usageMetadata}`) 둘 다 허용.
+ * 출력 예: [usage] companion model=gemini-3.5-flash input=4120 output=280 thinking=480 cached=0 total=4880
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function logUsage(label: string, res: any): void {
+  if (process.env.DEBUG_USAGE !== "1") return;
+  try {
+    const r = res?.response ?? res;
+    const u = r?.usageMetadata;
+    if (!u) return;
+    console.log(
+      `[usage] ${label} model=${r?.modelVersion ?? "?"} input=${u.promptTokenCount ?? 0} output=${u.candidatesTokenCount ?? 0} thinking=${u.thoughtsTokenCount ?? 0} cached=${u.cachedContentTokenCount ?? 0} total=${u.totalTokenCount ?? 0}`,
+    );
+  } catch {
+    /* 로깅 실패는 무시 */
+  }
 }
 
 /** 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수) */
@@ -23,10 +56,12 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
   //   responseDelay 측정으로 도입(2026-06-05). 품질 저하 시 상향.
   const THINKING_BUDGET = 512;
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-3.5-flash",
+    // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
+    model: "gemini-2.5-flash",
     systemInstruction,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generationConfig: { temperature: 0.7, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: THINKING_BUDGET } } as any,
+    safetySettings: COMPANION_SAFETY_SETTINGS,
     tools,
   });
 }
