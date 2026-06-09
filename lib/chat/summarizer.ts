@@ -12,65 +12,42 @@
  * 사용자 격리: 모든 쿼리 user_id 필터 강제.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
+import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { prisma } from "@/lib/prisma";
 
-const SUMMARY_MODEL = "gemini-3.5-flash";
+const SUMMARY_MODEL = "gemini-2.5-flash"; // 비용 최적화: 요약은 단순 압축 — 3.5 불필요
 export type SummaryLevel = "weekly" | "monthly" | "yearly";
 
-const SUMMARY_PROMPT = `당신은 노인 인지 케어 시스템의 대화 요약가입니다. 아래 대화를 분석해 두 가지를 출력하세요.
+const SUMMARY_PROMPT = `당신은 노인 인지 케어 시스템의 대화 요약가입니다. 아래 대화에서 사용자(어르신) 발화만 분석해 summary와 facts를 채우세요. AI 응답은 무시.
+- summary: 어르신이 말한 핵심(가족·일상·건강·취미·고향·정서)을 자연스러운 한국어 200~400자로.
+- facts: 명확한 정보만. 추측·확장 금지. 없으면 빈 배열/생략.`;
 
-[1. 자연어 요약 (200~400자)]
-- 사용자(어르신)가 말한 핵심 내용만 추려서 자연스러운 한국어로 요약.
-- 가족 관계·이름·일상 패턴·건강 상태·취미·고향·정서 변화 중심.
-- AI 응답은 무시. 사용자 발화만 요약.
+const META_SUMMARY_PROMPT = `당신은 대화 요약본을 다시 압축하는 메타 요약가입니다. 아래 시기별 요약본을 통합해 더 긴 기간의 요약으로 압축하세요.
+- summary: 일관된 패턴(자주 등장하는 주제·감정·관심사) 중심, 시기별 변화가 있으면 명시. 300~500자.
+- facts: 하위 요약들의 facts 통합(중복 제거, 모순 시 최근 우선).`;
 
-[2. 핵심 사실 JSON]
-다음 키 중 명확한 정보가 있을 때만 추가. 추측·확장 금지.
-{
-  "family": [{"relation": "son|daughter|grandchild|spouse|sibling", "name": "이름", "note": "특징"}],
-  "hometown": "고향",
-  "residence": "현 거주지",
-  "hobbies": ["취미"],
-  "health": ["증상"],
-  "favorites": ["좋아하는 음식"],
-  "events": [{"when": "시점 묘사", "what": "사건"}]
-}
-사실이 명확히 없으면 빈 배열/null. 추측 금지.
-
-**출력 형식 (반드시 이대로)**:
----SUMMARY---
-[여기에 자연어 요약]
----FACTS---
-[여기에 JSON]
----END---`;
-
-const META_SUMMARY_PROMPT = `당신은 대화 요약본을 다시 압축하는 메타 요약가입니다.
-아래는 사용자(어르신)의 시기별 대화 요약본입니다. 이들을 통합하여 더 긴 기간의 요약으로 압축하세요.
-
-[1. 자연어 요약 (300~500자)]
-- 사용자의 일관된 패턴(자주 등장하는 주제·감정·관심사) 중심
-- 시기별 변화가 있으면 명시 (예: "초반에는 ~ 그러나 ~ 이후에는 ~")
-- 가족 정보는 그대로 보존, 새로 등장한 정보 통합
-
-[2. 핵심 사실 JSON]
-하위 요약들의 facts를 통합. 중복 제거, 모순 시 더 최근 정보 우선.
-{
-  "family": [{"relation": "...", "name": "...", "note": "..."}],
-  "hometown": "...",
-  "residence": "...",
-  "hobbies": [...],
-  "health": [...],
-  "favorites": [...],
-  "events": [...]
-}
-
-**출력 형식**:
----SUMMARY---
-[자연어]
----FACTS---
-[JSON]
----END---`;
+// 구조화 출력 스키마 — 마커·자가검토·잘림 없이 깨끗한 JSON 강제(3.5 thinking 누출 차단).
+const S = SchemaType;
+const SUMMARY_SCHEMA: Schema = {
+  type: S.OBJECT,
+  properties: {
+    summary: { type: S.STRING, description: "어르신 발화 중심 자연어 요약" },
+    facts: {
+      type: S.OBJECT,
+      properties: {
+        family: { type: S.ARRAY, items: { type: S.OBJECT, properties: { relation: { type: S.STRING }, name: { type: S.STRING }, note: { type: S.STRING } } } },
+        hometown: { type: S.STRING },
+        residence: { type: S.STRING },
+        hobbies: { type: S.ARRAY, items: { type: S.STRING } },
+        health: { type: S.ARRAY, items: { type: S.STRING } },
+        favorites: { type: S.ARRAY, items: { type: S.STRING } },
+        events: { type: S.ARRAY, items: { type: S.OBJECT, properties: { when: { type: S.STRING }, what: { type: S.STRING } } } },
+      },
+    },
+  },
+  required: ["summary"],
+};
 
 export interface SummaryRow {
   id: string;
@@ -90,24 +67,15 @@ interface MsgRow {
 }
 
 function parseLLMOutput(raw: string): { summary: string; keyFacts: string } {
-  // FACTS 섹션이 잘렸을 수 있어 fallback 다단계
-  let summary = "";
-  const m1 = raw.match(/---SUMMARY---\s*([\s\S]*?)\s*---FACTS---/);
-  if (m1) summary = m1[1].trim();
-  else {
-    // FACTS 마커 없으면 SUMMARY 이후 전체 (END 마커까지, 없으면 끝까지)
-    const m2 = raw.match(/---SUMMARY---\s*([\s\S]*?)(?:---END---|$)/);
-    if (m2) summary = m2[1].trim();
+  // responseSchema(JSON) 강제 출력 → 깨끗한 JSON 파싱. (이전 마커 파싱은 3.5 thinking 누출로 실패하던 문제 제거)
+  try {
+    const obj = JSON.parse(raw);
+    const summary = typeof obj?.summary === "string" ? obj.summary.trim() : "";
+    const facts = obj?.facts && typeof obj.facts === "object" ? obj.facts : {};
+    return { summary, keyFacts: JSON.stringify(facts) };
+  } catch {
+    return { summary: "", keyFacts: "{}" };
   }
-  // FACTS 추출
-  const factsMatch = raw.match(/---FACTS---\s*([\s\S]*?)(?:---END---|$)/);
-  const factsRaw = (factsMatch ? factsMatch[1] : "").trim();
-  let keyFacts = "{}";
-  if (factsRaw) {
-    try { JSON.parse(factsRaw); keyFacts = factsRaw; }
-    catch { keyFacts = JSON.stringify({ raw: factsRaw.slice(0, 500) }); }
-  }
-  return { summary, keyFacts };
 }
 
 /** raw 메시지를 weekly 요약으로 압축. */
@@ -137,7 +105,10 @@ export async function summarizeMessages(params: {
 
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 } } as any,
+    safetySettings: COMPANION_SAFETY_SETTINGS,
   });
 
   const transcript = messages.map((m) => {
@@ -147,6 +118,7 @@ export async function summarizeMessages(params: {
 
   try {
     const res = await model.generateContent(`${SUMMARY_PROMPT}\n\n[대화]\n${transcript}`);
+    logUsage("summarizer", res);
     const raw = res.response.text().trim();
     const { summary, keyFacts } = parseLLMOutput(raw);
     if (!summary || summary.length < 20) {
@@ -195,7 +167,10 @@ export async function rollupSummaries(params: {
 
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { temperature: 0.2, maxOutputTokens: 1500 },
+    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 } } as any,
+    safetySettings: COMPANION_SAFETY_SETTINGS,
   });
 
   const transcript = targets.map((s, i) => {
@@ -204,6 +179,7 @@ export async function rollupSummaries(params: {
 
   try {
     const res = await model.generateContent(`${META_SUMMARY_PROMPT}\n\n[하위 요약들]\n${transcript}`);
+    logUsage("summarizer-rollup", res);
     const { summary, keyFacts } = parseLLMOutput(res.response.text().trim());
     if (!summary || summary.length < 30) return null;
 

@@ -10,6 +10,7 @@
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { upsertFamilyMember, upsertFact, upsertProfile, type FamilyRelation } from "./profile";
 
 const TRIGGER_KEYWORDS = /(아들|딸|손주|손자|손녀|사위|며느리|아내|남편|영감|안사람|고향|살아|살고|취미|키워|기르)/;
@@ -88,11 +89,13 @@ export async function extractWithLLM(params: {
 
   try {
     const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash", // 비용 최적화: 단순 정보추출 — 3.5 불필요
       generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json" },
+      safetySettings: COMPANION_SAFETY_SETTINGS,
     });
     const prompt = LLM_PROMPT.replace("{USER_MESSAGE}", params.userMessage.slice(0, 500));
     const res = await model.generateContent(prompt);
+    logUsage("profile", res);
     const raw = res.response.text().trim();
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");

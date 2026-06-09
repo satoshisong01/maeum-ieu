@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
+import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
@@ -442,6 +443,7 @@ export async function analyzeCognitive(params: {
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
       },
+      safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
     });
 
     const historyLines = params.historyText.split("\n");
@@ -476,6 +478,7 @@ export async function analyzeCognitive(params: {
         throw err;
       }
     }
+    logUsage("analyzer", res);
     const raw = parseResult(res.response.text().trim());
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);

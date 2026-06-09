@@ -14,7 +14,7 @@ import { ChatRequestSchema } from "@/lib/chat/validation";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
-import { getApiKey, getTextModel, buildFallbackMessage, generateWithFallback, extractText } from "@/lib/chat/llm";
+import { getApiKey, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
@@ -507,8 +507,9 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
 /** 음성 → 텍스트 변환 (STT 전용) */
 async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
   const sttModel = new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-3.5-flash",
+    model: "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
     generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+    safetySettings: COMPANION_SAFETY_SETTINGS,
   });
 
   const parts: Part[] = [
@@ -517,6 +518,7 @@ async function transcribeAudio(audioData: string, audioMimeType: string): Promis
   ];
 
   const res = await sttModel.generateContent({ contents: [{ role: "user", parts }] });
+  logUsage("stt", res);
   return extractText(res).trim();
 }
 
@@ -612,6 +614,7 @@ function streamCompanionReply(opts: {
           flush(false);
         }
         flush(true);
+        try { logUsage("companion", await (result as { response?: unknown }).response); } catch { /* usage 로깅 best-effort */ }
         // 저장·분석용 canonical 전체 텍스트 — 전체 안전망 + factCheck
         let fullText = raw.trim() ? postProcessReply(raw, opts.post) : "";
         if (fullText.trim()) {
