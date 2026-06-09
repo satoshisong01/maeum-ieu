@@ -13,7 +13,7 @@ interface BankItem {
   domain: string;
   itemType: string;
   source: string;
-  measure: string;
+  measure?: string;
   questions: BankQuestion[];
 }
 interface QuestionBank {

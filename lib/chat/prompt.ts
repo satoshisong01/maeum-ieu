@@ -150,53 +150,42 @@ export async function buildSystemPrompt(params: {
   let guideBlock: string;
   if (mode === "pro") {
     guideBlock = buildProGuideBlock(companionName, completedKo, remainingKo, remaining.length);
-  } else if (remaining.length === 0) {
-    guideBlock = `\n[🚫 인지 선별 — 오늘 분량 종료. 절대 어기지 마세요]
-오늘 7개 영역(시간/장소/즉시기억/지연기억/언어/판단/계산) 평가가 모두 끝났습니다.
-**이번 응답에 인지 질문을 단 한 개라도 포함하면 안 됩니다.**
-구체 금지 예시 (모두 절대 금지):
-- "오늘 무슨 요일이에요?", "오늘 며칠이에요?", "오늘 몇 월이에요?", "지금 무슨 계절이에요?" (시간 지남력 — 끝)
-- "지금 어디 계세요?", "할아버지 댁이 어느 시도에 있어요?" (장소 지남력 — 끝)
-- "방금 외운 단어/세 단어 다시 말해보세요" (즉시·지연 기억 — 끝)
-- "큰아들 이름이 어떻게 되시죠?", "고향이 어디시죠?" (지연 기억 — 끝)
-- "ㅁ으로 시작하는 단어 말해보세요", "백문이 불여일견 뜻", "간장 공장 따라해보세요" (언어 — 끝)
-- "100에서 7 빼면?", "만원 내고 3천원 거스름?", "삼천리강산 거꾸로" (계산 — 끝)
-- "지갑 주우면 어떻게?", "쌀쌀한데 뭐 입어요?" (판단 — 끝)
-**오로지 일상 호응/공감만**. 평범한 안부, 식사 대화, 라디오/날씨/가족 이야기는 OK. 인지 평가 질문은 0개.`;
   } else {
-    guideBlock = `\n[🚫 인지 선별 — 매우 중요, 반드시 읽으세요]
-**오늘 이미 확인한 영역 (이 영역은 어떤 변형이든 절대 다시 묻지 마세요!!!)**: ${completedKo.length > 0 ? completedKo.join(", ") : "없음"}
-**아직 확인 안 한 영역 (이 중에서만 한 개 골라 자연스럽게 질문 가능)**: ${remainingKo.join(", ")}
+    // 사용자 모드 = 라이트한 일상 수다 80% + 인지 확인 20% (검사 느낌 0이 최우선).
+    //   서버가 "이번 턴은 수다 / 이번 턴은 슬쩍 확인"을 정해 비율을 보장하고,
+    //   LLM은 정해진 후보를 대화에 녹이기만 함.
+    // 턴 인덱스: 이 대화의 사용자 발화 수 + 1 (현재 발화는 응답 생성 후 저장되므로 아직 미반영).
+    let userTurnIndex = 1;
+    if (conversationId) {
+      userTurnIndex = (await prisma.message.count({ where: { conversationId, role: "user" } })) + 1;
+    }
+    const bankReady = isBankReady();
+    const chitchatPool = bankReady ? sampleQuestionsForDomain("chitchat", 4).map((q) => q.text) : [];
+    const chitchatBlock = chitchatPool.length
+      ? `\n[일상 수다 후보 — 이 중 하나를 골라 자연스럽게(매 턴 다른 것). 그대로 읽지 말고 말투에 맞게 녹이기]\n${chitchatPool.map((t) => "· " + t).join("\n")}`
+      : "";
 
-금지 예시 (이미 확인한 영역에 해당하면 무조건 금지):
-- 시간 지남력 확인 끝났으면 "오늘 무슨 요일/며칠/몇월/지금 몇시" 어떤 변형도 금지
-- 장소 지남력 확인 끝났으면 "지금 어디/댁이 어디" 어떤 변형도 금지
-- 즉시·지연 기억 확인 끝났으면 "방금 외운 단어/큰아들 이름/고향" 어떤 변형도 금지
-- 언어 확인 끝났으면 "속담 뜻/따라말하기/ㅁ으로 시작" 어떤 변형도 금지
-- 계산 확인 끝났으면 "100-7/거스름돈/삼천리강산 거꾸로" 어떤 변형도 금지
-- 판단 확인 끝났으면 "지갑 주우면/쌀쌀한데 뭐 입어요" 어떤 변형도 금지
+    // 인지 확인 턴: 약 5턴에 1번(3, 8, 13, …) + 아직 확인 안 한 영역이 남았을 때만.
+    const isProbeTurn = remaining.length > 0 && userTurnIndex % 5 === 3;
 
-→ **🎯 능동 평가 페이스 — 필수 가이드라인 (시스템 핵심 기능, 어기지 마세요)**:
-   아직 확인 안 한 영역 ${remaining.length}개. 이 사용자의 치매 선별이 본 서비스의 **핵심 목적**이고, 이 기능이 작동 안 하면 서비스 가치가 없습니다.
-   **반드시 매 2턴 안에 최소 1번은** "아직 확인 안 한 영역" 중 하나를 자연 대화 흐름에 끼워서 질문하세요.
-   특히 **첫 인사부터 5턴 이내에 시간/장소 지남력 중 적어도 하나는 자연스럽게 던지세요**. 처음 만난 어르신에게 "오늘 며칠이세요?" 같이 직접 묻기 부담스러우면 "오늘 날씨가 좋네요, 봄 같죠?" 라고 계절 안부로 자연스럽게 시작.
-   - ✅ 좋은 예 (자연 흐름 + 평가 결합): "할아버지 어릴 적 친구분들 생각나세요? 그때 동네 이름이 뭐였더라?" (orientation_place + memory_delayed 동시)
-   - ✅ "민지가 단어 세 개 외워드릴게요 — 시장, 라디오, 손녀. 이따 다시 여쭐게요" (memory_immediate)
-   - ✅ "할아버지, 만 원에서 칠천 원짜리 사면 거스름돈 얼마예요?" (attention_calculation, 일상 맥락)
-   - ❌ 절대 금지: 인지 질문 없이 일상 대화만 5턴 이상 — 이 경우 시스템 본 기능 미작동.
-   인지 질문은 **공감 1~2문장 뒤**에 자연 어순으로 끼워 넣으세요. "확인하려고 묻는다"는 인상 금지.
-   질문 없이 호응만 해도 되는 턴은 1~2턴까지만. 그 이후엔 반드시 평가 질문 포함.`;
-  }
-
-  // 사용자 모드: 반복 방지를 위해 미리 만든 정적 질문 풀에서 다음 영역 후보를 주입(풀 준비됐을 때만).
-  //   LLM이 매번 자체 출제하면 비슷한 질문이 반복됨 → 풀에서 다양한 후보를 골라 쓰게 함.
-  if (mode === "user" && remaining.length > 0 && isBankReady()) {
-    const poolLines = remaining.slice(0, 3).map((d) => {
-      const qs = sampleQuestionsForDomain(d, 3).map((q) => q.text);
-      return qs.length ? `· [${DOMAIN_KO[d] || d}] ${qs.join("  /  ")}` : "";
-    }).filter(Boolean);
-    if (poolLines.length) {
-      guideBlock += `\n\n[준비된 질문 후보 — 반복 방지용 미리 만든 풀. 이 중에서 골라 자연 대화에 녹여 쓰세요(매 턴 다른 것, 똑같은 표현 반복 금지)]\n${poolLines.join("\n")}`;
+    if (!isProbeTurn) {
+      // 수다 턴 (≈80%) — 인지 질문 없음
+      guideBlock = `\n[사용자 모드 — 지금은 '일상 수다' 턴]
+이 모드의 목적: 어르신이 **검사받는 느낌 전혀 없이** 다정한 사람과 이야기 나누는 것.
+- 이번 턴은 인지 확인/시험 같은 질문을 **하지 마세요**(요일·날짜·계산·단어암기·속담 등 금지).
+- 어르신 말씀에 **따뜻하게 공감**하고, 자연스럽게 일상 이야기(좋아하는 것·추억·가족·음식·계절·취미)를 이어가세요.${chitchatBlock}`;
+    } else {
+      // 인지 확인 턴 (≈20%) — 수다 흐름에 딱 하나만 슬쩍
+      const probeOrdinal = Math.floor(userTurnIndex / 5);
+      const probeDomain = remaining[probeOrdinal % remaining.length];
+      const probeQs = bankReady ? sampleQuestionsForDomain(probeDomain, 3).map((q) => q.text) : [];
+      const probeBlock = probeQs.length
+        ? `\n[이번에 슬쩍 확인할 영역: ${DOMAIN_KO[probeDomain] || probeDomain} — 아래 중 하나를 골라 대화에 녹이기]\n${probeQs.map((t) => "· " + t).join("\n")}`
+        : `\n[이번에 슬쩍 확인할 영역: ${DOMAIN_KO[probeDomain] || probeDomain}]`;
+      guideBlock = `\n[사용자 모드 — 지금은 '인지 확인을 슬쩍' 끼우는 턴]
+먼저 어르신 말씀에 **공감/호응 1~2문장**을 한 뒤, 아래 영역 질문을 **딱 하나만** 대화에 자연스럽게 녹여 던지세요.
+검사하듯 또박또박 묻지 말고, 수다 중에 문득 궁금해서 묻듯이. "확인하려 한다"는 인상 절대 금지.
+**이미 확인한 영역은 다시 묻지 마세요**: ${completedKo.length ? completedKo.join(", ") : "없음"}${probeBlock}${chitchatBlock}`;
     }
   }
 
