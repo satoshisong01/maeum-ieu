@@ -22,6 +22,7 @@ export default function SignupPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user");
   const [medicationDrafts, setMedicationDrafts] = useState<MedicationDraft[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,6 +52,7 @@ export default function SignupPage() {
           companionName: companionName || undefined,
           companionRelation: companionRelation || undefined,
           userHonorific: userHonorific || undefined,
+          screeningMode,
           medicationDrafts: medicationDrafts.length > 0 ? medicationDrafts : undefined,
         }),
       });
@@ -76,6 +78,28 @@ export default function SignupPage() {
         <h1 className="text-center text-2xl font-semibold text-zinc-800 dark:text-zinc-100">마음이음</h1>
         <p className="mt-2 text-center text-sm text-zinc-500 dark:text-zinc-400">회원가입</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+          {/* 계정 유형 — 가입 후 변경 불가에 가까운 핵심 선택 */}
+          <div>
+            <p className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">계정 유형</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setScreeningMode("user")}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "user" ? "border-[#007bff] bg-blue-50 dark:bg-blue-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+              >
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👵 사용자</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">일상 대화형 선별</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreeningMode("pro")}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+              >
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
+              </button>
+            </div>
+          </div>
           <input
             type="text"
             placeholder="이름 (선택)"

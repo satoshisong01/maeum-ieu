@@ -26,6 +26,7 @@ model User {
   companionName     String?  @default("민지") // AI 동반자 이름
   companionRelation String?  @default("손녀") // AI 동반자 관계 (손녀/손자/딸/아들/며느리/친구 등)
   userHonorific     String?                   // 사용자 호칭 override (null이면 성별 자동 추론)
+  screeningMode     String   @default("user")  // 계정 역할: user=일상 대화형 선별 / pro=전문가 표준검사 시행
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

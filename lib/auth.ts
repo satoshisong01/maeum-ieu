@@ -35,20 +35,24 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user, trigger }) {
       if (user) token.id = user.id;
-      // 프로필 수정 후 세션 갱신 또는 주기적 갱신 시 DB에서 최신 이름 반영
-      if (trigger === "update" || !token.name) {
+      // 프로필 수정·주기 갱신 시, 또는 토큰에 screeningMode가 없으면(기존 세션) DB에서 최신값 반영
+      if (trigger === "update" || !token.name || token.screeningMode === undefined) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { name: true },
+          select: { name: true, screeningMode: true },
         });
-        if (dbUser) token.name = dbUser.name;
+        if (dbUser) {
+          token.name = dbUser.name;
+          token.screeningMode = dbUser.screeningMode === "pro" ? "pro" : "user";
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id: string }).id = token.id as string;
+        session.user.id = token.id as string;
         session.user.name = token.name as string | null;
+        session.user.screeningMode = token.screeningMode ?? "user";
       }
       return session;
     },

@@ -93,6 +93,7 @@ export const UserScalarFieldEnum = {
   companionName: 'companionName',
   companionRelation: 'companionRelation',
   userHonorific: 'userHonorific',
+  screeningMode: 'screeningMode',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

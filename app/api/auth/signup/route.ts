@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, medicationDrafts } = body as {
+    const { email, password, passwordConfirm, name, age, gender, guardianName, guardianPhone, guardianRelation, companionName, companionRelation, userHonorific, screeningMode, medicationDrafts } = body as {
       email?: string;
       password?: string;
       passwordConfirm?: string;
@@ -29,6 +29,7 @@ export async function POST(req: Request) {
       companionName?: string;
       companionRelation?: string;
       userHonorific?: string;
+      screeningMode?: string;
       medicationDrafts?: MedicationDraftInput[];
     };
 
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
         companionName: companionName?.trim() || undefined,
         companionRelation: companionRelation?.trim() || undefined,
         userHonorific: userHonorific?.trim() || null,
+        screeningMode: screeningMode === "pro" ? "pro" : "user", // 계정 역할(가입 시 선택)
       },
     });
 
