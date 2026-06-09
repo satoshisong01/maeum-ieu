@@ -104,7 +104,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user"); // 사용자=대화형 / 전문가=표준검사 시행
+  // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 / pro=표준검사 시행)
+  const screeningMode: "user" | "pro" = session?.user?.screeningMode === "pro" ? "pro" : "user";
   const [loading, setLoading] = useState(false);
   const [micAllowed, setMicAllowed] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
@@ -960,28 +961,19 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b0d10]">
+    <div className={`flex h-screen flex-col overflow-hidden border-t-4 ${screeningMode === "pro" ? "border-teal-500 bg-[#e6f0f1] dark:border-teal-700 dark:bg-[#0a1315]" : "border-blue-400 bg-[#f0f2f5] dark:border-blue-800 dark:bg-[#0b0d10]"}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3 dark:border-zinc-700 dark:bg-zinc-900">
         <h1 className="text-sm font-semibold leading-tight text-zinc-800 sm:text-base dark:text-zinc-100">
           마음<br />이음
         </h1>
         <div className="flex items-center gap-1.5 sm:gap-2">
-          <div className="flex items-center rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 text-[10px] dark:border-zinc-700 dark:bg-zinc-800" title="사용자=일상 대화형 선별 / 전문가=표준 검사 시행">
-            <button
-              type="button"
-              onClick={() => setScreeningMode("user")}
-              className={screeningMode === "user" ? "rounded-md bg-white px-1.5 py-0.5 font-semibold text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-blue-300" : "px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400"}
-            >
-              사용자
-            </button>
-            <button
-              type="button"
-              onClick={() => setScreeningMode("pro")}
-              className={screeningMode === "pro" ? "rounded-md bg-white px-1.5 py-0.5 font-semibold text-blue-600 shadow-sm dark:bg-zinc-700 dark:text-blue-300" : "px-1.5 py-0.5 text-zinc-500 dark:text-zinc-400"}
-            >
-              전문가
-            </button>
-          </div>
+          {/* 계정 역할 표기(읽기전용) — 전환은 계정으로 결정됨 */}
+          <span
+            className={`rounded-lg px-2 py-1 text-[10px] font-semibold leading-tight sm:text-xs ${screeningMode === "pro" ? "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"}`}
+            title={screeningMode === "pro" ? "전문가 계정 — 표준 인지선별 검사 시행" : "사용자 계정 — 일상 대화형 선별"}
+          >
+            {screeningMode === "pro" ? "🩺 전문가" : "👵 사용자"}
+          </span>
           <ThemeToggle />
           <Link
             href="/dashboard"

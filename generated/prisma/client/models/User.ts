@@ -51,6 +51,7 @@ export type UserMinAggregateOutputType = {
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
+  screeningMode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -72,6 +73,7 @@ export type UserMaxAggregateOutputType = {
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
+  screeningMode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -93,6 +95,7 @@ export type UserCountAggregateOutputType = {
   companionName: number
   companionRelation: number
   userHonorific: number
+  screeningMode: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -124,6 +127,7 @@ export type UserMinAggregateInputType = {
   companionName?: true
   companionRelation?: true
   userHonorific?: true
+  screeningMode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -145,6 +149,7 @@ export type UserMaxAggregateInputType = {
   companionName?: true
   companionRelation?: true
   userHonorific?: true
+  screeningMode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -166,6 +171,7 @@ export type UserCountAggregateInputType = {
   companionName?: true
   companionRelation?: true
   userHonorific?: true
+  screeningMode?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -274,6 +280,7 @@ export type UserGroupByOutputType = {
   companionName: string | null
   companionRelation: string | null
   userHonorific: string | null
+  screeningMode: string
   createdAt: Date
   updatedAt: Date
   _count: UserCountAggregateOutputType | null
@@ -318,6 +325,7 @@ export type UserWhereInput = {
   companionName?: Prisma.StringNullableFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
+  screeningMode?: Prisma.StringFilter<"User"> | string
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -343,6 +351,7 @@ export type UserOrderByWithRelationInput = {
   companionName?: Prisma.SortOrderInput | Prisma.SortOrder
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
+  screeningMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   accounts?: Prisma.AccountOrderByRelationAggregateInput
@@ -371,6 +380,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   companionName?: Prisma.StringNullableFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
+  screeningMode?: Prisma.StringFilter<"User"> | string
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -396,6 +406,7 @@ export type UserOrderByWithAggregationInput = {
   companionName?: Prisma.SortOrderInput | Prisma.SortOrder
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
+  screeningMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
@@ -425,6 +436,7 @@ export type UserScalarWhereWithAggregatesInput = {
   companionName?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   companionRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  screeningMode?: Prisma.StringWithAggregatesFilter<"User"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
@@ -446,6 +458,7 @@ export type UserCreateInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -471,6 +484,7 @@ export type UserUncheckedCreateInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -496,6 +510,7 @@ export type UserUpdateInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -521,6 +536,7 @@ export type UserUncheckedUpdateInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -546,6 +562,7 @@ export type UserCreateManyInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -567,6 +584,7 @@ export type UserUpdateManyMutationInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -588,6 +606,7 @@ export type UserUncheckedUpdateManyInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -609,6 +628,7 @@ export type UserCountOrderByAggregateInput = {
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
+  screeningMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -634,6 +654,7 @@ export type UserMaxOrderByAggregateInput = {
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
+  screeningMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -655,6 +676,7 @@ export type UserMinOrderByAggregateInput = {
   companionName?: Prisma.SortOrder
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
+  screeningMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -765,6 +787,7 @@ export type UserCreateWithoutMedicationSchedulesInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -789,6 +812,7 @@ export type UserUncheckedCreateWithoutMedicationSchedulesInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -829,6 +853,7 @@ export type UserUpdateWithoutMedicationSchedulesInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -853,6 +878,7 @@ export type UserUncheckedUpdateWithoutMedicationSchedulesInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -877,6 +903,7 @@ export type UserCreateWithoutAccountsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -901,6 +928,7 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -941,6 +969,7 @@ export type UserUpdateWithoutAccountsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -965,6 +994,7 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -989,6 +1019,7 @@ export type UserCreateWithoutSessionsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -1013,6 +1044,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -1053,6 +1085,7 @@ export type UserUpdateWithoutSessionsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1077,6 +1110,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1101,6 +1135,7 @@ export type UserCreateWithoutConversationsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -1125,6 +1160,7 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   companionName?: string | null
   companionRelation?: string | null
   userHonorific?: string | null
+  screeningMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -1165,6 +1201,7 @@ export type UserUpdateWithoutConversationsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1189,6 +1226,7 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1271,6 +1309,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
+  screeningMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
@@ -1297,6 +1336,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
+  screeningMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1318,6 +1358,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
+  screeningMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1339,11 +1380,12 @@ export type UserSelectScalar = {
   companionName?: boolean
   companionRelation?: boolean
   userHonorific?: boolean
+  screeningMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "screeningMode" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
@@ -1379,6 +1421,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     companionName: string | null
     companionRelation: string | null
     userHonorific: string | null
+    screeningMode: string
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["user"]>
@@ -1824,6 +1867,7 @@ export interface UserFieldRefs {
   readonly companionName: Prisma.FieldRef<"User", 'String'>
   readonly companionRelation: Prisma.FieldRef<"User", 'String'>
   readonly userHonorific: Prisma.FieldRef<"User", 'String'>
+  readonly screeningMode: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }
