@@ -13,7 +13,7 @@ export const ChatRequestSchema = z.object({
         createdAt: z.string().max(40).optional(),
       }),
     )
-    .max(200)
+    .max(500) // 자체 DoS 상한. 클라이언트는 최근 50개만 보내므로 평상시 도달 X(방어선).
     .optional(),
   conversationId: z.string().max(100).optional(),
   isInitialGreeting: z.boolean().optional(),

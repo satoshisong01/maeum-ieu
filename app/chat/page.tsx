@@ -601,7 +601,8 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversationId,
-            messages: [...messagesRef.current, userMessage].map(
+            // 최근 50개만 전송 — 서버는 최근 20개만 사용. 전체 전송 시 긴 대화에서 검증 상한 초과로 영구 먹통 + 페이로드 낭비.
+            messages: [...messagesRef.current, userMessage].slice(-50).map(
               ({ role, content, createdAt }) => ({ role, content, createdAt })
             ),
             context: getContext(),
@@ -710,7 +711,7 @@ export default function ChatPage() {
           body: JSON.stringify({
             conversationId,
             audio: { data: audioBase64, mimeType },
-            messages: messagesRef.current.map(({ role, content, createdAt }) => ({
+            messages: messagesRef.current.slice(-50).map(({ role, content, createdAt }) => ({
               role,
               content,
               createdAt,
