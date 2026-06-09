@@ -97,7 +97,12 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
       `(?<![가-힣])(${kinOffenders.map(esc).join("|")})(?=$|[^가-힣]|의|은|는|이|가|을|를|와|과|랑|이랑|도|만|께|께서|한테|에게|에서|로|으로)`,
       "g"
     );
-    out = out.replace(kinPat, userHonorific);
+    out = out.replace(kinPat, (m: string, _g1: string, offset: number, full: string) => {
+      // 호격(친족어 뒤 쉼표 = 사용자 직접 호칭)에서만 치환. 그 외(주어·3인칭 가족 지칭: "어머니께서 살아계실 때",
+      // "꿈에서 어머니와")는 보존 — referent 혼동(어머니→할머니) 방지.
+      const after = full.slice(offset + m.length);
+      return /^\s*,/.test(after) ? userHonorific : m;
+    });
   }
   const titleOffenders = filter(TITLE).sort((a, b) => b.length - a.length);
   if (titleOffenders.length > 0) {
@@ -127,10 +132,20 @@ function normalizeHonorific(text: string, userHonorific: string = "할아버지"
  * Why: prompt block에 family 정보가 있어도 LLM이 가끔 성별을 헷갈림.
  *      DB 신뢰 우선 — 2026-05-26 rudtjrch cycle에서 "큰딸 수진이" → "수진 아드님" 회귀 발견.
  */
-function fixChildGenderHonorific(text: string, family: Array<{ name: string; relation: string }>): string {
-  if (!text || !family || family.length === 0) return text;
+function fixChildGenderHonorific(text: string, family: Array<{ name: string; relation: string }>, ctx: string = ""): string {
+  if (!text) return text;
+  // DB 프로필 + 현재 문맥의 명시적 성별 단서 병합 — 방금 소개돼 프로필에 없는 가족("큰딸 영숙이" 등)도 정정.
+  const all: Array<{ name: string; relation: string }> = [...(family || [])];
+  if (ctx) {
+    const dPat = /(?:큰딸|작은딸|막내딸|장녀|차녀|딸)\s*([가-힣]{2,3}?)(?:이가|이는|이도|이라|이고|이야|이에요|예요|이|가|은|는|랑|이랑|을|를|$|\s)/g;
+    const sPat = /(?:큰아들|작은아들|막내아들|장남|차남|아들|손자)\s*([가-힣]{2,3}?)(?:이가|이는|이도|이라|이고|이야|이에요|예요|이|가|은|는|랑|이랑|을|를|$|\s)/g;
+    let mm: RegExpExecArray | null;
+    while ((mm = dPat.exec(ctx)) !== null) all.push({ name: mm[1], relation: "daughter" });
+    while ((mm = sPat.exec(ctx)) !== null) all.push({ name: mm[1], relation: "son" });
+  }
+  if (all.length === 0) return text;
   let out = text;
-  for (const f of family) {
+  for (const f of all) {
     const name = f.name;
     if (!name || name.length < 2) continue;
     if (f.relation === "daughter") {
@@ -540,7 +555,7 @@ function postProcessReply(
     ["removeUngroundedClaims", (t) => removeUngroundedClaims(t, ctx)],
     ["normalizeHonorific", (t) => normalizeHonorific(t, honorific)],
     ["normalizeFamilyChildHonorific", (t) => normalizeFamilyChildHonorific(t, ctx)],
-    ["fixChildGenderHonorific", (t) => fixChildGenderHonorific(t, family)],
+    ["fixChildGenderHonorific", (t) => fixChildGenderHonorific(t, family, ctx)],
     ["fixWordChainStart", (t) => fixWordChainStart(t)],
     ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
     ["normalizeImnida", (t) => normalizeImnida(t)],

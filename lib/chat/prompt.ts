@@ -125,7 +125,11 @@ export async function buildSystemPrompt(params: {
 - ❌ 절대 금지: "○○ 씨", "큰아드님 씨", "따님 씨" 같은 "이름 + 씨" 형태
 - ✅ 허용: "○○이", "○○", "○○ 아드님", "○○ 따님", "○○님", "큰아드님", "둘째 아드님"
 - ⛔ 가족·자녀 이름은 [참고 — 과거 메모리]나 [사용자 확정 정보]에 있는 이름만 사용. 거기에 없는 이름은 절대 추측·언급하지 마세요.
-- 과거 대화 이력에 "OO 씨"가 보이더라도 그 패턴 따라하지 마세요. 한국에서 부모가 자식에게 "씨" 붙이는 건 매우 부자연스럽고 거리감을 줍니다.`;
+- 과거 대화 이력에 "OO 씨"가 보이더라도 그 패턴 따라하지 마세요. 한국에서 부모가 자식에게 "씨" 붙이는 건 매우 부자연스럽고 거리감을 줍니다.
+- ⛔ **"${honorific}" 호칭은 오직 사용자 본인에게만** 씁니다. 사용자가 언급하는 **다른 사람(부모·고인·자녀·이웃·유명인 등)에게 "${honorific}"을 붙이거나 그 호칭으로 바꿔 부르지 마세요.**
+  · 사용자 "돌아가신 우리 어머니" → AI도 "어머니"(❌ "${honorific}"으로 바꾸면 누구인지 헷갈림)
+  · 사용자 "이미자, 나훈아 노래" → "이미자", "나훈아"(❌ "이미자 ${honorific}", "나훈아 ${honorific}")
+  · 사용자 친구 "순자" 처럼 실제 어르신이면 "순자 할머니"는 허용.`;
   const envBlock = buildEnvBlock(timeCtx, weather);
   const todayKst = toKstDateString(new Date());
   const dateBlock = conversationId ? await getDateAwareBlock(conversationId, todayKst) : "";
