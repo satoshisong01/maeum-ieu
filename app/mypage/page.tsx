@@ -21,6 +21,7 @@ interface Profile {
   companionName: string | null;
   companionRelation: string | null;
   userHonorific: string | null;
+  screeningMode: string | null;
   createdAt: string;
 }
 
@@ -40,6 +41,7 @@ export default function MyPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -68,6 +70,7 @@ export default function MyPage() {
           setCompanionName(data.companionName ?? "");
           setCompanionRelation(data.companionRelation ?? "");
           setUserHonorific(data.userHonorific ?? "");
+          setScreeningMode(data.screeningMode === "pro" ? "pro" : "user");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -97,6 +100,7 @@ export default function MyPage() {
         companionName: companionName || null,
         companionRelation: companionRelation || null,
         userHonorific: userHonorific || null,
+        screeningMode,
       };
       if (newPassword) {
         body.currentPassword = currentPassword;
@@ -161,6 +165,29 @@ export default function MyPage() {
                 disabled
                 className="w-full rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
               />
+            </div>
+
+            {/* 계정 유형(모드) — 가입 시 잘못 골랐을 때 변경 */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">계정 유형</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScreeningMode("user")}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "user" ? "border-[#007bff] bg-blue-50 dark:bg-blue-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+                >
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👵 사용자</span>
+                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">일상 대화형 선별</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScreeningMode("pro")}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+                >
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
+                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
+                </button>
+              </div>
             </div>
 
             {/* 이름 */}

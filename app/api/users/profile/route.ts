@@ -13,7 +13,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, guardianEmail: true, guardianWebhookUrl: true, companionName: true, companionRelation: true, userHonorific: true, createdAt: true },
+    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, guardianEmail: true, guardianWebhookUrl: true, companionName: true, companionRelation: true, userHonorific: true, screeningMode: true, createdAt: true },
   });
 
   if (!user) {
@@ -31,7 +31,7 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json();
-  const { name, age, gender, guardianName, guardianPhone, guardianRelation, guardianEmail, guardianWebhookUrl, companionName, companionRelation, userHonorific, currentPassword, newPassword } = body as {
+  const { name, age, gender, guardianName, guardianPhone, guardianRelation, guardianEmail, guardianWebhookUrl, companionName, companionRelation, userHonorific, screeningMode, currentPassword, newPassword } = body as {
     name?: string;
     age?: number | null;
     gender?: string | null;
@@ -43,6 +43,7 @@ export async function PATCH(req: Request) {
     companionName?: string | null;
     companionRelation?: string | null;
     userHonorific?: string | null;
+    screeningMode?: string;
     currentPassword?: string;
     newPassword?: string;
   };
@@ -102,12 +103,13 @@ export async function PATCH(req: Request) {
   if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
   if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
   if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
+  if (screeningMode !== undefined) updateData.screeningMode = screeningMode === "pro" ? "pro" : "user";
   if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
 
   const updated = await prisma.user.update({
     where: { id: session.user.id },
     data: updateData,
-    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true },
+    select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, screeningMode: true },
   });
 
   return NextResponse.json(updated);
