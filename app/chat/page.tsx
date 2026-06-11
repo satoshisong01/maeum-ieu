@@ -144,9 +144,14 @@ export default function ChatPage() {
     ...locationRef.current,
   }), []);
 
+  // 언마운트 감지 — turnLock 폴링 등 setTimeout 재귀가 페이지 이탈 후에도 도는 것 방지
+  const unmountedRef = useRef(false);
+
   // 언마운트 시 미디어 자원 해제 — /chat 이탈(대시보드 이동 등) 후 마이크 점유·AudioContext 누수 방지.
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
+      unmountedRef.current = true;
       try { if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); } catch { /* ignore */ }
       if (vadFrameRef.current) cancelAnimationFrame(vadFrameRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -157,10 +162,11 @@ export default function ChatPage() {
     };
   }, []);
 
-  const createId = () =>
+  // 매 렌더 재생성 방지 — sendMessage useCallback 의존성으로 들어가므로 레퍼런스 고정 필요
+  const createId = useCallback(() =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`, []);
 
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   // startRecording을 ref로 보관 — speak/onstop 등 useCallback 의존성 순환 방지용
@@ -222,7 +228,7 @@ export default function ChatPage() {
         wakeArmedRef.current = true;
         setWakeArmed(true);
         // SpeechRecognition이 stop 처리 + speaker echo 잔향 가라앉을 시간 확보
-        setTimeout(() => startRecordingRef.current(), 600);
+        setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 600);
       }
     };
 
@@ -299,7 +305,7 @@ export default function ChatPage() {
       turnLockRef.current = false;
       if (sessionActiveRef.current && alwaysOnRef.current) {
         wakeArmedRef.current = true; setWakeArmed(true);
-        setTimeout(() => startRecordingRef.current(), 600);
+        setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 600);
       }
     };
     const fetchAudio = async (s: string): Promise<HTMLAudioElement | null> => {
@@ -350,6 +356,21 @@ export default function ChatPage() {
         ? prev.map((m) => (m.id === assistantId ? { ...m, content } : m))
         : [...prev, { id: assistantId, role: "assistant", content }],
     );
+
+    // LLM 우회 경로(날짜/시간 즉답·모더레이션·응급 L3·STT 실패)는 SSE가 아닌 JSON으로 응답.
+    // 스트리밍 도입(2026-06-05) 후 이 응답들이 UI에 표시되지 않던 회귀 — 응급 안내까지 안 보여 안전 문제(2026-06-10 사이클 발견).
+    if ((res.headers.get("content-type") || "").includes("application/json")) {
+      const data = await res.json().catch(() => null) as { text?: string; transcription?: string } | null;
+      const text = data?.text ?? "";
+      // 음성 경로(onMeta 존재)는 STT 실패로 transcription이 빈 문자열이어도 placeholder를
+      // 반드시 교체 — "(음성 인식 중...)"이 영구 잔존해 다음 턴 이력까지 오염되는 것 방지.
+      if (onMeta) onMeta(data?.transcription || "(음성 메시지)");
+      if (text) { upsert(text); player.push(text); }
+      player.finish();
+      setLoading(false);
+      return { text, transcription: data?.transcription };
+    }
+
     let fullText = "";
     let transcription: string | undefined;
     let shown = false;
@@ -636,7 +657,8 @@ export default function ChatPage() {
       setLoading(false);
       setAiSpeaking(false);
     },
-    [loading, conversationId, messages, createId, streamAndSpeak, getContext]
+    // messages는 내부에서 messagesRef.current로 읽으므로 의존성 불필요(매 메시지마다 재생성 방지)
+    [loading, conversationId, createId, streamAndSpeak, getContext]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -765,9 +787,9 @@ export default function ChatPage() {
     if (!alwaysOnRef.current) return;
     // wake-word 활성화 안 됐으면 시작 금지 (폴백 환경에서는 wakeArmed를 true로 유지)
     if (!wakeArmedRef.current) return;
-    // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링
+    // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링 (언마운트 후엔 재귀 예약 중단)
     if (turnLockRef.current) {
-      setTimeout(() => startRecording(), 500);
+      setTimeout(() => { if (!unmountedRef.current) startRecording(); }, 500);
       return;
     }
     // wake 직후 stream 재획득 (권한 이미 있으므로 팝업 없음)
@@ -934,7 +956,7 @@ export default function ChatPage() {
       wakeArmedRef.current = true;
       setWakeArmed(true);
       // 살짝 딜레이 두고 녹음 시작 (recognition stop이 마이크 해제하는 데 시간이 필요)
-      setTimeout(() => startRecording(), 250);
+      setTimeout(() => { if (!unmountedRef.current) startRecording(); }, 250);
     },
   });
 

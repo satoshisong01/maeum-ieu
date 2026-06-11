@@ -66,10 +66,10 @@ export async function GET(req: Request) {
   try {
     domainStats = await prisma.$queryRawUnsafe<AssessmentRow[]>(
       `SELECT domain, ROUND(AVG(score)::numeric, 2)::float AS avg_score, COUNT(*)::int AS count
-       FROM cognitive_assessments WHERE user_id = $1 AND session_date >= CURRENT_DATE - ($2 || ' days')::interval
+       FROM cognitive_assessments WHERE user_id = $1 AND session_date >= CURRENT_DATE - ($2::int * INTERVAL '1 day')
        GROUP BY domain ORDER BY avg_score DESC`,
       userId,
-      String(days),
+      days,
     );
   } catch { /* 테이블 없을 수 있음 */ }
 

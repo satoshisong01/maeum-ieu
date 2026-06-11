@@ -32,6 +32,7 @@ git push -u origin main
 | `NEXTAUTH_URL` | **https://프로젝트도메인.vercel.app** | 배포 후 주소로 수정 가능 |
 | `NEXTAUTH_SECRET` | 랜덤 문자열 (로컬과 동일해도 됨) | `openssl rand -base64 32` |
 | `GEMINI_API_KEY` | Google AI Studio 키 | 로컬과 동일 |
+| `DATABASE_SSL_NO_VERIFY` | `1` | **⚠️ 필수(2026-06-10 이후)** — RDS 인증서가 자체서명 체인이라 미설정 시 전 DB 연결 실패(`self-signed certificate in certificate chain`). 정석 해법은 RDS CA 번들 적용 후 이 변수 제거 |
 
 - RDS 보안 그룹: Vercel IP 또는 `0.0.0.0/0`에서 5432 허용해야 배포 환경에서 접속 가능
 
