@@ -52,6 +52,19 @@ export default function MyPage() {
   const [linkingExpert, setLinkingExpert] = useState(false);
   const [expertLinkMsg, setExpertLinkMsg] = useState("");
   const [linkedExperts, setLinkedExperts] = useState<{ expertUserId: string; name: string }[]>([]);
+  const [accessLogs, setAccessLogs] = useState<{ expertName: string; action: string; at: string }[]>([]);
+  const [showAccessLogs, setShowAccessLogs] = useState(false);
+
+  async function loadAccessLogs() {
+    try {
+      const res = await fetch("/api/users/access-log");
+      if (res.ok) {
+        const d = await res.json();
+        setAccessLogs(d.logs ?? []);
+        setShowAccessLogs(true);
+      }
+    } catch { /* noop */ }
+  }
 
   async function loadLinkedExperts() {
     try {
@@ -282,6 +295,22 @@ export default function MyPage() {
                     <div key={e.expertUserId} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-xs dark:bg-zinc-800">
                       <span className="text-zinc-700 dark:text-zinc-200">🩺 {e.name}님과 연결됨</span>
                       <button type="button" onClick={() => unlinkExpert(e.expertUserId)} className="text-red-500 hover:underline">연결 해제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 열람 내역 — 내 데이터를 누가 언제 봤는지 본인이 확인(프라이버시 투명성) */}
+              <button type="button" onClick={() => (showAccessLogs ? setShowAccessLogs(false) : loadAccessLogs())} className="mt-2 text-xs text-zinc-500 underline hover:text-zinc-700 dark:hover:text-zinc-300">
+                {showAccessLogs ? "열람 내역 닫기" : "내 기록을 누가 봤는지 확인하기"}
+              </button>
+              {showAccessLogs && (
+                <div className="mt-1 space-y-1">
+                  {accessLogs.length === 0 && <p className="text-[11px] text-zinc-400">아직 열람 기록이 없어요.</p>}
+                  {accessLogs.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-[11px] dark:bg-zinc-800">
+                      <span className="text-zinc-600 dark:text-zinc-300">🩺 {l.expertName} — {l.action}</span>
+                      <span className="text-zinc-400">{l.at}</span>
                     </div>
                   ))}
                 </div>
