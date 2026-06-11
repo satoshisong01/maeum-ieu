@@ -210,9 +210,9 @@ const HALLU_STOPWORDS = new Set([
   "아니","맞다","아니라","정도","만큼","이후","이전","정말로","참","많네","많이","조금","더욱",
 ]);
 
-// 동사·형용사 활용형("오신다고"/"하셨죠"/"드시면") — 사실(명사)이 아니므로 grounding 대조 대상에서 제외.
+// 동사·형용사 활용형("오신다고"/"하셨죠"/"지혜롭게") — 사실(명사)이 아니므로 grounding 대조 대상에서 제외.
 // 이전엔 stopword 열거에 의존해 누락 활용형이 ctx 대조에 실패 → 전제 문장이 사실상 무조건 삭제됐음.
-const VERBAL_TAIL_RE = /(?:[셨았었겠])[가-힣]{0,2}$|(?:다고|라고|냐고|자고|세요|어요|아요|네요|지요|군요|는데|니까|어서|아서|면서|십니다|습니다|입니다|시는|시던|면)$/;
+const VERBAL_TAIL_RE = /(?:[셨았었겠])[가-힣]{0,2}$|(?:다고|라고|냐고|자고|세요|어요|아요|네요|지요|군요|는데|니까|어서|아서|면서|십니다|습니다|입니다|시는|시던|면|게|죠)$/;
 
 function extractSentenceNouns(sentence: string): string[] {
   const raw = sentence.match(/[가-힣]{2,}/g) || [];
@@ -249,12 +249,30 @@ function groundedInCtx(ctx: string, noun: string): boolean {
   return false;
 }
 
+// 단정형 전제(보고화법 "~다고 하셨") vs 관형형 회상("~하셨던 X") 구분 — 대조 범위 산정용.
+// marker 뒤는 AI 자신의 코멘트/질문이라 패러프레이즈 명사("통증")가 섞여 FP를 만들던 구간 (2026-06-11).
+const ASSERTION_MARKER_RE = /(?:라고|다고)\s*하셨|다녀오셨다고|셨다고도|(?:아까|지난번에|예전에|어제)\s*말씀하셨/;
+const RELCLAUSE_MARKER_RE = /(?:말씀하셨던|들으셨던|하셨던|드셨던|보셨던|가셨던)\s*[가-힣]+/;
+// 관형형 뒤 의문 표지 — "좋아하셨던 곡이 있으세요?"는 정보를 '묻는' 문장(단정 아님) → 보존
+const INTERROGATIVE_TAIL_RE = /있으세요|있으셨|있나요|있을까요|있어요|뭐였|뭔가요|어떤|무엇|누구|어디|기억나/;
+
 export function removeUngroundedClaims(aiText: string, context: string): string {
   if (!aiText) return aiText;
   const ctx = context || "";
   return aiText.replace(PREMISE_PATTERN, (sentence) => {
-    const nouns = extractSentenceNouns(sentence);
-    // 전제 문장 안의 명사 중 하나라도 context에 없으면(조사 변형 포함 재대조 후) 삭제
+    // 대조 범위 = 전제 절(claim)만. marker 뒤 AI 코멘트의 명사로 문장을 죽이지 않는다.
+    let claim = sentence;
+    const assertM = sentence.match(ASSERTION_MARKER_RE);
+    const relM = sentence.match(RELCLAUSE_MARKER_RE);
+    if (assertM && assertM.index !== undefined) {
+      claim = sentence.slice(0, assertM.index + assertM[0].length);
+    } else if (relM && relM.index !== undefined) {
+      const after = sentence.slice(relM.index + relM[0].length);
+      if (INTERROGATIVE_TAIL_RE.test(after)) return sentence;
+      claim = sentence.slice(0, relM.index + relM[0].length);
+    }
+    const nouns = extractSentenceNouns(claim);
+    // 전제 절의 명사 중 하나라도 context에 없으면(조사 변형 포함 재대조 후) 삭제
     for (const n of nouns) {
       if (!groundedInCtx(ctx, n)) {
         return "";

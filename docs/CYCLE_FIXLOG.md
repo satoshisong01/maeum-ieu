@@ -480,3 +480,13 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - 검증: vitest 106/106 (GAD-7 무결성·컷오프 +3) · safety 38/38 · tsc 0
 
 ### 남은 후보: T2 음성 실측 / 9번 양성 후속 케어 심화 / C2 정책 결정 / /expert 감사로그 노출
+
+## 2026-06-11 (낮) — 반복 L·N·P: 사이클 마라톤 발견 결함 3건 (464ea3c·3262631·진행중)
+
+- **L (464ea3c)**: 30턴 실시간 사이클 발견 2건 — ① 검진 동의 단계 대화 가로채기(딴 주제 발화 → 조용히 세션 접고 일반 대화 위임, CONSENT_TOPIC_RE) ② 동반자 이름 조사 후처리(fixFamiliarNameParticles: 지윤가→지윤이가, 받침 이름 + 한글 lookaround)
+- **N (3262631)**: 보속증 안전망(동일 발화 3턴 연속 → memory_immediate 강제, LLM 채점 중복 방지) + postprocess 빈문자열 시 제거 원문 80자 로깅 + e2e 드라이버 페르소나 잘림 fix(maxTokens 1024 + 동일발화 재생성 폴백)
+- **P**: ungrounded 필터 FP 해소 — 관측 로그로 추적한 진짜 원인 2개: ① 조사 차이("쌀이랑"↔ctx"쌀도") 부분일치 실패 → 꼬리 조사 longest-first 2단 스트리핑 후 어간 재대조 ② 동사 활용형("오신다고/하셨죠")이 명사로 추출돼 무조건 대조 실패 → VERBAL_TAIL_RE 제외. **전제 문장이 사실상 무조건 삭제되던 구조** (30턴 폴백률 10% 원인)
+- 라이브: 분석기 채점 정확도 재확인(1985년=2, 정정수용=0, 보이스피싱 거절=정상) · 응급 119 즉시 · 위기 경로(careLine→crisis=true→/mental 배너) 전 구간
+- 검증: vitest 110/110 · safety-regression 41/41 (보속증 3건 + ungrounded 2건 추가)
+
+### 다음 후보: 음성 왕복 실측(measure-voice-latency.mjs) / 9번 양성 후속 케어 심화 / C2 정책 / /expert 감사로그 노출
