@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { GoogleGenerativeAI, type Part } from "@google/generative-ai";
+import type { Part } from "@google/genai";
 import { authOptions } from "@/lib/auth";
 import { searchMemories } from "@/lib/rag";
 import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
@@ -15,7 +15,7 @@ import { ChatRequestSchema } from "@/lib/chat/validation";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
-import { getApiKey, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
@@ -275,19 +275,17 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
 
 /** 음성 → 텍스트 변환 (STT 전용) */
 async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
-  const sttModel = new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: process.env.STT_MODEL || "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
-    // STT가 음성 왕복의 56%(평균 3.7s) 병목 — 전사엔 추론 불필요해 thinking 최소화(0은 빈응답 유발 금지, 64 클램프)
-    generationConfig: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 } } as any,
-    safetySettings: COMPANION_SAFETY_SETTINGS,
-  });
-
   const parts: Part[] = [
     { text: "이 음성을 한국어로 정확하게 받아쓰기하세요. 받아쓰기한 텍스트만 출력하세요. 다른 설명이나 주석은 절대 포함하지 마세요." },
     { inlineData: { mimeType: audioMimeType, data: audioData } },
   ];
 
-  const res = await sttModel.generateContent({ contents: [{ role: "user", parts }] });
+  const res = await getGenAI().models.generateContent({
+    model: process.env.STT_MODEL || "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
+    contents: [{ role: "user", parts }],
+    // STT가 음성 왕복의 56%(평균 3.7s) 병목 — 전사엔 추론 불필요해 thinking 최소화(0은 빈응답 유발 금지, 64 클램프)
+    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+  });
   logUsage("stt", res);
   // isUserSpeech: STT 결과는 사용자 발화 — 동반자 출력용 보고체 필터(KO_REPORTIVE)를 적용하면
   // 어르신 간접화법("의사가 약 바꾸라고 한다") 문장이 전사에서 소실됨.

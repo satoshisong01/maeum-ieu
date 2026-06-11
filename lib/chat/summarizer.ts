@@ -12,8 +12,8 @@
  * 사용자 격리: 모든 쿼리 user_id 필터 강제.
  */
 
-import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
-import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { Type as SchemaType, type Schema } from "@google/genai";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
 import { prisma } from "@/lib/prisma";
 
 const SUMMARY_MODEL = "gemini-2.5-flash"; // 비용 최적화: 요약은 단순 압축 — 3.5 불필요
@@ -103,23 +103,20 @@ export async function summarizeMessages(params: {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) { console.warn("[summarizer] no GEMINI_API_KEY"); return null; }
 
-  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: SUMMARY_MODEL,
-    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 } } as any,
-    safetySettings: COMPANION_SAFETY_SETTINGS,
-  });
-
   const transcript = messages.map((m) => {
     const t = m.role === "user" ? "사용자" : "AI";
     return `[${t}] ${m.content.replace(/\s+/g, " ").slice(0, 300)}`;
   }).join("\n");
 
   try {
-    const res = await model.generateContent(`${SUMMARY_PROMPT}\n\n[대화]\n${transcript}`);
+    const res = await getGenAI().models.generateContent({
+      model: SUMMARY_MODEL,
+      contents: `${SUMMARY_PROMPT}\n\n[대화]\n${transcript}`,
+      // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
+      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+    });
     logUsage("summarizer", res);
-    const raw = res.response.text().trim();
+    const raw = (res.text ?? "").trim();
     const { summary, keyFacts } = parseLLMOutput(raw);
     if (!summary || summary.length < 20) {
       console.warn("[summarizer] empty summary, raw preview:", raw.slice(0, 200));
@@ -165,22 +162,19 @@ export async function rollupSummaries(params: {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: SUMMARY_MODEL,
-    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 } } as any,
-    safetySettings: COMPANION_SAFETY_SETTINGS,
-  });
-
   const transcript = targets.map((s, i) => {
     return `[#${i+1} ${s.periodStart.toISOString().slice(0,10)} ~ ${s.periodEnd.toISOString().slice(0,10)}]\n${s.summary}`;
   }).join("\n\n");
 
   try {
-    const res = await model.generateContent(`${META_SUMMARY_PROMPT}\n\n[하위 요약들]\n${transcript}`);
+    const res = await getGenAI().models.generateContent({
+      model: SUMMARY_MODEL,
+      contents: `${META_SUMMARY_PROMPT}\n\n[하위 요약들]\n${transcript}`,
+      // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
+      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+    });
     logUsage("summarizer-rollup", res);
-    const { summary, keyFacts } = parseLLMOutput(res.response.text().trim());
+    const { summary, keyFacts } = parseLLMOutput((res.text ?? "").trim());
     if (!summary || summary.length < 30) return null;
 
     const id = `cs_${userId.slice(0, 8)}_${parentLevel}_${Date.now()}`;

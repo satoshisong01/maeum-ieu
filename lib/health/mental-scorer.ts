@@ -4,8 +4,8 @@
  * 2차: 경량 LLM(2.5-flash, responseSchema) — 모호한 답변만
  * -1 = 분류 불가(재질문 필요). 응답 원문은 어디에도 저장하지 않음.
  */
-import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
-import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { Type as SchemaType, type Schema } from "@google/genai";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
 
 // 순서 중요 — 강한 빈도(3)부터 검사 (예: "거의 매일"이 "며칠"보다 먼저)
 const FAST_PATTERNS: Array<{ score: 0 | 1 | 2 | 3; pattern: RegExp }> = [
@@ -41,18 +41,15 @@ export async function classifyFrequencyAnswer(answer: string): Promise<number> {
   const fast = classifyFast(answer);
   if (fast >= 0) return fast;
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return -1;
+  if (!process.env.GEMINI_API_KEY) return -1;
   try {
-    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+    const res = await getGenAI().models.generateContent({
       model: "gemini-2.5-flash",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      generationConfig: { temperature: 0, maxOutputTokens: 64, responseMimeType: "application/json", responseSchema: SCHEMA, thinkingConfig: { thinkingBudget: 64 } } as any,
-      safetySettings: COMPANION_SAFETY_SETTINGS,
+      contents: `${CLASSIFY_PROMPT}\n\n답변: ${answer.slice(0, 200)}`,
+      config: { temperature: 0, maxOutputTokens: 64, responseMimeType: "application/json", responseSchema: SCHEMA, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS },
     });
-    const res = await model.generateContent(`${CLASSIFY_PROMPT}\n\n답변: ${answer.slice(0, 200)}`);
     logUsage("mental-classify", res);
-    const parsed = JSON.parse(res.response.text().trim()) as { score?: number };
+    const parsed = JSON.parse((res.text ?? "").trim()) as { score?: number };
     const s = typeof parsed.score === "number" ? Math.round(parsed.score) : -1;
     return s >= 0 && s <= 3 ? s : -1;
   } catch (e) {
