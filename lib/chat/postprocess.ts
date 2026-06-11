@@ -210,10 +210,43 @@ const HALLU_STOPWORDS = new Set([
   "아니","맞다","아니라","정도","만큼","이후","이전","정말로","참","많네","많이","조금","더욱",
 ]);
 
+// 동사·형용사 활용형("오신다고"/"하셨죠"/"드시면") — 사실(명사)이 아니므로 grounding 대조 대상에서 제외.
+// 이전엔 stopword 열거에 의존해 누락 활용형이 ctx 대조에 실패 → 전제 문장이 사실상 무조건 삭제됐음.
+const VERBAL_TAIL_RE = /(?:[셨았었겠])[가-힣]{0,2}$|(?:다고|라고|냐고|자고|세요|어요|아요|네요|지요|군요|는데|니까|어서|아서|면서|십니다|습니다|입니다|시는|시던|면)$/;
+
 function extractSentenceNouns(sentence: string): string[] {
   const raw = sentence.match(/[가-힣]{2,}/g) || [];
   const uniq = Array.from(new Set(raw));
-  return uniq.filter((w) => !HALLU_STOPWORDS.has(w) && w.length >= 2);
+  return uniq.filter((w) => !HALLU_STOPWORDS.has(w) && w.length >= 2 && !VERBAL_TAIL_RE.test(w));
+}
+
+// 어절 추출이 조사를 포함하므로("쌀이랑") ctx의 다른 조사 형태("쌀도")와 부분일치가 실패해
+// 정상 확인 문장이 통삭제되던 FP(30턴 사이클 폴백 10% 원인, 2026-06-11). 꼬리 조사를
+// 벗겨가며 어간으로 재대조. 긴 조사 우선(longest-first — 복합조사 흡수 방지 기지 패턴).
+const TAIL_PARTICLES = [
+  "이랑", "한테", "에서", "에게", "으로", "까지", "부터", "처럼", "보다", "조차", "마저", "라도", "밖에", "에는", "에도",
+  "랑", "과", "와", "은", "는", "이", "가", "을", "를", "도", "만", "의", "에", "로", "들",
+];
+const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function groundedInCtx(ctx: string, noun: string): boolean {
+  if (ctx.includes(noun)) return true;
+  let cands = [noun];
+  for (let pass = 0; pass < 2 && cands.length; pass++) {
+    const next: string[] = [];
+    for (const c of cands) {
+      for (const p of TAIL_PARTICLES) {
+        if (!c.endsWith(p) || c.length - p.length < 1) continue;
+        const stem = c.slice(0, -p.length);
+        if (stem.length >= 2 && ctx.includes(stem)) return true;
+        // 1글자 어간(쌀/물/밥)은 한글 어두 위치에서만 인정 — "물"이 "물건"·"보리쌀" 내부에 오매칭 방지
+        if (stem.length === 1 && new RegExp(`(?<![가-힣])${escRe(stem)}`).test(ctx)) return true;
+        next.push(stem);
+      }
+    }
+    cands = next;
+  }
+  return false;
 }
 
 export function removeUngroundedClaims(aiText: string, context: string): string {
@@ -221,9 +254,9 @@ export function removeUngroundedClaims(aiText: string, context: string): string 
   const ctx = context || "";
   return aiText.replace(PREMISE_PATTERN, (sentence) => {
     const nouns = extractSentenceNouns(sentence);
-    // 전제 문장 안의 명사 중 하나라도 context에 없으면 삭제
+    // 전제 문장 안의 명사 중 하나라도 context에 없으면(조사 변형 포함 재대조 후) 삭제
     for (const n of nouns) {
-      if (!ctx.includes(n)) {
+      if (!groundedInCtx(ctx, n)) {
         return "";
       }
     }
