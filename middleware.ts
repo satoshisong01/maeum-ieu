@@ -5,5 +5,5 @@ export default withAuth({
 });
 
 export const config = {
-  matcher: ["/chat", "/dashboard", "/mypage", "/expert"],
+  matcher: ["/chat", "/dashboard", "/mypage", "/expert", "/mental"],
 };

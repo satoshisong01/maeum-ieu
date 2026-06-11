@@ -66,6 +66,25 @@ async function main() {
       )`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_cs_user_level ON conversation_summary(user_id, level, is_active, period_end DESC)`);
 
+    // T3 정신건강 검진 (스키마는 scripts/ops-create-mental-tables.ts와 동일해야 함)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mental_session (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        scale TEXT NOT NULL DEFAULT 'PHQ9', status TEXT NOT NULL DEFAULT 'active',
+        current_item INTEGER NOT NULL DEFAULT 0, retry_used BOOLEAN NOT NULL DEFAULT false,
+        total INTEGER, severity TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ms_user_status ON mental_session(user_id, status, updated_at DESC)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mental_assessments (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES mental_session(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL, item_no INTEGER NOT NULL, score INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT mental_assessments_session_item_key UNIQUE (session_id, item_no)
+      )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ma_user ON mental_assessments(user_id, created_at DESC)`);
+
     console.log("✓ message_embeddings + cognitive_assessments + conversation_summary 복구 완료");
     const emb = await client.query(`SELECT COUNT(*) FROM message_embeddings`);
     const cog = await client.query(`SELECT COUNT(*) FROM cognitive_assessments`);
