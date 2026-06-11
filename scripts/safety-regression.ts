@@ -151,5 +151,40 @@ console.log("\n[relation-contradiction] 가족 순서 모순 검출 (아드님 �
   check("순서표현 없으면 모순경고 없음", !w2.some((w) => w.startsWith("relation_mismatch")), JSON.stringify(w2));
 }
 
+// ── #12: 보속증 안전망 — 동일 발화 3턴 연속 반복 → memory_immediate 강제 마킹 ──
+console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
+{
+  const { injectPerseverationCheck } = require("../lib/chat/cognitive-analyzer");
+  const empty = { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
+  const hist = (lines: string[]) => lines.join("\n");
+
+  // 3턴 연속 동일(잘림 변형 포함) → 마킹
+  const r1 = injectPerseverationCheck(empty, "우리 어렸을 적엔 말이지, 밤에는", hist([
+    "[방금] 사용자: 우리 어렸을 적엔 말이지, 밤에",
+    "[방금] AI: 어떤 이야기인지 궁금해요!",
+    "[방금] 사용자: 우리 어렸을 적엔 말이지, 밤에는",
+    "[방금] AI: 천천히 들려주세요!",
+  ]));
+  check("3연속 반복 → memory_immediate 마킹", r1.isAnomaly && r1.cognitiveChecks.some((c: any) => c.domain === "memory_immediate" && c.score >= 1));
+
+  // 2턴 반복만으로는 미발동 (오탐 방지)
+  const r2 = injectPerseverationCheck(empty, "오늘 날씨 참 좋네", hist([
+    "[방금] 사용자: 오늘 날씨 참 좋네",
+    "[방금] AI: 산책 어떠세요?",
+    "[방금] 사용자: 텃밭에 물 줘야겠어",
+    "[방금] AI: 좋은 생각이에요!",
+  ]));
+  check("직전 1회만 반복 → 미발동", !r2.isAnomaly);
+
+  // 짧은 맞장구 반복은 제외 (응/그래)
+  const r3 = injectPerseverationCheck(empty, "그래그래", hist([
+    "[방금] 사용자: 그래그래",
+    "[방금] AI: 네!",
+    "[방금] 사용자: 그래그래",
+    "[방금] AI: 좋아요!",
+  ]));
+  check("짧은 맞장구 반복 → 미발동", !r3.isAnomaly);
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
