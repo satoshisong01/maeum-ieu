@@ -114,7 +114,7 @@ export default function ExpertPage() {
             )}
             <div className="grid gap-3">
               {patients.map((p) => (
-                <div key={p.id} className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                <Link key={p.id} href={`/expert/patients/${p.id}`} className="block rounded-2xl border border-zinc-200 bg-white p-4 transition hover:border-teal-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-teal-600">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                       <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.name}</span>
@@ -129,7 +129,7 @@ export default function ExpertPage() {
                   {(p.trend === "급성악화" || p.trend === "악화") && p.trendText && (
                     <p className="mt-2 rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:bg-orange-900/30 dark:text-orange-200">{p.trendText}</p>
                   )}
-                </div>
+                </Link>
               ))}
             </div>
           </>
