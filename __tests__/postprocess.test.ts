@@ -165,6 +165,18 @@ describe("removeUngroundedClaims", () => {
     );
     expect(out).toBe("오늘은 뭐 하세요?");
   });
+
+  it("marker 뒤 AI 코멘트의 패러프레이즈 명사로 문장을 죽이지 않는다", () => {
+    // '통증'은 AI의 말 — 전제 절('병원은 안 가셨다고 하셨')의 명사만 대조
+    const text = "병원은 안 가셨다고 하셨는데, 통증은 좀 괜찮으신지 걱정되네요.";
+    const ctx = "사용자: 병원 안 가고 집에서 찜질 좀 했어";
+    expect(removeUngroundedClaims(text, ctx)).toBe(text);
+  });
+
+  it("관형형 회상 + 의문형은 정보를 묻는 문장 — 보존", () => {
+    const text = "혹시 그분의 노래 중에 가장 좋아하셨던 곡이 있으세요?";
+    expect(removeUngroundedClaims(text, "사용자: 트로트 즐겨 들어")).toBe(text);
+  });
 });
 
 describe("normalizeHonorific", () => {
