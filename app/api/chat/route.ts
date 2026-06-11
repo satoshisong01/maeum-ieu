@@ -480,6 +480,15 @@ async function handleAudioMessage(params: {
     transcription = correction.corrected;
   }
 
+  // 1.49단계: T3 마음 건강 체크 — 음성 모드도 지원 (텍스트 핸들러와 동일: 응급 이후·모더레이션 이전)
+  const mentalVoice = await handleMentalFlow({ userId, userContent: transcription, honorific, companionName });
+  if (mentalVoice) {
+    if (conversationId) {
+      await saveMessages({ conversationId, userId, userContent: transcription || "(음성 메시지)", assistantContent: mentalVoice.reply, skipAssistantEmbedding: true });
+    }
+    return NextResponse.json({ text: mentalVoice.reply, role: "assistant", transcription, mental: mentalVoice.status });
+  }
+
   // 1.5단계: 부적절 발언 감지 + RAG 검색 병렬 실행.
   //   RAG는 transcription(현재 발화) 기준 — 이전엔 STT 전의 직전 턴 텍스트로 검색해 무관한 메모리가 주입됐음.
   const [moderated, memories] = await Promise.all([

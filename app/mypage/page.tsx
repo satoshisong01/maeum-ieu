@@ -51,6 +51,31 @@ export default function MyPage() {
   const [expertCodeInput, setExpertCodeInput] = useState("");
   const [linkingExpert, setLinkingExpert] = useState(false);
   const [expertLinkMsg, setExpertLinkMsg] = useState("");
+  const [linkedExperts, setLinkedExperts] = useState<{ expertUserId: string; name: string }[]>([]);
+
+  async function loadLinkedExperts() {
+    try {
+      const res = await fetch("/api/users/linked-experts");
+      if (res.ok) {
+        const d = await res.json();
+        setLinkedExperts(d.experts ?? []);
+      }
+    } catch { /* noop */ }
+  }
+
+  async function unlinkExpert(expertUserId: string) {
+    try {
+      const res = await fetch("/api/users/linked-experts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expertUserId }),
+      });
+      if (res.ok) {
+        setExpertLinkMsg("연결을 해제했어요.");
+        loadLinkedExperts();
+      }
+    } catch { /* noop */ }
+  }
 
   async function linkExpert() {
     if (!expertCodeInput.trim()) return;
@@ -66,6 +91,7 @@ export default function MyPage() {
       if (res.ok) {
         setExpertLinkMsg(`✓ ${data.expertName}님과 연결되었어요.`);
         setExpertCodeInput("");
+        loadLinkedExperts();
       } else {
         setExpertLinkMsg(data.error ?? "연결에 실패했어요.");
       }
@@ -81,6 +107,7 @@ export default function MyPage() {
       return;
     }
     if (status === "authenticated") {
+      loadLinkedExperts();
       fetch("/api/users/profile")
         .then((r) => r.json())
         .then((data: Profile) => {
@@ -249,6 +276,16 @@ export default function MyPage() {
               </div>
               {expertLinkMsg && <p className="mt-1 text-xs text-teal-700 dark:text-teal-300">{expertLinkMsg}</p>}
               <p className="mt-1 text-[11px] text-zinc-400">연결하면 담당 전문가가 인지 등급·추세 요약만 볼 수 있어요 (대화 내용은 공개되지 않아요).</p>
+              {linkedExperts.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {linkedExperts.map((e) => (
+                    <div key={e.expertUserId} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-xs dark:bg-zinc-800">
+                      <span className="text-zinc-700 dark:text-zinc-200">🩺 {e.name}님과 연결됨</span>
+                      <button type="button" onClick={() => unlinkExpert(e.expertUserId)} className="text-red-500 hover:underline">연결 해제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 이름 */}

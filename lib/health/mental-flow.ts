@@ -15,6 +15,8 @@ import { PHQ9_ITEMS, ANSWER_GUIDE, interpretPHQ9, CRISIS_GUIDE, NON_DIAGNOSTIC_N
 import { classifyFrequencyAnswer } from "@/lib/health/mental-scorer";
 
 const TRIGGER_RE = /마음\s*(?:건강)?\s*(?:체크|검진|검사)|우울\s*(?:검사|체크|테스트|검진)|정신\s*건강\s*(?:체크|검사|검진)/;
+// 과거 경험 서술("병원에서 우울 검사 받았어")은 시작 의도가 아님 — 오발동 가드
+const TRIGGER_PAST_RE = /받았|했었|했어|했지|했거든|다녀왔|다녀온|끝났|해\s*봤/; // \b는 한글에 무력 — 사용 금지(기지 버그 클래스)
 const ESCAPE_RE = /그만\s*(?:할|하|둬|두)|안\s*할(?:래|게)|나중에\s*(?:할|하)|중단|취소|스톱|관두/;
 const AFFIRM_RE = /응|어\s|그래|네|예\b|좋아|좋지|시작|해\s*보자|하자|할래|해\s*줘|그러자|오냐|궁금/;
 
@@ -67,9 +69,9 @@ export async function handleMentalFlow(params: {
   const { userId, userContent, honorific, companionName } = params;
   const session = await getActiveSession(userId);
 
-  // ── 세션 없음: 트리거 발화면 시작(동의 단계)
+  // ── 세션 없음: 트리거 발화면 시작(동의 단계) — 과거 경험 서술은 제외
   if (!session) {
-    if (!TRIGGER_RE.test(userContent)) return null;
+    if (!TRIGGER_RE.test(userContent) || TRIGGER_PAST_RE.test(userContent)) return null;
     const id = randomUUID();
     await prisma.$executeRawUnsafe(
       `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, 'PHQ9', 'active', 0)`, id, userId);
