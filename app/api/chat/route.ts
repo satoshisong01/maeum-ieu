@@ -26,6 +26,7 @@ import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-c
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
+import { handleMentalFlow } from "@/lib/health/mental-flow";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -696,6 +697,17 @@ async function handleTextMessage(params: {
       result: emergency.result, userContent,
       conversationId, userId, honorific, companionName,
     });
+  }
+
+  // T3 마음 건강 체크(PHQ-9) — 응급(L3) 이후·모더레이션 이전:
+  //   9번 문항 답변("죽고 싶다는 생각이 며칠…")이 self_harm 모더레이션에 가로채여 검진이 끊기지 않도록.
+  //   검진 턴은 LLM 우회 즉답(JSON) — 정형 문항이라 RAG 임베딩도 제외.
+  const mental = await handleMentalFlow({ userId, userContent, honorific, companionName });
+  if (mental) {
+    if (conversationId) {
+      await saveMessages({ conversationId, userId, userContent, assistantContent: mental.reply, skipAssistantEmbedding: true });
+    }
+    return NextResponse.json({ text: mental.reply, role: "assistant", mental: mental.status });
   }
 
   // 부적절 발언 감지 시 LLM 우회 + 단계적 거절

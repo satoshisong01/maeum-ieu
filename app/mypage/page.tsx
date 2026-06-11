@@ -221,6 +221,11 @@ export default function MyPage() {
               )}
             </div>
 
+            {/* 마음 건강 체크 — T3 본인용 결과 */}
+            <Link href="/mental" className="block rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-center text-sm font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+              🧠 마음 건강 체크 결과 보기 →
+            </Link>
+
             {/* 전문가 연결 — 환자 본인이 전문가 코드를 입력해 연결(=본인 동의). 채점·요약만 공유, 대화 원문 비공개 */}
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">전문가 연결 (담당 의사·관리사 코드)</label>
