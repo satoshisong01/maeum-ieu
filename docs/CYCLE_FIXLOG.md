@@ -511,3 +511,12 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - 회상 게임·끝말잇기(사과→과자→'자' 요청 정확)·등록 단어 노출 보존 전부 PASS
 
 ### 남은 후보: C2 정책(사용자 결정 대기) / T1 검사 이력 무결성 / 스트리밍 STT / @google/genai 마이그레이션
+
+## 2026-06-12 — SDK 마이그레이션: @google/generative-ai → @google/genai (7b4d0be)
+
+- 프로덕션 6파일 전체 전환: llm.ts(싱글톤+구 SDK 모양 어댑터로 스트리밍 안전망 무변경), 분석기/요약기/추출기/검진채점기/STT는 ai.models.generateContent 직접 호출
+- thinkingConfig 정식 지원 — `as any` 캐스트 전부 제거. extractText는 신·구 shape 병행(스크립트 호환)
+- 부수 개선: companion usage 로그 model=?→실제 모델명 (스트림 modelVersion 전달)
+- 검증 풀코스: tsc 0 · vitest 112/112 · safety 45/45 · 라이브 스모크(기억 연속성·probe 승급) · 30턴 사이클 클린 · 음성 실측 5/5 전사 정확(지연 동등 6.4s) · next build PASS
+- a8c2ce1: generated prisma client 동기화(1882b89 미커밋분)
+- 다음 단계(별도): explicit caching 활성화 — 시스템프롬프트+질문풀 캐시 객체 등록, 트래픽 본격화 시점에 저장료 대비 절감 실측 후 결정
