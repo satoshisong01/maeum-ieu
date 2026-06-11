@@ -19,7 +19,7 @@ import { notifyGuardian } from "@/lib/chat/emergency-notify";
 const DEBOUNCE_MS = 72 * 60 * 60 * 1000; // 72시간
 const CATEGORY = "cognitive_decline";
 
-async function fetchDomainStats(userId: string, fromDaysAgo: number, toDaysAgo: number): Promise<DomainStat[]> {
+export async function fetchDomainStats(userId: string, fromDaysAgo: number, toDaysAgo: number): Promise<DomainStat[]> {
   // fromDaysAgo(과거) ~ toDaysAgo(최근) 구간의 영역별 평균/건수. 예: (36, 7) = 이전 30일, (6, 0) = 최근 7일.
   return prisma.$queryRawUnsafe<DomainStat[]>(
     `SELECT AVG(score)::float AS avg_score, COUNT(*)::int AS count
