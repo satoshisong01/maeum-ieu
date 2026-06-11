@@ -1,5 +1,5 @@
 // STT 신뢰도 평가 — 통과/실패 케이스 검증
-import { evaluateSttConfidence, buildClarificationReply } from "../lib/chat/stt-confidence";
+import { evaluateSttConfidence, buildClarificationReply } from "../../lib/chat/stt-confidence";
 
 interface Case { text: string; pass: boolean; label: string; durationMs?: number }
 

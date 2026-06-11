@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { buildSystemPrompt } from "../lib/chat/prompt";
-import { prisma } from "../lib/prisma";
+import { buildSystemPrompt } from "../../lib/chat/prompt";
+import { prisma } from "../../lib/prisma";
 
 async function main() {
   const user = await prisma.user.findFirst({ where: { email: "abc@abc.com" } });

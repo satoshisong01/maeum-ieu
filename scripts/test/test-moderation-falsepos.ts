@@ -1,5 +1,5 @@
 // moderation 정규식 false positive 회귀 테스트
-import { detectInappropriate } from "../lib/chat/moderation";
+import { detectInappropriate } from "../../lib/chat/moderation";
 
 interface Case { text: string; expect: "ok" | "sexual" | "profanity" | "self_harm"; label: string }
 

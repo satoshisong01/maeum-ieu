@@ -1,5 +1,5 @@
 // 사투리 → 표준어 정규화 검증
-import { normalizeDialect, detectDialectRegions } from "../lib/chat/dialect-normalize";
+import { normalizeDialect, detectDialectRegions } from "../../lib/chat/dialect-normalize";
 
 interface Case { input: string; expected: string; label: string }
 

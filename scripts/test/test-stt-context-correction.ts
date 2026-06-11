@@ -1,5 +1,5 @@
 // 맥락 기반 STT 보정 — 직전 AI 발화 도메인에 맞춰 어휘 교정
-import { correctTranscriptionByContext } from "../lib/chat/stt-context-correction";
+import { correctTranscriptionByContext } from "../../lib/chat/stt-context-correction";
 
 interface Case {
   ai: string;       // 직전 AI 발화

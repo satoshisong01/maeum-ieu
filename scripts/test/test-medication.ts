@@ -1,5 +1,5 @@
 // 복약 알림 시간 매칭 + 멘트 빌더 + 입력 정규화 검증
-import { findDueSlot, slotToTodayDate, buildMedicationReminder, normalizeTimes, TOLERANCE_MS } from "../lib/chat/medication";
+import { findDueSlot, slotToTodayDate, buildMedicationReminder, normalizeTimes, TOLERANCE_MS } from "../../lib/chat/medication";
 
 // 헬퍼: KST 시각으로 Date 만들기
 function kstDate(year: number, month: number, day: number, hour: number, minute: number): Date {

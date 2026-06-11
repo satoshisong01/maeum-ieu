@@ -12,7 +12,7 @@
  * 출력: 콘솔 표 + docs/리포트_screening_round<round>.md
  */
 import "dotenv/config";
-import { analyzeCognitive } from "../lib/chat/cognitive-analyzer";
+import { analyzeCognitive } from "../../lib/chat/cognitive-analyzer";
 import * as fs from "fs";
 
 const ENV = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]
