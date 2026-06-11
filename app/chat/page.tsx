@@ -1125,6 +1125,15 @@ export default function ChatPage() {
           ) : textOnly ? (
             /* 텍스트 전용 모드 */
             <div className="space-y-2">
+              {/* T3 마음 건강 체크 진입 — 발화 트리거의 발견성 보완 (검진 중에는 숨김 불필요: 트리거 재발화는 무해) */}
+              <button
+                type="button"
+                onClick={() => sendMessage("마음 건강 체크 시작할래")}
+                disabled={loading}
+                className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
+              >
+                🧠 마음 건강 체크
+              </button>
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
                 <input
                   type="text"
