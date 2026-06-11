@@ -3,8 +3,8 @@
  * 메인 응답과 완전히 분리 — googleSearch 없이 JSON 전용 모델 사용.
  */
 
-import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-ai";
-import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { Type as SchemaType, type Schema } from "@google/genai";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
@@ -472,21 +472,24 @@ const ANALYZER_PRIMARY_MODEL = "gemini-3.5-flash";
 // 2단 라우팅 1차 모델 — 수다 턴(인지 질문 없는 턴)은 2.5로 1차 채점, 의심 시에만 3.5 재채점.
 const ANALYZER_LITE_MODEL = "gemini-2.5-flash";
 
-function buildAnalyzerModel(apiKey: string, modelName: string) {
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: modelName,
-    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking이 maxOutputTokens를 먹어
-    // JSON이 잘림(요약기에서 잡은 동일 버그 클래스). 0은 채점 품질 저하로 금지.
-    generationConfig: {
-      temperature: 0, // 채점 일관성 — 같은 발화는 같은 점수(비결정성 최소화)
-      maxOutputTokens: 2048,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
-      thinkingConfig: { thinkingBudget: 1024 },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
-    safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
-  });
+function buildAnalyzerModel(_apiKey: string, modelName: string) {
+  // 신 SDK(@google/genai) — 클라이언트 싱글톤에 모델명·config를 호출 시 전달하는 어댑터.
+  return {
+    generateContent: (promptText: string) => getGenAI().models.generateContent({
+      model: modelName,
+      contents: promptText,
+      // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking이 maxOutputTokens를 먹어
+      // JSON이 잘림(요약기에서 잡은 동일 버그 클래스). 0은 채점 품질 저하로 금지.
+      config: {
+        temperature: 0, // 채점 일관성 — 같은 발화는 같은 점수(비결정성 최소화)
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
+        thinkingConfig: { thinkingBudget: 1024 },
+        safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
+      },
+    }),
+  };
 }
 
 // transient 장애(503/429/네트워크) 시 재시도 — Gemini 일시 과부하로 인지 평가가 통째 유실되는 것 방지.
@@ -554,7 +557,7 @@ export async function analyzeCognitive(params: {
     if (twoStage && !isProbeTurn) {
       const liteRes = await generateWithRetry(buildAnalyzerModel(apiKey, ANALYZER_LITE_MODEL), promptText);
       logUsage("analyzer-lite", liteRes);
-      const liteResult = parseResult(liteRes.response.text().trim());
+      const liteResult = parseResult((liteRes.text ?? "").trim());
       const suspicious = liteResult.isAnomaly || liteResult.cognitiveChecks.some((c) => c.score >= 1);
       if (suspicious) {
         // 재채점 실패(transient 소진 등) 시 lite 결과로 폴백 — 이미 이상 소견이 손에 있는데
@@ -562,7 +565,7 @@ export async function analyzeCognitive(params: {
         try {
           const res = await generateWithRetry(buildAnalyzerModel(apiKey, primaryModelName), promptText);
           logUsage("analyzer", res);
-          raw = parseResult(res.response.text().trim());
+          raw = parseResult((res.text ?? "").trim());
         } catch (escalationErr) {
           console.warn("[cognitive-analyzer] escalation failed, falling back to lite result:", (escalationErr as Error).message);
           raw = liteResult;
@@ -573,7 +576,7 @@ export async function analyzeCognitive(params: {
     } else {
       const res = await generateWithRetry(buildAnalyzerModel(apiKey, primaryModelName), promptText);
       logUsage("analyzer", res);
-      raw = parseResult(res.response.text().trim());
+      raw = parseResult((res.text ?? "").trim());
     }
 
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);

@@ -9,8 +9,7 @@
  * 출력: 정규식 결과와 동일한 JSON 스키마. 환각 위험 막기 위해 결과 검증 후 upsert.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
 import { upsertFamilyMember, upsertFact, upsertProfile, type FamilyRelation } from "./profile";
 import { NAME_STOPWORDS_BASE, ABSTRACT_NOUN_BLOCKLIST } from "./name-vocab";
 
@@ -84,15 +83,14 @@ export async function extractWithLLM(params: {
   if (!apiKey) return result;
 
   try {
-    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      model: "gemini-2.5-flash", // 비용 최적화: 단순 정보추출 — 3.5 불필요
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json" },
-      safetySettings: COMPANION_SAFETY_SETTINGS,
-    });
     const prompt = LLM_PROMPT.replace("{USER_MESSAGE}", params.userMessage.slice(0, 500));
-    const res = await model.generateContent(prompt);
+    const res = await getGenAI().models.generateContent({
+      model: "gemini-2.5-flash", // 비용 최적화: 단순 정보추출 — 3.5 불필요
+      contents: prompt,
+      config: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json", safetySettings: COMPANION_SAFETY_SETTINGS },
+    });
     logUsage("profile", res);
-    const raw = res.response.text().trim();
+    const raw = (res.text ?? "").trim();
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
     if (start === -1 || end === -1) return result;

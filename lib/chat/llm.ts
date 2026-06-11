@@ -1,8 +1,11 @@
 /**
  * Gemini 모델·응답 추출 유틸 — 대화 LLM(getTextModel) + 응답 텍스트 정제(extractText/stripReasoningTrace).
- * route.ts에서 분리(2026-06-05 리팩토링). 동작 변경 없음.
+ * route.ts에서 분리(2026-06-05 리팩토링).
+ * 2026-06-12: deprecated @google/generative-ai → @google/genai 마이그레이션.
+ *   호출부 호환을 위해 getTextModel은 구 SDK 모양({generateContent, generateContentStream→{stream,response}})의
+ *   어댑터를 반환 — 스트리밍 문장 안전망(route.ts)이 무변경으로 동작.
  */
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type GenerateContentResponse } from "@google/genai";
 import { nameSubj } from "@/lib/chat/korean-particle";
 import { salvageJsonLeak } from "@/lib/chat/sanitize";
 
@@ -10,6 +13,20 @@ export function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
   return key;
+}
+
+// 신 SDK 클라이언트 싱글톤 — 모델명은 호출 시점에 전달하는 구조라 하나면 충분.
+let _genAI: GoogleGenAI | null = null;
+export function getGenAI(): GoogleGenAI {
+  if (!_genAI) _genAI = new GoogleGenAI({ apiKey: getApiKey() });
+  return _genAI;
+}
+
+/** 구 SDK 호출부 호환 — string | Content[] | {contents} 모두 신 SDK contents로 정규화 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeContents(p: any): any {
+  if (typeof p === "string" || Array.isArray(p)) return p;
+  return p?.contents ?? p;
 }
 
 /**
@@ -49,22 +66,47 @@ export function logUsage(label: string, res: any): void {
 export function getTextModel(systemInstruction: string, enableSearch: boolean = true) {
   // googleSearch는 실시간 정보(info_request: 뉴스·날씨·사실조회)에만 필요.
   // 일상 대화·공감·인지 응답엔 불필요하므로 그 턴엔 비활성해 지연·검색 비용 절감.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tools: any = enableSearch ? [{ googleSearch: {} }] : undefined;
+  const tools = enableSearch ? [{ googleSearch: {} }] : undefined;
   // gemini-3.5-flash는 thinking 모델 — 기본(무제한) thinking 예산이면 출력 전 ~10초 추론(응답 지연 주범).
   //   thinkingBudget을 낮은 양수로 제한해 추론시간 단축(첫 응답 빨라짐). 0은 빈응답 유발이라 금지(최소 64로 클램프).
   //   responseDelay 측정으로 도입(2026-06-05). COMPANION_THINKING_BUDGET env로 A/B 튜닝 가능(2026-06-11).
   const parsed = parseInt(process.env.COMPANION_THINKING_BUDGET || "512", 10);
   const THINKING_BUDGET = Number.isFinite(parsed) && parsed >= 64 ? parsed : 512;
-  return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
-    model: "gemini-2.5-flash",
+  const ai = getGenAI();
+  // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
+  const model = "gemini-2.5-flash";
+  const config = {
     systemInstruction,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: THINKING_BUDGET } } as any,
+    temperature: 0.7,
+    maxOutputTokens: 2048,
+    thinkingConfig: { thinkingBudget: THINKING_BUDGET },
     safetySettings: COMPANION_SAFETY_SETTINGS,
     tools,
-  });
+  };
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateContent: (p: any) => ai.models.generateContent({ model, contents: normalizeContents(p), config }),
+    // 구 SDK 모양({stream, response}) 어댑터 — route.ts 스트리밍 문장 안전망이 그대로 동작.
+    // chunk.text는 신 SDK에서 getter 프로퍼티 — 함수 모양으로 감싸 호출부 호환 유지.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateContentStream: async (p: any) => {
+      const gen = await ai.models.generateContentStream({ model, contents: normalizeContents(p), config });
+      let last: GenerateContentResponse | undefined;
+      const stream = (async function* () {
+        for await (const chunk of gen) {
+          last = chunk;
+          let t = "";
+          try { t = typeof chunk.text === "string" ? chunk.text : ""; } catch { t = ""; }
+          yield { text: () => t };
+        }
+      })();
+      return {
+        stream,
+        // 구 SDK의 집계 response 대체 — 스트림 소진 후 접근되므로 마지막 청크의 usage가 잡힘
+        get response() { return { usageMetadata: last?.usageMetadata, modelVersion: last?.modelVersion }; },
+      };
+    },
+  };
 }
 
 /**
@@ -105,8 +147,9 @@ export async function generateWithFallback(
 export function extractText(res: any, opts?: { isUserSpeech?: boolean }): string {
   let raw = "";
   // gemini-3.x는 사고(thinking) part를 `thought:true`로 표시 — 그 part는 최종 응답에서 제외.
-  // (text()는 thought part까지 합쳐 추론·도구코드가 응답에 누출되므로 part 단위로 직접 추출)
-  const parts = res?.response?.candidates?.[0]?.content?.parts;
+  // (text 접근자는 SDK 버전에 따라 thought part가 섞일 수 있어 part 단위로 직접 추출)
+  // 신 SDK는 candidates가 응답 최상위, 구 SDK는 res.response 아래 — 둘 다 지원.
+  const parts = res?.candidates?.[0]?.content?.parts ?? res?.response?.candidates?.[0]?.content?.parts;
   if (Array.isArray(parts)) {
     raw = parts
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -115,7 +158,8 @@ export function extractText(res: any, opts?: { isUserSpeech?: boolean }): string
       .map((p: any) => p.text)
       .join("");
   }
-  if (!raw && typeof res?.response?.text === "function") raw = res.response.text();
+  if (!raw && typeof res?.text === "string") raw = res.text; // 신 SDK getter
+  if (!raw && typeof res?.response?.text === "function") raw = res.response.text(); // 구 SDK 함수
   return stripReasoningTrace(salvageJsonLeak(raw), { isUserSpeech: opts?.isUserSpeech });
 }
 
