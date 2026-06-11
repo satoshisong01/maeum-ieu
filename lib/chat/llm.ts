@@ -101,7 +101,7 @@ export async function generateWithFallback(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function extractText(res: any): string {
+export function extractText(res: any, opts?: { isUserSpeech?: boolean }): string {
   let raw = "";
   // gemini-3.x는 사고(thinking) part를 `thought:true`로 표시 — 그 part는 최종 응답에서 제외.
   // (text()는 thought part까지 합쳐 추론·도구코드가 응답에 누출되므로 part 단위로 직접 추출)
@@ -115,7 +115,7 @@ export function extractText(res: any): string {
       .join("");
   }
   if (!raw && typeof res?.response?.text === "function") raw = res.response.text();
-  return stripReasoningTrace(salvageJsonLeak(raw));
+  return stripReasoningTrace(salvageJsonLeak(raw), { isUserSpeech: opts?.isUserSpeech });
 }
 
 /**
@@ -124,7 +124,7 @@ export function extractText(res: any): string {
  * 전략: 응답을 문장/줄 단위로 쪼개고 "한글 비율 40% 미만"인 선두 세그먼트는 reasoning으로 간주해 버린다.
  *       첫 한글 비율 40% 이상 세그먼트부터를 최종 응답으로 사용.
  */
-export function stripReasoningTrace(text: string): string {
+export function stripReasoningTrace(text: string, opts?: { isUserSpeech?: boolean }): string {
   if (!text) return text;
   let t = text.trim();
   if (!t) return t;
@@ -132,6 +132,11 @@ export function stripReasoningTrace(text: string): string {
   // 1) 명시적 reasoning 라벨 라인 제거 (선두)
   t = t.replace(/^\s*(?:```(?:thinking|thought)?\s*)?(?:thought|thinking|reasoning|analysis|plan|scratchpad)\s*:?\s*/i, "");
   t = t.replace(/^\s*\*{2,}\s*(?:thought|thinking|reasoning|analysis)[^*\n]*\*{2,}\s*/gi, "");
+  // 1.2) 한국어 reasoning 라벨 — "(생각) …" / "생각: …" 형태. 사이클 검증에서 2.5-flash가
+  //   한국어로 사고 트레이스를 누출한 케이스 발견(2026-06-10): "(생각) 할머니께서 …다고 한다."
+  //   괄호로 감싸졌거나 콜론이 따라올 때만 라벨로 간주 — "생각해보니…" 같은 정상 발화는 보존.
+  t = t.replace(/^\s*[([（]\s*(?:생각|사고|추론|계획|혼잣말)\s*[)\]）]\s*/, "");
+  t = t.replace(/^\s*(?:생각|사고|추론|계획)\s*[:：]\s*/, "");
 
   // 1.5) 도구코드(googleSearch 등)가 포함된 코드블록은 통째로 제거
   t = t.replace(/```[\s\S]*?```/g, (block) =>
@@ -149,9 +154,16 @@ export function stripReasoningTrace(text: string): string {
   };
 
   // 추론·도구흔적으로 보이는 세그먼트 판별 (위치 무관: 뒤/중간 누출도 제거)
+  // "~다고 한다."로 끝나는 평서 보고체 = 한국어 사고 트레이스(동반자는 해요체만 사용) — 매우 좁게 매칭해 정상 발화 보존.
+  const KO_REPORTIVE_RE = /(?:다고|라고)\s*(?:한다|말한다)\s*[.!?…]*\s*$/;
   const REASONING_RE = /print\(|google_search|tool_code|tool_outputs|\bsearch\(|final polish|let'?s check|let me (check|see)|no time labels?|no hallucination|formatting\s*:|thought\s*:|thinking\s*:|the user (is|wants|said|asked|means|needs)|i should|i need to|here'?s (the|my)|draft\s*:|revision\s*:|\b(user|ai|assistant)\s*:/i;
+  // KO_REPORTIVE는 동반자(AI) 출력 전용 — STT 사용자 발화에는 적용 금지:
+  //   어르신 간접화법("의사가 약 바꾸라고 한다")이 정상 발화인데 삭제되면
+  //   전사·DB·인지분석 입력이 조용히 훼손됨(적대적 리뷰 확인, 2026-06-11).
+  const koReportiveApplies = !opts?.isUserSpeech;
   const looksLikeReasoning = (s: string) =>
     REASONING_RE.test(s) ||
+    (koReportiveApplies && KO_REPORTIVE_RE.test(s)) ||
     // 한글 비율<0.3 + 영단어 4개 이상 → 영문 추론 단락으로 간주
     (hangulRatio(s) < 0.3 && (s.match(/[a-zA-Z]+/g) || []).length >= 4);
 

@@ -13,7 +13,9 @@
     "audit:user-scope": "npx tsx scripts/audit-user-scope.ts",
     "audit:prompt-leak": "npx tsx scripts/check-prompt-leak.ts",
     "audit:prompt-leak:ci": "npx tsx scripts/check-prompt-leak.ts --regex-only",
-    "ci:safety": "npm run audit:prompt-leak:ci && npx tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ci:safety": "npm run audit:prompt-leak:ci && npx tsc --noEmit && vitest run",
     "ci:safety:all": "npm run audit:user-scope; npm run audit:prompt-leak:ci && npx tsc --noEmit"
   },
   "dependencies": {

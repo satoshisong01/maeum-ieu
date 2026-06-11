@@ -354,10 +354,10 @@ export default function MyPage() {
             />
             <input
               type="password"
-              placeholder="새 비밀번호 (6자 이상)"
+              placeholder="새 비밀번호 (8자 이상)"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              minLength={6}
+              minLength={8}
               className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <input
@@ -365,7 +365,7 @@ export default function MyPage() {
               placeholder="새 비밀번호 확인"
               value={newPasswordConfirm}
               onChange={(e) => setNewPasswordConfirm(e.target.value)}
-              minLength={6}
+              minLength={8}
               className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
 

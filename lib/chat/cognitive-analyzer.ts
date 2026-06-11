@@ -257,9 +257,9 @@ const COGNITIVE_QUESTION_PATTERNS: Array<{ domain: string; pattern: RegExp }> = 
   // 주의력/계산
   { domain: "attention_calculation", pattern: /\d+\s*에서\s*\d+\s*(?:을|를)?\s*(?:빼|더|곱|나눠|나누)/ },
   { domain: "attention_calculation", pattern: /100\s*에서\s*7\s*씩|삼천리강산.*거꾸로|만원\s*내(?:면|고).*거스름/ },
-  // 시간 지남력
-  { domain: "orientation_time", pattern: /오늘\s*(?:무슨\s*요일|며칠|몇\s*월|날짜)|지금\s*몇\s*시|올해\s*몇\s*년|지금이\s*(?:몇년|몇\s*년)/ },
-  { domain: "orientation_time", pattern: /요즘\s*무슨\s*계절|지금\s*무슨\s*계절/ },
+  // 시간 지남력 — 조사 붙은 형태("오늘이 몇 월쯤") 허용: probe 게이트가 이 패턴에 의존(2026-06-10)
+  { domain: "orientation_time", pattern: /오늘(?:이|은)?\s*(?:무슨\s*요일|며칠|몇\s*월|날짜)|지금\s*몇\s*시|올해(?:가|는)?\s*몇\s*년|지금이\s*(?:몇년|몇\s*년)/ },
+  { domain: "orientation_time", pattern: /요즘\s*무슨\s*계절|지금(?:이|은)?\s*무슨\s*계절/ },
   // 장소 지남력
   { domain: "orientation_place", pattern: /(?:지금|할아버지|할머니)\s*(?:어디|어느\s*곳).*계세|여기(?:가)?\s*어디/ },
   // 판단력
@@ -424,6 +424,48 @@ const RESPONSE_SCHEMA: Schema = {
   required: ["isAnomaly", "cognitiveChecks"],
 };
 
+// 분석기 모델 — 기본 3.5(정밀 채점). 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
+const ANALYZER_PRIMARY_MODEL = "gemini-3.5-flash";
+// 2단 라우팅 1차 모델 — 수다 턴(인지 질문 없는 턴)은 2.5로 1차 채점, 의심 시에만 3.5 재채점.
+const ANALYZER_LITE_MODEL = "gemini-2.5-flash";
+
+function buildAnalyzerModel(apiKey: string, modelName: string) {
+  return new GoogleGenerativeAI(apiKey).getGenerativeModel({
+    model: modelName,
+    // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking이 maxOutputTokens를 먹어
+    // JSON이 잘림(요약기에서 잡은 동일 버그 클래스). 0은 채점 품질 저하로 금지.
+    generationConfig: {
+      temperature: 0, // 채점 일관성 — 같은 발화는 같은 점수(비결정성 최소화)
+      maxOutputTokens: 2048,
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
+      thinkingConfig: { thinkingBudget: 1024 },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any,
+    safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
+  });
+}
+
+// transient 장애(503/429/네트워크) 시 재시도 — Gemini 일시 과부하로 인지 평가가 통째 유실되는 것 방지.
+async function generateWithRetry(
+  model: ReturnType<typeof buildAnalyzerModel>,
+  promptText: string,
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await model.generateContent(promptText);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const transient = /\b(503|429)\b|Service Unavailable|overloaded|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT|deadline/i.test(msg);
+      if (transient && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function analyzeCognitive(params: {
   userMessage: string;
   assistantResponse: string;
@@ -434,18 +476,6 @@ export async function analyzeCognitive(params: {
   if (!apiKey) return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
 
   try {
-    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-      // 분석기 모델 — 기본 3.5. 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
-      model: process.env.COGNITIVE_MODEL || "gemini-3.5-flash",
-      generationConfig: {
-        temperature: 0, // 채점 일관성 — 같은 발화는 같은 점수(비결정성 최소화)
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
-      },
-      safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
-    });
-
     const historyLines = params.historyText.split("\n");
     const recentHistory = historyLines.slice(-10).join("\n");
 
@@ -453,7 +483,8 @@ export async function analyzeCognitive(params: {
     //   UI 응답에는 원문이 그대로 들어가므로 사용자 정체성/말투는 보존됨.
     const normalized = normalizeDialect(params.userMessage);
     const userForAnalysis = normalized.changes.length > 0 ? normalized.normalized : params.userMessage;
-    if (normalized.changes.length > 0) {
+    if (normalized.changes.length > 0 && process.env.DEBUG_INPUT === "1") {
+      // PII(발화 원문) 포함 — DEBUG_INPUT일 때만 출력
       console.log("[dialect-normalize]", JSON.stringify({
         original: params.userMessage,
         normalized: normalized.normalized,
@@ -462,24 +493,46 @@ export async function analyzeCognitive(params: {
     }
 
     const promptText = `${PROMPT}\n\n${params.envBlock}\n\n최근 대화 맥락:\n${recentHistory}\n\n[이번 턴 — 이것만 분석하세요]\n사용자: ${userForAnalysis}\nAI: ${params.assistantResponse}`;
-    // transient 장애(503/429/네트워크) 시 재시도 — Gemini 일시 과부하로 인지 평가가 통째 유실되는 것 방지.
-    let res;
-    for (let attempt = 0; ; attempt++) {
-      try {
-        res = await model.generateContent(promptText);
-        break;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const transient = /\b(503|429)\b|Service Unavailable|overloaded|RESOURCE_EXHAUSTED|fetch failed|ECONNRESET|ETIMEDOUT|deadline/i.test(msg);
-        if (transient && attempt < 2) {
-          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
-          continue;
+
+    const primaryModelName = process.env.COGNITIVE_MODEL || ANALYZER_PRIMARY_MODEL;
+    // 2단 라우팅 (COGNITIVE_TWO_STAGE=0으로 비활성):
+    //   probe 턴은 정밀 채점이 필요해 곧장 primary. probe 판정은 두 방향 모두:
+    //   (a) 이번 AI 응답에 인지 질문 포함(다음 턴 대비) + (b) 직전 AI 발화에 인지 질문 포함
+    //       = 사용자가 지금 그 질문에 '답하는' 턴 — 채점 결정적 턴이 lite로 새던 갭
+    //       (judgment-verify에서 중증 '섣달' 케이스를 lite가 0점 처리 후 미승급으로 확인, 2026-06-10).
+    //   수다 턴은 lite로 1차 채점 → 이상 의심(isAnomaly 또는 score≥1)일 때만 primary 재채점.
+    //   사망인물 등 명시 이상은 아래 injectJudgmentSafetyNet(정규식)이 모델과 무관하게 잡는다.
+    const lastAiQuestion = extractLastAiMessage(recentHistory);
+    const isProbeTurn = detectCognitiveQuestions(params.assistantResponse).length > 0
+      || (lastAiQuestion ? detectCognitiveQuestions(lastAiQuestion).length > 0 : false);
+    const twoStage = process.env.COGNITIVE_TWO_STAGE !== "0" && primaryModelName !== ANALYZER_LITE_MODEL;
+
+    let raw: CognitiveAnalysisResult;
+    if (twoStage && !isProbeTurn) {
+      const liteRes = await generateWithRetry(buildAnalyzerModel(apiKey, ANALYZER_LITE_MODEL), promptText);
+      logUsage("analyzer-lite", liteRes);
+      const liteResult = parseResult(liteRes.response.text().trim());
+      const suspicious = liteResult.isAnomaly || liteResult.cognitiveChecks.some((c) => c.score >= 1);
+      if (suspicious) {
+        // 재채점 실패(transient 소진 등) 시 lite 결과로 폴백 — 이미 이상 소견이 손에 있는데
+        // 예외 전파로 그 턴 평가가 통째 유실되는 것 방지(lite 결과가 suspicious이므로 보수적으로 안전).
+        try {
+          const res = await generateWithRetry(buildAnalyzerModel(apiKey, primaryModelName), promptText);
+          logUsage("analyzer", res);
+          raw = parseResult(res.response.text().trim());
+        } catch (escalationErr) {
+          console.warn("[cognitive-analyzer] escalation failed, falling back to lite result:", (escalationErr as Error).message);
+          raw = liteResult;
         }
-        throw err;
+      } else {
+        raw = liteResult;
       }
+    } else {
+      const res = await generateWithRetry(buildAnalyzerModel(apiKey, primaryModelName), promptText);
+      logUsage("analyzer", res);
+      raw = parseResult(res.response.text().trim());
     }
-    logUsage("analyzer", res);
-    const raw = parseResult(res.response.text().trim());
+
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
     const safetyNetted = injectJudgmentSafetyNet(calcReclassified, userForAnalysis);

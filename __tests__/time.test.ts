@@ -9,7 +9,6 @@ describe("isDateTimeQuestion", () => {
     "오늘 며칠이야",
     "현재 시간",
     "한국 시간",
-    "몇월 며칠",
     "오늘 몇 시야",
   ])("'%s'를 시간 질문으로 감지한다", (text) => {
     expect(isDateTimeQuestion(text)).toBe(true);
@@ -21,6 +20,8 @@ describe("isDateTimeQuestion", () => {
     "날씨 좋네",
     "산책 갈래?",
     "기분이 어때",
+    "몇월 며칠", // 맥락("오늘") 없는 단독 표현은 매칭 안 함 — DATE_TIME_PATTERNS 변경 반영
+
   ])("'%s'는 시간 질문이 아니다", (text) => {
     expect(isDateTimeQuestion(text)).toBe(false);
   });

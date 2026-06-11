@@ -53,8 +53,9 @@ export async function PATCH(req: Request) {
     if (!currentPassword) {
       return NextResponse.json({ error: "현재 비밀번호를 입력해주세요." }, { status: 400 });
     }
-    if (newPassword.length < 6) {
-      return NextResponse.json({ error: "새 비밀번호는 최소 6자 이상이어야 합니다." }, { status: 400 });
+    // 회원가입 기준(8자)과 동일하게 — 변경 경로로 더 짧은 비밀번호 다운그레이드 방지
+    if (newPassword.length < 8) {
+      return NextResponse.json({ error: "새 비밀번호는 최소 8자 이상이어야 합니다." }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({

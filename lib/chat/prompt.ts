@@ -152,6 +152,11 @@ export async function buildSystemPrompt(params: {
   const remainingKo = remaining.map((d) => DOMAIN_KO[d] || d);
 
   let guideBlock: string;
+  // 인지 프로토콜(질문 풀 ~6.6k자) 주입 여부 — 필요한 턴에만:
+  //   · 사용자 모드 수다 턴: guideBlock이 "인지 질문 금지"를 지시하는데 질문 풀을 통째 주입하면 모순 + 토큰 낭비
+  //   · 전문가 모드: proGuideBlock이 표준 문항·정답 비노출 규칙을 자체 포함하며, 프로토콜의 "자연스러운 수다" 지시와 충돌
+  //   (회상 정답 노출 방어는 턴 단위 hint(buildRecallVerificationHint) + 후처리(stripRecallAnswerLeak)가 별도 담당)
+  let includeProtocol = false;
   if (mode === "pro") {
     guideBlock = buildProGuideBlock(companionName, completedKo, remainingKo, remaining.length);
   } else {
@@ -171,6 +176,7 @@ export async function buildSystemPrompt(params: {
 
     // 인지 확인 턴: 약 5턴에 1번(3, 8, 13, …) + 아직 확인 안 한 영역이 남았을 때만.
     const isProbeTurn = remaining.length > 0 && userTurnIndex % 5 === 3;
+    includeProtocol = isProbeTurn;
 
     if (!isProbeTurn) {
       // 수다 턴 (≈80%) — 인지 질문 없음
@@ -203,8 +209,11 @@ export async function buildSystemPrompt(params: {
   const summaryBlock = renderSummariesForPrompt(summaries);
 
   const { systemPromptBase, cognitiveProtocol } = renderSystemPrompt({ companionName, companionRelation });
-  // 순서: base → user → profile(확정 정보) → summary(과거 요약) → guide → env → date → cognitive
-  const systemPrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock, guideBlock, envBlock, dateBlock, cognitiveProtocol].filter(Boolean).join("\n\n");
+  // 순서: [안정 프리픽스] base → user → profile(확정 정보) → summary(과거 요약) → [턴별 동적] protocol(조건부) → guide → env → date
+  //   안정 블록을 앞에, 매 턴 바뀌는 블록(guide/env/date)을 뒤에 둬야 Gemini implicit prefix caching이 적용됨
+  //   (이전엔 정적인 protocol이 맨 끝이라 매 턴 cached=0 — usage 로그로 확인된 비용 누수).
+  //   protocol은 guide보다 앞 — 턴별 지시(guide)가 recency 우선권을 갖도록.
+  const systemPrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock, includeProtocol ? cognitiveProtocol : "", guideBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
 
   return { systemPrompt, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation, profile };
 }

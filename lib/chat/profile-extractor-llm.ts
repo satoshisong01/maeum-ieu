@@ -12,6 +12,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { upsertFamilyMember, upsertFact, upsertProfile, type FamilyRelation } from "./profile";
+import { NAME_STOPWORDS_BASE, ABSTRACT_NOUN_BLOCKLIST } from "./name-vocab";
 
 const TRIGGER_KEYWORDS = /(아들|딸|손주|손자|손녀|사위|며느리|아내|남편|영감|안사람|고향|살아|살고|취미|키워|기르)/;
 
@@ -58,15 +59,10 @@ const VALID_RELATIONS: ReadonlyArray<FamilyRelation> = ["son", "daughter", "gran
 const NAME_RE = /^[가-힣]{2,4}$/;
 
 /**
- * LLM이 잘못 추출할 수 있는 추상 명사·일반 단어 차단.
- * regex extractor STOPWORD_NAME과 동기화 필요 (2026-05-26 "재미" 누수 사고 대응).
+ * LLM이 잘못 추출할 수 있는 추상 명사·일반 단어 차단 (2026-05-26 "재미" 누수 사고 대응).
+ * name-vocab.ts 단일 소스에서 구성 — 이전엔 regex extractor STOPWORD_NAME과 수동 동기화 필요했음.
  */
-const ABSTRACT_NOUN_BLOCKLIST = new Set([
-  "재미", "취미", "행복", "사랑", "마음", "생각", "이야기", "추억", "시간", "진심", "정성", "복덩이",
-  "효자", "효녀", "걱정", "근심", "고민", "기쁨", "슬픔", "외로움", "그리움", "고마움", "감사",
-  "정", "사정", "사연", "이유", "건강", "기억", "다행", "축복", "복", "꿈", "희망", "용기", "위로",
-  "선생님", "회원님", "고객님", "어르신", "아드님", "따님", "할아버지", "할머니",
-]);
+const NAME_BLOCKLIST = new Set([...NAME_STOPWORDS_BASE, ...ABSTRACT_NOUN_BLOCKLIST]);
 
 function cleanName(s: string): string {
   return s.replace(/(?:이야|이고|이지|이며|이에요|예요|이세요|세요|이|가|은|는|을|를|랑|이랑|야)$/, "").trim();
@@ -74,7 +70,7 @@ function cleanName(s: string): string {
 
 function isValidPersonName(name: string): boolean {
   if (!NAME_RE.test(name)) return false;
-  if (ABSTRACT_NOUN_BLOCKLIST.has(name)) return false;
+  if (NAME_BLOCKLIST.has(name)) return false;
   return true;
 }
 

@@ -92,8 +92,8 @@ const L1_RULES: PatternRule[] = [
   { level: 1, category: "weakness_trend", pattern: /기운이\s*(?:하나도\s*)?없|힘이\s*하나도\s*없|기력이\s*없/ },
   // 식욕 저하
   { level: 1, category: "appetite_loss", pattern: /입맛이\s*(?:하나도\s*)?없|음식이\s*안\s*넘어|먹기\s*싫어/ },
-  // 수면 곤란
-  { level: 1, category: "sleep_distress", pattern: /며칠째\s*(?:잠을\s*)?못\s*자|밤새\s*뒤척|새벽\s*내내\s*잠/ },
+  // 수면 곤란 — "통/도통/영/당최" 부사 삽입형("며칠째 잠을 통 못 자") 허용 (2026-06-11 100턴 사이클에서 미매칭 발견)
+  { level: 1, category: "sleep_distress", pattern: /며칠째\s*(?:잠을?\s*)?(?:통\s*|도통\s*|영\s*|당최\s*)?못\s*[자잔]|밤새\s*뒤척|새벽\s*내내\s*잠/ },
   // 통증 지속 호소
   { level: 1, category: "severe_pain", pattern: /계속\s*(?:아파|쑤셔|뻐근)|며칠째\s*아파|아파서\s*잠도\s*못/ },
 ];

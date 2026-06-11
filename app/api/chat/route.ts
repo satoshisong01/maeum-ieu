@@ -7,7 +7,8 @@ import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
 import { factCheckResponse } from "@/lib/chat/fact-checker";
 import type { FullProfile } from "@/lib/chat/profile";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
-import { normalizeImnida, stripRecallAnswerLeak } from "@/lib/chat/korean-particle";
+import { normalizeImnida } from "@/lib/chat/korean-particle";
+import { postProcessReply } from "@/lib/chat/postprocess";
 import { classifyIntent, buildIntentHint } from "@/lib/chat/intent-classifier";
 import type { ChatRequestBody } from "@/lib/chat/types";
 import { ChatRequestSchema } from "@/lib/chat/validation";
@@ -29,300 +30,8 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 // 모델·응답추출 유틸은 lib/chat/llm.ts로 분리(getApiKey/getTextModel/buildFallbackMessage/generateWithFallback/extractText/stripReasoningTrace).
 
-/**
- * 앵무새 반응 제거 — AI 응답의 첫 문장이 사용자 발화 핵심 단어를 과도하게 반복하면 그 문장 삭제.
- * 예: 사용자 "된장찌개에 무랑 두부 넣어서" → AI 첫 문장 "된장찌개에 무랑 두부까지 넣어서 끓이셨다니..." → 제거
- */
-function removeParrot(aiText: string, userText: string, companionName: string = "민지"): string {
-  if (!aiText || !userText) return aiText;
-  const stopWords = new Set(["할아버지", "할머니", "엄마", "아빠", "아버님", "어머님", "회원님", companionName, "저는", "나는", "그리고", "그래서", "정말", "오늘", "하루", "근데", "그런데", "있어", "있지", "맞아", "응"]);
-  // 사용자 발화의 핵심 명사/형용사/동사 (2자 이상)
-  const userTokens = userText.split(/[\s,.!?~]+/).filter((w) => w.length >= 2 && !stopWords.has(w));
-  if (userTokens.length === 0) return aiText;
-
-  const sentences = aiText.split(/(?<=[.!?~])\s+/);
-  const filtered: string[] = [];
-  for (let i = 0; i < sentences.length; i++) {
-    const s = sentences[i];
-    // 각 문장이 사용자 발화 단어를 몇 개 포함하는지
-    const hits = userTokens.filter((t) => s.includes(t)).length;
-    // 사용자 단어를 3개 이상 포함 + 앵무새 정형 표현 포함 → 제거
-    const isParrotPhrase = /다니\s+정말|까지\s+넣|까지\s+드|까지\s+주무|하셨다니|이라고\s+말씀|말씀해주셔서\s+고마워|셨다니/.test(s);
-    if (hits >= 3 && isParrotPhrase) {
-      continue; // 이 문장 제거
-    }
-    filtered.push(s);
-  }
-  const result = filtered.join(" ").trim();
-  return result || aiText; // 모두 제거되면 원본 유지
-}
-
-/** 시간 라벨 누출 제거 — [방금], [3일 전], [15시간 전] 등 내부 메타데이터가 응답에 포함되면 제거 */
-function removeTimeLabels(text: string): string {
-  if (!text) return text;
-  // [숫자+단위 전] 또는 [방금], [어제] 등 제거
-  return text
-    .replace(/\[\s*(방금|어제|오늘)\s*\]/g, "")
-    .replace(/\[\s*\d+\s*(분|시간|일|주|주일|개월|달|년)\s*전\s*\]/g, "")
-    .replace(/\[\s*오래\s*전\s*\]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** 잘못된 호칭 치환 — 사용자 호칭을 일관성 있게 유지. 사용자가 명시한 호칭 외 모든 친족·존칭 변형 제거.
- *
- * 중요: userHonorific의 부분 문자열인 호칭은 offenders에서 제외해야 함.
- * 예: userHonorific="할아버지"면 "아버지"를 치환하면 안 됨 (할아버지 안에 아버지 들어있음 → 할할아버지).
- * 또한 앞에 한글이 있는 경우는 더 큰 단어의 일부이므로 치환 금지.
- */
-function normalizeHonorific(text: string, userHonorific: string = "할아버지"): string {
-  if (!text) return text;
-  // 친족 호칭 — 앞뒤 한글이 있으면 더 큰 단어(외할아버지/큰아버지)일 가능성 → 양쪽 lookahead 적용
-  const KIN = ["할아버지", "할머니", "아버지", "어머니", "아빠", "엄마",
-    "아저씨", "이모", "삼촌", "고모"];
-  // 존칭/직함 — 뒤에 조사(과/이/에게 등)가 붙는 경우가 흔하므로 lookbehind만 적용
-  const TITLE = ["회원님", "고객님", "선생님", "사장님", "어르신",
-    "아버님", "어머님", "이모님", "삼촌님"];
-
-  const filter = (arr: string[]) => arr.filter((h) => h !== userHonorific && !userHonorific.includes(h));
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-  let out = text;
-  const kinOffenders = filter(KIN).sort((a, b) => b.length - a.length);
-  if (kinOffenders.length > 0) {
-    // lookbehind: 앞에 한글이 오면 더 큰 단어(외할아버지/큰아버지)일 가능성 — 매칭 X
-    // lookahead: 뒤에 일반 한글 조사(의/은/는/이/가/께/께서/와/과/한테/에게/도/만)는 허용,
-    //           나머지 한글이 붙으면 다른 명사일 가능성 → 매칭 X
-    const kinPat = new RegExp(
-      `(?<![가-힣])(${kinOffenders.map(esc).join("|")})(?=$|[^가-힣]|의|은|는|이|가|을|를|와|과|랑|이랑|도|만|께|께서|한테|에게|에서|로|으로)`,
-      "g"
-    );
-    out = out.replace(kinPat, (m: string, _g1: string, offset: number, full: string) => {
-      // 호격(친족어 뒤 쉼표 = 사용자 직접 호칭)에서만 치환. 그 외(주어·3인칭 가족 지칭: "어머니께서 살아계실 때",
-      // "꿈에서 어머니와")는 보존 — referent 혼동(어머니→할머니) 방지.
-      const after = full.slice(offset + m.length);
-      return /^\s*,/.test(after) ? userHonorific : m;
-    });
-  }
-  const titleOffenders = filter(TITLE).sort((a, b) => b.length - a.length);
-  if (titleOffenders.length > 0) {
-    const titlePat = new RegExp(`(?<![가-힣])(${titleOffenders.map(esc).join("|")})`, "g");
-    out = out.replace(titlePat, userHonorific);
-  }
-  return out.replace(/(?<![가-힣])님\s*,/g, `${userHonorific},`);
-}
-
-/**
- * 자녀·손주 호칭 정규화 — AI가 "영민 씨/재미 씨" 같이 자녀에게 사회적 존칭 "씨"를 붙이는 패턴 제거.
- *
- * 동작 방식:
- * 1) context(사용자 발화 + 이력)에서 친근 종조사("이가/이는/이도/이야/야")로 호명된 이름 추출 → familiar set
- *    예: "영민이가 와서", "재미는 일이 바빠" → {영민, 재미}
- * 2) AI 응답에서 (familiar 이름) + 공백 + "씨" 패턴 → "씨" 제거
- *    예: "영민 씨가" → "영민이가", "재미 씨는" → "재미는"
- *
- * 부모가 자식·손주에게 "씨" 붙이는 건 한국어로 매우 부자연스러움. prompt만으로 LLM이 따르지 않아 후처리 추가.
- */
-/**
- * 자녀 성별 호칭 자동 정정 — DB family relation을 ground truth로 사용.
- *
- * 예: family에 "수진(daughter)" 저장돼 있는데 AI가 "수진 아드님"이라 답하면 → "수진 따님"으로 swap.
- *     family에 "민호(son)" 저장돼 있는데 AI가 "민호 따님"이라 답하면 → "민호 아드님"으로 swap.
- *
- * Why: prompt block에 family 정보가 있어도 LLM이 가끔 성별을 헷갈림.
- *      DB 신뢰 우선 — 2026-05-26 rudtjrch cycle에서 "큰딸 수진이" → "수진 아드님" 회귀 발견.
- */
-function fixChildGenderHonorific(text: string, family: Array<{ name: string; relation: string }>, ctx: string = ""): string {
-  if (!text) return text;
-  // DB 프로필 + 현재 문맥의 명시적 성별 단서 병합 — 방금 소개돼 프로필에 없는 가족("큰딸 영숙이" 등)도 정정.
-  const all: Array<{ name: string; relation: string }> = [...(family || [])];
-  if (ctx) {
-    const dPat = /(?:큰딸|작은딸|막내딸|장녀|차녀|딸)\s*([가-힣]{2,3}?)(?:이가|이는|이도|이라|이고|이야|이에요|예요|이|가|은|는|랑|이랑|을|를|$|\s)/g;
-    const sPat = /(?:큰아들|작은아들|막내아들|장남|차남|아들|손자)\s*([가-힣]{2,3}?)(?:이가|이는|이도|이라|이고|이야|이에요|예요|이|가|은|는|랑|이랑|을|를|$|\s)/g;
-    let mm: RegExpExecArray | null;
-    while ((mm = dPat.exec(ctx)) !== null) all.push({ name: mm[1], relation: "daughter" });
-    while ((mm = sPat.exec(ctx)) !== null) all.push({ name: mm[1], relation: "son" });
-  }
-  if (all.length === 0) return text;
-  let out = text;
-  for (const f of all) {
-    const name = f.name;
-    if (!name || name.length < 2) continue;
-    if (f.relation === "daughter") {
-      // 딸인데 "아드님"으로 호칭한 경우 → "따님"으로
-      out = out.replace(new RegExp(`${name}\\s*아드님`, "g"), `${name} 따님`);
-      out = out.replace(new RegExp(`${name}\\s*아들`, "g"), `${name} 딸`);
-    } else if (f.relation === "son") {
-      // 아들인데 "따님"으로 호칭한 경우 → "아드님"으로
-      out = out.replace(new RegExp(`${name}\\s*따님`, "g"), `${name} 아드님`);
-      out = out.replace(new RegExp(`${name}\\s*딸(?!기|기는|기와|기랑)`, "g"), `${name} 아들`);
-    }
-  }
-  return out;
-}
-
-function normalizeFamilyChildHonorific(text: string, ctx: string): string {
-  if (!text || !ctx) return text;
-  const familiar = new Set<string>();
-  // 1) 친근 종조사로 호명된 이름 (받침 있는 이름: "영민이가/영민이는")
-  const familiarPattern = /([가-힣]{2,3})(?:이가|이는|이도|이야|이를|이랑|이한테|이에게|야\s)/g;
-  let m: RegExpExecArray | null;
-  while ((m = familiarPattern.exec(ctx)) !== null) {
-    familiar.add(m[1]);
-  }
-  // 2) 가족 관계 + 이름 패턴 (받침 없는 이름까지 포함: "큰아들이 재미", "둘째가 영민")
-  //    이름 캡처는 lazy({2,3}?) + 조사를 trailing에 명시 분리 — 이전엔 greedy라 "큰아들 재미는"의
-  //    조사 '는'을 이름에 흡수("재미는")해 '씨' 제거가 실패했음.
-  const familyRelationPattern = /(?:큰?아들|장남|차남|막내아들|딸|장녀|차녀|막내딸|첫째|둘째|셋째|넷째|막내|손자|손녀|아내|남편)(?:이?|가|는|이름은?|은|이름이)\s*([가-힣]{2,3}?)(?:이고|이며|이지|이야|이에요|예요|야|은|는|이|가|을|를|고|$|\s)/g;
-  while ((m = familyRelationPattern.exec(ctx)) !== null) {
-    familiar.add(m[1]);
-  }
-  if (familiar.size === 0) return text;
-
-  let out = text;
-  for (const name of familiar) {
-    // "이름 씨" + 조사(가/는/이/도/를/랑/한테/에게)
-    const pattern = new RegExp(`${name}\\s*씨(?=\\s*(?:가|는|이|도|를|랑|한테|에게|의|와|과)?)`, "g");
-    // 사용자가 부르는 형태 그대로 (이가/이는/이도 → 이) 또는 이름만
-    out = out.replace(pattern, (match) => {
-      // 뒤에 조사가 있으면 친근 형태로 변환, 없으면 이름만
-      const rest = out.slice(out.indexOf(match) + match.length);
-      // 단순 치환: "씨" 제거하고 친근 종조사 "이" 추가가 가능한 경우
-      // 안전한 기본: "OO 씨" → "OO" (조사는 그대로)
-      return name;
-    });
-  }
-  return out;
-}
-
-/**
- * 할루시네이션 가드 — AI가 사용자 발화/RAG에 없는 사실을 전제로 하는 문장 제거.
- *
- * 작동 방식:
- * 1) "~라고 하셨는데", "아까 ~ 다녀오셨다고", "~신다고 하셨" 등 **과거 전제** 표현이 포함된 문장 탐지
- * 2) 해당 문장에서 2글자 이상 한글 명사 후보 추출 (stopword 제외)
- * 3) 그 중 하나라도 context(history + rag + 현재 userContent)에 나타나지 않으면 문장 통째 제거
- */
-// 과거 전제 표현 — AI가 사용자 발화/메모리에 없는 사실을 전제로 하는 문장 매칭.
-// 어르신 안정성 핵심: 추측 사실을 "~라고 하셨" 식으로 가정하면 신뢰 무너짐.
-// narrow: "전제 표현 + 종결동사" 페어만 매칭 (단순 "아까 말씀" 같은 일반 표현 제외)
-const PREMISE_PATTERN = /[^.!?~]*?(?:라고\s*하셨|다고\s*하셨|(?:가|오)신다고\s*하셨|다녀오셨다고|드셨다고\s*하셨|주신다고\s*하셨|보셨다고\s*하셨|신다고도\s*하셨|셨다고도|말씀하셨던|들으셨던\s*[가-힣]+|하셨던\s*[가-힣]+|드셨던\s*[가-힣]+|보셨던\s*[가-힣]+|가셨던\s*[가-힣]+|아까\s*말씀하셨|아까\s*드셨다고|지난번에\s*말씀하셨|예전에\s*말씀하셨|전에\s*하셨다고|어제\s*말씀하셨)[^.!?~]*[.!?~]/g;
-
-const HALLU_STOPWORDS = new Set([
-  "할아버지","할머니","민지","오늘","어제","내일","지금","아까","저번","그때","요즘","많이","정말",
-  "혹시","그리고","그래서","근데","그런데","있어","있지","맞아","그때그때","말씀","생각","이야기",
-  "하셨","하셨는데","하셨어요","신다고","드셨","드셨어요","가셨","오셨","보셨","했다고",
-  "좀","그","이","저","것","거","수","때","안","못","때문","한번","한잔","바로","이제",
-  "하루","하시","하셔","하세","이렇게","저렇게","그렇게","얼마나","어떤","누구","어디","무슨",
-  "나요","예요","이에요","인가요","지요","세요","까요","네요","어요","거든","군요","잖아","그렇죠",
-  "계신","계세","계시","계획","시간","준비","생활","오전","오후","새벽","사이","동안","계속","다시",
-  "아니","맞다","아니라","정도","만큼","이후","이전","정말로","참","많네","많이","조금","더욱",
-]);
-
-function extractSentenceNouns(sentence: string): string[] {
-  const raw = sentence.match(/[가-힣]{2,}/g) || [];
-  const uniq = Array.from(new Set(raw));
-  return uniq.filter((w) => !HALLU_STOPWORDS.has(w) && w.length >= 2);
-}
-
 // 프롬프트 hint 빌더는 lib/chat/hints.ts로 분리(buildWordGameHint/buildNameAnswerHint/buildRepetitionHint/buildAnomalyCorrectionHint/buildFamilyQueryGuard/buildRecallVerificationHint/buildInfoRequestHint).
-
-function removeUngroundedClaims(aiText: string, context: string): string {
-  if (!aiText) return aiText;
-  const ctx = context || "";
-  return aiText.replace(PREMISE_PATTERN, (sentence) => {
-    const nouns = extractSentenceNouns(sentence);
-    // 전제 문장 안의 명사 중 하나라도 context에 없으면 삭제
-    for (const n of nouns) {
-      if (!ctx.includes(n)) {
-        return "";
-      }
-    }
-    return sentence;
-  }).replace(/\s{2,}/g, " ").trim();
-}
-
-/**
- * 끝말잇기 자동 교정 — AI가 자기 단어 X를 제시하고 사용자에게 "Y로 시작하는 단어"를 요청할 때
- * Y가 X의 마지막 글자가 아닌 경우 (예: X="가방", Y="가") 자동으로 X 마지막 글자로 교정.
- * 이는 LLM이 자주 범하는 끝말잇기 규칙 혼동을 코드 레벨에서 보정한다.
- */
-const WORDCHAIN_PROPOSED = /(이번엔|이번에는|이번에)\s*'([가-힣]{1,5})'(?:이?라고)/;
-const WORDCHAIN_REQUEST = /'([가-힣])'(?:로|으로)\s*시작하는\s*단어/g;
-
-function fixWordChainStart(text: string): string {
-  if (!text) return text;
-  const proposed = text.match(WORDCHAIN_PROPOSED);
-  if (!proposed) return text;
-  const word = proposed[2];
-  if (!word) return text;
-  const lastChar = word[word.length - 1];
-  return text.replace(WORDCHAIN_REQUEST, (full, asked: string) => {
-    if (asked === lastChar) return full;
-    // 잘못된 시작글자 발견 → 끝글자로 교정
-    return full.replace(`'${asked}'`, `'${lastChar}'`);
-  });
-}
-
-/**
- * 직전 AI 응답의 시작 문장이 새 응답에도 그대로 반복되면 첫 문장 제거.
- * 사용자가 새 주제 꺼냈는데 모델이 직전 자기 응답을 미러링하는 흔한 결함 차단.
- *
- * 판정: 새 응답의 첫 문장과 직전 AI의 첫 문장이 35자 이상 겹치거나
- *       0.7 이상 prefix 유사도면 첫 문장 삭제.
- */
-function normalizeForCompare(s: string): string {
-  return s.replace(/[\s.,!?~()]/g, "").toLowerCase();
-}
-
-function removeRepeatedOpening(aiText: string, prevAiText: string): string {
-  if (!aiText || !prevAiText) return aiText;
-  const sentSplit = /(?<=[.!?~])\s+/;
-  const newSents = aiText.split(sentSplit);
-  const prevSents = prevAiText.split(sentSplit);
-  if (newSents.length === 0 || prevSents.length === 0) return aiText;
-  const firstNew = newSents[0].trim();
-  const firstPrev = prevSents[0].trim();
-  // 짧은 동조 인사("네, 알겠어요!" 등)는 그대로 둠
-  if (firstNew.length < 12) return aiText;
-
-  const a = normalizeForCompare(firstNew);
-  const b = normalizeForCompare(firstPrev);
-  if (!a || !b) return aiText;
-
-  // 완전 동일 또는 한쪽이 다른 쪽으로 시작하면 무조건 제거
-  if (a === b || a.startsWith(b) || b.startsWith(a)) {
-    return newSents.slice(1).join(" ").trim() || aiText;
-  }
-  // 공통 prefix 길이로 판정
-  let common = 0;
-  const minLen = Math.min(a.length, b.length);
-  while (common < minLen && a[common] === b[common]) common++;
-  const ratio = common / Math.max(a.length, b.length);
-  if (common >= 18 && ratio >= 0.7) {
-    return newSents.slice(1).join(" ").trim() || aiText;
-  }
-  return aiText;
-}
-
-/** 잘린 응답 보정 — 문장 도중에 끊긴 경우 마지막 완성 문장까지만 반환 */
-function trimIncomplete(text: string): string {
-  const trimmed = text.trim();
-  // 마지막 문자가 문장 종결 부호면 정상
-  if (/[.!?~요죠네다까세에어지만해야죠돼]$/.test(trimmed)) return trimmed;
-  // 마지막 완성 문장 찾기
-  const lastEnd = Math.max(
-    trimmed.lastIndexOf("."),
-    trimmed.lastIndexOf("!"),
-    trimmed.lastIndexOf("?"),
-    trimmed.lastIndexOf("~"),
-    trimmed.lastIndexOf("요"),
-    trimmed.lastIndexOf("죠"),
-    trimmed.lastIndexOf("네요"),
-  );
-  if (lastEnd > trimmed.length * 0.5) return trimmed.slice(0, lastEnd + 1);
-  return trimmed;
-}
+// 응답 후처리(removeParrot/removeTimeLabels/normalizeHonorific/fixChildGenderHonorific/normalizeFamilyChildHonorific/removeUngroundedClaims/fixWordChainStart/removeRepeatedOpening/trimIncomplete/postProcessReply)는 lib/chat/postprocess.ts로 분리(2026-06-10).
 
 // ─── 공통 유틸 ──────────────────────────────────────────────────────────────
 
@@ -467,7 +176,7 @@ async function runCognitiveAnalysis(params: {
 
 /** 1) 최초 인사 */
 async function handleFirstGreeting(systemPrompt: string, userName: string, honorific: string, companionName: string, companionRelation: string, conversationId?: string) {
-  const model = getTextModel(systemPrompt);
+  const model = getTextModel(systemPrompt, false); // 인사엔 googleSearch 불필요(지연·비용 절감)
   const { text: raw } = await generateWithFallback(
     model,
     `지금 ${userName}님이 대화를 시작합니다. ${companionRelation} '${companionName}'으로서 ${honorific}을 부르며 시간대에 맞는 인사 한 마디만 짧게 해주세요. (본인 소개 포함)`,
@@ -480,7 +189,7 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
 
 /** 2) 재접속 인사 — AI가 먼저 인지 질문을 자연스럽게 포함 */
 async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string) {
-  const model = getTextModel(systemPrompt);
+  const model = getTextModel(systemPrompt, false); // 인사엔 googleSearch 불필요(지연·비용 절감)
   const { text } = await generateWithFallback(
     model,
     `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.
@@ -507,8 +216,8 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
   return NextResponse.json({ text: cleaned, role: "assistant" });
 }
 
-/** 3) 날짜/시간 질문 직접 응답 */
-async function handleDateTimeQuestion(userMessage: string, honorific: string, conversationId: string | undefined, userId: string, clientTimeIso?: string) {
+/** 3) 날짜/시간 질문 직접 응답 — 음성 경로에서 오면 transcription을 payload에 실어 클라이언트가 사용자 발화를 표시 */
+async function handleDateTimeQuestion(userMessage: string, honorific: string, conversationId: string | undefined, userId: string, clientTimeIso?: string, transcription?: string) {
   const timeStr = getCurrentKstDateTimeString(clientTimeIso);
   // honorific 자체가 "할아버지"/"할머니"/"어머니"처럼 이미 친족 호칭이므로
   // "님" 접미 없이 그대로 사용. ("할아버지님" 같은 어색한 호명 방지)
@@ -516,7 +225,9 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
   if (conversationId) {
     await saveMessages({ conversationId, userId, userContent: userMessage, assistantContent: replyText });
   }
-  return NextResponse.json({ text: replyText, role: "assistant" });
+  const payload: Record<string, unknown> = { text: replyText, role: "assistant" };
+  if (transcription !== undefined) payload.transcription = transcription;
+  return NextResponse.json(payload);
 }
 
 /** 음성 → 텍스트 변환 (STT 전용) */
@@ -534,43 +245,12 @@ async function transcribeAudio(audioData: string, audioMimeType: string): Promis
 
   const res = await sttModel.generateContent({ contents: [{ role: "user", parts }] });
   logUsage("stt", res);
-  return extractText(res).trim();
+  // isUserSpeech: STT 결과는 사용자 발화 — 동반자 출력용 보고체 필터(KO_REPORTIVE)를 적용하면
+  // 어르신 간접화법("의사가 약 바꾸라고 한다") 문장이 전사에서 소실됨.
+  return extractText(res, { isUserSpeech: true }).trim();
 }
 
 /** 4) 음성 요청 — 2단계: STT → 대화 모델 */
-/**
- * 응답 후처리 파이프라인 — 11단 변환을 명시적 순서로 실행 + 단계별 관측.
- * 기존 중첩 1줄 호출(양 핸들러 중복)을 단일화. 어떤 단계가 응답을 통째로 비우면 로깅(빈응답 버그 원인 추적).
- * 순서는 load-bearing이므로 변경 주의(removeUngroundedClaims/removeParrot이 빈 문자열을 만들 수 있어 호출부 가드 필수).
- */
-function postProcessReply(
-  rawText: string,
-  opts: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string },
-): string {
-  const { userText, companionName, ctx, honorific, family, prevAi } = opts;
-  const stages: Array<[string, (t: string) => string]> = [
-    ["trimIncomplete", (t) => trimIncomplete(t)],
-    ["removeTimeLabels", (t) => removeTimeLabels(t)],
-    ["removeParrot", (t) => removeParrot(t, userText, companionName)],
-    ["removeUngroundedClaims", (t) => removeUngroundedClaims(t, ctx)],
-    ["normalizeHonorific", (t) => normalizeHonorific(t, honorific)],
-    ["normalizeFamilyChildHonorific", (t) => normalizeFamilyChildHonorific(t, ctx)],
-    ["fixChildGenderHonorific", (t) => fixChildGenderHonorific(t, family, ctx)],
-    ["fixWordChainStart", (t) => fixWordChainStart(t)],
-    ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
-    ["normalizeImnida", (t) => normalizeImnida(t)],
-    ["stripRecallAnswerLeak", (t) => stripRecallAnswerLeak(t)],
-  ];
-  let text = rawText;
-  for (const [name, fn] of stages) {
-    const before = text;
-    text = fn(text);
-    if (before.trim() && !text.trim()) {
-      console.warn(`[post-process] '${name}' 단계가 응답을 빈 문자열로 만듦(직전 길이 ${before.length}) → 호출부 fallback 가드 작동`);
-    }
-  }
-  return text;
-}
 
 /**
  * 스트리밍 응답 — LLM을 generateContentStream으로 받아 문장이 완성될 때마다 SSE로 내보내
@@ -581,8 +261,12 @@ function postProcessReply(
  *        (factCheck의 환각-이름 grounding은 전체 기준이라 음성엔 narrow한 잔여 위험 — Stage 2 트레이드오프)
  */
 function streamCompanionReply(opts: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  model: { generateContentStream: (p: any) => Promise<{ stream: AsyncIterable<{ text: () => string }> }> };
+  model: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateContentStream: (p: any) => Promise<{ stream: AsyncIterable<{ text: () => string }>; response?: unknown }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateContent?: (p: any) => Promise<unknown>;
+  };
   contents: unknown;
   fallback: string;
   post: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string };
@@ -620,30 +304,60 @@ function streamCompanionReply(opts: {
         if (final && buffer.trim()) { emitSafe(buffer); buffer = ""; }
       };
       try {
-        const result = await opts.model.generateContentStream(opts.contents);
-        for await (const chunk of result.stream) {
-          let piece = "";
-          try { piece = (typeof chunk.text === "function" ? chunk.text() : "") || ""; } catch { piece = ""; } // 차단/빈 청크에서 throw 방지
-          if (!piece) continue;
-          raw += piece; buffer += piece;
-          flush(false);
+        let streamErrored = false;
+        try {
+          const result = await opts.model.generateContentStream(opts.contents);
+          for await (const chunk of result.stream) {
+            let piece = "";
+            try { piece = (typeof chunk.text === "function" ? chunk.text() : "") || ""; } catch { piece = ""; } // 차단/빈 청크에서 throw 방지
+            if (!piece) continue;
+            raw += piece; buffer += piece;
+            flush(false);
+          }
+          flush(true);
+          try { logUsage("companion", await result.response); } catch { /* usage 로깅 best-effort */ }
+        } catch (e) {
+          streamErrored = true;
+          console.warn("[stream] generate error:", (e as Error).message);
         }
-        flush(true);
-        try { logUsage("companion", await (result as { response?: unknown }).response); } catch { /* usage 로깅 best-effort */ }
+
+        // 스트림이 중도에 끊겼으면 raw를 마지막 완전 문장까지 절단 — 미완 조각("…그런데 오늘")이
+        // canonical로 저장·분석되는 것 방지. 완전 문장이 하나도 없으면 빈 문자열 → 아래 재시도로 진입.
+        if (streamErrored && raw.trim()) {
+          const lastEnd = Math.max(...[...raw.matchAll(/[.!?…。]/g)].map((m) => m.index ?? -1), -1);
+          raw = lastEnd >= 0 ? raw.slice(0, lastEnd + 1) : "";
+        }
+
+        // 스트림이 비었으면(간헐 빈응답·일시 503) 비스트리밍 1회 재시도 — 폴백률의 직접 원인.
+        //   비스트리밍 경로(generateWithFallback)는 원래 2회 시도하는데 스트림 경로만 무재시도였음.
+        if (!raw.trim() && typeof opts.model.generateContent === "function") {
+          try {
+            const retryRes = await opts.model.generateContent(opts.contents);
+            logUsage("companion-retry", retryRes);
+            raw = extractText(retryRes);
+            if (raw.trim()) { buffer = raw; flush(true); } // 재시도 응답도 문장 단위로 발화
+          } catch (e2) {
+            console.warn("[stream] non-stream retry failed:", (e2 as Error).message);
+          }
+        }
+
         // 저장·분석용 canonical 전체 텍스트 — 전체 안전망 + factCheck
         let fullText = raw.trim() ? postProcessReply(raw, opts.post) : "";
         if (fullText.trim()) {
           const fc = factCheckResponse({ aiText: fullText, ...opts.fact });
           if (fc.cleaned !== fullText) { console.warn("[fact-checker:stream] cleaned. removed:", fc.removed.length); fullText = fc.cleaned || fullText; }
         }
-        if (!fullText || !fullText.trim()) fullText = opts.fallback;
+        // 폴백 여부를 onComplete에 정확히 전달 — 폴백 멘트가 인지분석·RAG에 들어가 오염되는 것 방지
+        let fallbackUsed = false;
+        if (!fullText || !fullText.trim()) { fullText = opts.fallback; fallbackUsed = true; }
         if (!spokenAny) send({ type: "chunk", text: fullText }); // 스트림에 아무것도 못 내보냈으면 fallback이라도 말함
         if (opts.timings) opts.timings.totalMs = Math.round(performance.now() - opts.timings.start);
         const includeTiming = opts.timings && process.env.DEBUG_TIMING === "1"; // 측정용(기본 off)
         send({ type: "done", text: fullText, ...(opts.extra || {}), ...(includeTiming ? { timing: opts.timings } : {}) });
-        await opts.onComplete(fullText, false).catch((e) => console.error("[stream:onComplete]", e));
+        await opts.onComplete(fullText, fallbackUsed).catch((e) => console.error("[stream:onComplete]", e));
       } catch (e) {
-        console.warn("[stream] generate error:", (e as Error).message);
+        // 후처리·factCheck 등 파이프라인 예외의 마지막 안전망
+        console.warn("[stream] pipeline error:", (e as Error).message);
         if (!spokenAny) send({ type: "chunk", text: opts.fallback });
         send({ type: "done", text: opts.fallback, ...(opts.extra || {}) });
         await opts.onComplete(opts.fallback, true).catch((err) => console.error("[stream:onComplete:fallback]", err));
@@ -661,12 +375,13 @@ async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
   companionName: string; companionRelation: string;
   userId: string; conversationId?: string;
-  audioData: string; audioMimeType: string; historyText: string; memories: string;
+  audioData: string; audioMimeType: string; historyText: string;
   messages: { role: string; content: string; createdAt?: string }[];
   profile: FullProfile;
+  clientTimeIso?: string;
   timings?: Record<string, number>;
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, memories, messages, profile, timings } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, messages, profile, clientTimeIso, timings } = params;
 
   // 1단계: 음성 → 텍스트 변환
   let transcription = "";
@@ -713,24 +428,41 @@ async function handleAudioMessage(params: {
   const lastAi = extractLastAiMessage(historyText);
   const correction = correctTranscriptionByContext(transcription, lastAi);
   if (correction.changes.length > 0) {
-    console.log("[stt-context-correction]", JSON.stringify({
-      original: transcription,
-      corrected: correction.corrected,
-      changes: correction.changes,
-    }));
+    if (process.env.DEBUG_INPUT === "1") {
+      // PII(발화 원문) 포함 — DEBUG_INPUT일 때만 출력
+      console.log("[stt-context-correction]", JSON.stringify({
+        original: transcription,
+        corrected: correction.corrected,
+        changes: correction.changes,
+      }));
+    } else {
+      console.log("[stt-context-correction]", JSON.stringify({ changeCount: correction.changes.length })); // PII(발화 원문) 미로깅
+    }
     transcription = correction.corrected;
   }
 
-  // 1.5단계: 부적절 발언 감지 시 LLM 우회 + 단계적 거절
-  const moderated = await handleInappropriateMessage({
-    userContent: transcription,
-    conversationId,
-    userId,
-    honorific,
-    companionName,
-    transcription,
-  });
+  // 1.5단계: 부적절 발언 감지 + RAG 검색 병렬 실행.
+  //   RAG는 transcription(현재 발화) 기준 — 이전엔 STT 전의 직전 턴 텍스트로 검색해 무관한 메모리가 주입됐음.
+  const [moderated, memories] = await Promise.all([
+    handleInappropriateMessage({
+      userContent: transcription,
+      conversationId,
+      userId,
+      honorific,
+      companionName,
+      transcription,
+    }),
+    fetchMemories(userId, transcription),
+  ]);
   if (moderated) return moderated as NextResponse;
+
+  // 1.55단계: 날짜/시간 질문 단락 — LLM 우회 (음성 "지금 몇 시야" 풀콜 방지).
+  //   moderation 뒤에 위치(욕설+시간질문이 거절 카운트를 우회하는 것 방지) +
+  //   L1/L2 응급 신호 동반 시("며칠째 잠을 못 자… 지금 몇 시야?") 단락하지 않고 일반 경로로
+  //   — emergencyLevel 마킹·L2 보호자 알림·hint 주입이 단락에 삼켜지지 않도록.
+  if (transcription && emergency.effectiveLevel === 0 && isDateTimeQuestion(transcription)) {
+    return handleDateTimeQuestion(transcription, honorific, conversationId, userId, clientTimeIso, transcription);
+  }
 
   // 2단계: 변환된 텍스트로 대화 모델 호출. info_request만 googleSearch 활성(그 외 비활성, 비용·지연 절감)
   const intent = classifyIntent(transcription);
@@ -767,7 +499,7 @@ async function handleAudioMessage(params: {
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription },
     extra: { transcription, ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}) },
     timings,
-    onComplete: async (answerText) => {
+    onComplete: async (answerText, fallbackUsed) => {
       if (!conversationId) return;
       const { userMsgId } = await saveMessages({
         conversationId, userId,
@@ -775,6 +507,7 @@ async function handleAudioMessage(params: {
         assistantContent: answerText,
         emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
         emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+        skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
       });
       if (emergency.effectiveLevel === 2) {
         notifyGuardian({
@@ -782,7 +515,9 @@ async function handleAudioMessage(params: {
           category: emergency.result.category, content: transcription, aiReply: answerText, createdAt: new Date(),
         }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
       }
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
+      // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
       if (transcription) {
         extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
         maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
@@ -986,12 +721,13 @@ async function handleTextMessage(params: {
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent },
     extra: emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : undefined,
     timings,
-    onComplete: async (text) => {
+    onComplete: async (text, fallbackUsed) => {
       if (!conversationId || !userContent) return;
       const { userMsgId } = await saveMessages({
         conversationId, userId, userContent, assistantContent: text,
         emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
         emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+        skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
       });
       if (emergency.effectiveLevel === 2) {
         notifyGuardian({
@@ -999,7 +735,9 @@ async function handleTextMessage(params: {
           category: emergency.result.category, content: userContent, aiReply: text, createdAt: new Date(),
         }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
       }
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
+      // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
       extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
       maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
     },
@@ -1020,8 +758,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "잘못된 요청 형식입니다." }, { status: 400 });
     }
     const body = parsed.data as ChatRequestBody;
-    const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx, mode } = body;
+    const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx } = body;
     const userId = session.user.id;
+    // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
+    // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
+    const mode = session.user.screeningMode === "pro" ? "pro" : "user";
 
     // 고비용 엔드포인트 폭주 방어 — 단일 계정 분당 40회 (정상 대화는 충분, 자동화 남용 차단)
     const rl = checkRateLimit(`chat:${userId}`, 40, 60_000);
@@ -1034,8 +775,18 @@ export async function POST(req: Request) {
 
     const _t: Record<string, number> = { start: performance.now() };
     const timeCtx = getTimeContext(ctx?.currentTime);
+    const isAudio = !!(audio?.data && audio?.mimeType);
+    const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
+    const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
+
+    // weather와 RAG(임베딩 HTTP)는 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
+    //   인사 턴은 RAG 불필요, 음성 턴은 STT 후 transcription 기준으로 핸들러가 직접 검색.
+    const skipMemories = isInitialGreeting || isReturningGreeting || isAudio || !lastUserMessage;
     let _m = performance.now();
-    const weatherCtx = await getWeatherContext(ctx?.latitude, ctx?.longitude);
+    const [weatherCtx, memories] = await Promise.all([
+      getWeatherContext(ctx?.latitude, ctx?.longitude),
+      skipMemories ? Promise.resolve("") : fetchMemories(userId, lastUserMessage),
+    ]);
     _t.weatherMs = Math.round(performance.now() - _m);
     _m = performance.now();
     const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
@@ -1046,23 +797,21 @@ export async function POST(req: Request) {
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
 
-    const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
-    const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
-    _m = performance.now();
-    const [memories, historyText] = await Promise.all([
-      fetchMemories(userId, lastUserMessage),
-      Promise.resolve(buildHistoryText(messages ?? [])),
-    ]);
-    _t.memoriesMs = Math.round(performance.now() - _m);
+    const historyText = buildHistoryText(messages ?? []);
 
-    if (!audio?.data && lastUserMessage && isDateTimeQuestion(lastUserMessage)) {
+    // 응급 신호(L1 이상)나 부적절 발언이 섞인 발화는 단락하지 않고 일반 경로로 —
+    // 시간 즉답이 응급 마킹/누적·모더레이션 카운트를 삼키는 것 방지(음성 1.55단계와 동일 정책).
+    if (!isAudio && lastUserMessage && isDateTimeQuestion(lastUserMessage)
+      && detectEmergency(lastUserMessage).level === 0
+      && detectInappropriate(lastUserMessage).category === "ok") {
       return handleDateTimeQuestion(lastUserMessage, honorific, conversationId, userId, ctx?.currentTime);
     }
 
-    if (audio?.data && audio?.mimeType) {
+    if (isAudio && audio) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
-        audioData: audio.data, audioMimeType: audio.mimeType, historyText, memories, messages: messages ?? [], profile, timings: _t,
+        audioData: audio.data, audioMimeType: audio.mimeType, historyText, messages: messages ?? [], profile,
+        clientTimeIso: ctx?.currentTime, timings: _t,
       });
     }
 

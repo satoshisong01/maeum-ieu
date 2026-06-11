@@ -18,11 +18,15 @@ export function getTimeContext(clientTimeIso?: string): TimeContext {
     minute: "2-digit",
   });
 
-  let timeLabel = "오후";
-  if (hour >= 5 && hour < 10) timeLabel = "아침";
-  else if (hour >= 10 && hour < 14) timeLabel = "오전";
-  else if (hour >= 14 && hour < 17) timeLabel = "점심 시간대";
-  else if (hour >= 17 && hour < 21) timeLabel = "저녁";
+  // 구간은 재접속 인사 프롬프트(route.ts handleReturningGreeting)의 시간대 안내와 일치해야 함 — 파서 드리프트 주의.
+  //   이전엔 0~4시가 "오후", 14~17시가 "점심 시간대"로 어긋나 새벽·오후 인사가 틀렸음.
+  let timeLabel = "밤"; // 20시~24시
+  if (hour < 5) timeLabel = "새벽";
+  else if (hour < 10) timeLabel = "아침";
+  else if (hour < 11) timeLabel = "오전";
+  else if (hour < 14) timeLabel = "점심 시간대";
+  else if (hour < 17) timeLabel = "오후";
+  else if (hour < 20) timeLabel = "저녁";
 
   return { timeLabel, hour, dateStr };
 }
