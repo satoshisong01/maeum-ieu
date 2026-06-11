@@ -150,6 +150,21 @@ describe("removeUngroundedClaims", () => {
     const text = "오늘 날씨가 참 좋네요! 산책 다녀오셨어요?";
     expect(removeUngroundedClaims(text, "응 그래")).toBe(text);
   });
+
+  it("조사 변형은 어간으로 재대조 — 사용자가 방금 말한 사실 확인 문장 보존", () => {
+    // ctx에는 '쌀도/과자도', AI는 '쌀이랑/과자도' — 조사 차이로 통삭제되던 FP (2026-06-11 사이클)
+    const text = "쌀이랑 두부, 그리고 손주들 오면 줄 과자도 사 오신다고 하셨죠.";
+    const ctx = "사용자: 쌀도 사고, 두부 같은 것도 사오지. 손주들 오면 먹을 과자도 하나씩 담아오고.";
+    expect(removeUngroundedClaims(text, ctx)).toBe(text);
+  });
+
+  it("어간 재대조 후에도 근거 없는 전제는 여전히 제거", () => {
+    const out = removeUngroundedClaims(
+      "어제 손녀랑 바닷가에 다녀오셨다고 하셨는데 재미있으셨어요? 오늘은 뭐 하세요?",
+      "사용자: 오늘 날씨 좋네",
+    );
+    expect(out).toBe("오늘은 뭐 하세요?");
+  });
 });
 
 describe("normalizeHonorific", () => {
