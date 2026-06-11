@@ -363,6 +363,49 @@ function injectJudgmentSafetyNet(
   };
 }
 
+/**
+ * 보속증(perseveration) 안전망 — 동일 발화를 3턴 연속 반복하면 LLM 채점과 무관하게
+ * memory_immediate 이상으로 마킹. (30턴 스크립트 사이클에서 같은 문장 5회 반복을
+ * 분석기가 0건 처리한 갭 보완, 2026-06-11)
+ * FP 가드: 정규화 후 8자 이상(짧은 맞장구 "응/그래" 제외) + 직전 사용자 발화 2개와 모두 유사.
+ */
+const normUtter = (s: string) => s.replace(/[\s.,!?~…'"「」『』]/g, "");
+const similarUtter = (a: string, b: string) =>
+  a === b || (a.length >= 8 && b.length >= 8 && (a.startsWith(b) || b.startsWith(a)));
+
+export function injectPerseverationCheck(
+  result: CognitiveAnalysisResult,
+  userMessage: string,
+  recentHistory: string,
+): CognitiveAnalysisResult {
+  const cur = normUtter(userMessage);
+  if (cur.length < 8) return result;
+  const prevUsers = recentHistory.split("\n")
+    .map((l) => l.match(/^(?:\[[^\]]+\]\s*)?사용자:\s*(.+)$/)?.[1])
+    .filter((t): t is string => !!t)
+    .slice(-2)
+    .map(normUtter);
+  if (prevUsers.length < 2 || !prevUsers.every((p) => similarUtter(p, cur))) return result;
+
+  const already = result.cognitiveChecks.find((c) => c.domain === "memory_immediate");
+  if (already && already.score >= 1) return result;
+  const newCheck = {
+    domain: "memory_immediate",
+    score: 1,
+    confidence: 0.85,
+    evidence: `휴리스틱 안전망: 동일 발화 3턴 연속 반복 — "${userMessage.slice(0, 40)}"`,
+    note: "보속증 의심 — 같은 문장을 연속 반복(앞서 말한 사실을 잊은 듯한 양상)",
+  };
+  return {
+    ...result,
+    isAnomaly: true,
+    analysisNote: result.analysisNote
+      ? `${result.analysisNote} | 안전망: 동일 발화 반복`
+      : "[안전망] 동일 발화 3턴 연속 반복 — 보속증 의심",
+    cognitiveChecks: [...result.cognitiveChecks.filter((c) => c.domain !== "memory_immediate"), newCheck],
+  };
+}
+
 function reclassifyCalculation(
   result: CognitiveAnalysisResult,
   userMessage: string,
@@ -536,7 +579,8 @@ export async function analyzeCognitive(params: {
     const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
     const safetyNetted = injectJudgmentSafetyNet(calcReclassified, userForAnalysis);
-    return ensureCognitiveDomainLogged(safetyNetted, params.assistantResponse);
+    const persevChecked = injectPerseverationCheck(safetyNetted, userForAnalysis, recentHistory);
+    return ensureCognitiveDomainLogged(persevChecked, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
     return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };

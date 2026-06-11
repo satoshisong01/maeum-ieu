@@ -342,7 +342,8 @@ export function postProcessReply(
     const before = text;
     text = fn(text);
     if (before.trim() && !text.trim()) {
-      console.warn(`[post-process] '${name}' 단계가 응답을 빈 문자열로 만듦(직전 길이 ${before.length}) → 호출부 fallback 가드 작동`);
+      // 제거된 원문 미리보기 — 정당 제거(환각 전제)인지 오탐(ctx 누락)인지 사후 판별용
+      console.warn(`[post-process] '${name}' 단계가 응답을 빈 문자열로 만듦(직전 길이 ${before.length}) → 호출부 fallback 가드 작동. 제거됨: "${before.slice(0, 80)}"`);
     }
   }
   return text;

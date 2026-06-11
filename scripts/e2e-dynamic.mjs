@@ -48,7 +48,8 @@ const PERSONA_SYS = `당신은 ${PERSONA.age}세 ${PERSONA.honorific} '${PERSONA
 const personaLLM = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({
   model: PERSONA_MODEL,
   systemInstruction: PERSONA_SYS,
-  generationConfig: { temperature: 1.0, maxOutputTokens: 256 },
+  // 256은 thinking 토큰이 잠식해 발화가 중간에 잘림("우리 어렸을 적엔 말이지, 밤에") → 1024
+  generationConfig: { temperature: 1.0, maxOutputTokens: 1024 },
 });
 
 const FALLBACK_UTTER = [
@@ -70,7 +71,9 @@ async function genElderUtterance(history, idx) {
       : "";
     t = (t || "").trim().replace(/^["'「『\s]+|["'」』\s]+$/g, "").split("\n")[0].trim();
     t = t.replace(/^어르신\s*[:：]\s*/, "").trim();
-    if (t.length >= 2) return t;
+    // 직전 발화와 동일하면(잘림→재질문→동일 재생성 루프) 폴백으로 끊음
+    const prevUser = [...history].reverse().find((h) => h.who === "user")?.text?.trim();
+    if (t.length >= 2 && t !== prevUser) return t;
   } catch (e) {
     console.warn(`  [persona-llm] gen 실패: ${e.message.split("\n")[0]}`);
   }
