@@ -81,6 +81,51 @@ export const PHQ9_ITEMS: MentalItem[] = [
   },
 ];
 
+/** GAD-7 (불안, 공개 척도) — 같은 빈도 매핑(0~3), 합계 0~21 */
+export const GAD7_ITEMS: MentalItem[] = [
+  { no: 1, key: "nervous", original: "초조하거나 불안하거나 조마조마함", variants: [
+    "지난 2주 동안, 초조하거나 불안하고 조마조마한 날이 얼마나 있었어요?",
+    "요즘 2주 사이 마음이 불안하고 안절부절못한 날이 자주 있었나요?",
+  ] },
+  { no: 2, key: "control", original: "걱정을 멈추거나 조절할 수 없음", variants: [
+    "걱정이 한번 시작되면 멈추거나 다스리기 어려운 날은 어느 정도였어요?",
+    "걱정을 스스로 조절하기 힘들다고 느낀 날이 지난 2주간 얼마나 있었나요?",
+  ] },
+  { no: 3, key: "worry", original: "여러 가지에 대해 지나치게 걱정함", variants: [
+    "이런저런 일들을 지나치게 걱정한 날이 많았나요?",
+    "지난 2주 동안 사소한 일까지 너무 걱정된 날은 어느 정도였어요?",
+  ] },
+  { no: 4, key: "relax", original: "긴장을 풀기 어려움", variants: [
+    "마음 편히 쉬거나 긴장을 풀기 어려운 날이 얼마나 있었어요?",
+    "몸과 마음이 잘 안 풀리고 계속 긴장돼 있던 날이 많았나요?",
+  ] },
+  { no: 5, key: "restless", original: "가만히 있지 못할 정도로 안절부절못함", variants: [
+    "가만히 앉아 있기 힘들 만큼 안절부절못한 날이 있었어요?",
+    "지난 2주간 들떠서 진정이 안 되는 날은 어느 정도였나요?",
+  ] },
+  { no: 6, key: "irritable", original: "쉽게 짜증이 나거나 화가 남", variants: [
+    "쉽게 짜증이 나거나 욱하게 된 날이 얼마나 있었어요?",
+    "평소보다 화가 잘 나는 날이 지난 2주간 자주 있었나요?",
+  ] },
+  { no: 7, key: "afraid", original: "끔찍한 일이 생길 것 같은 두려움", variants: [
+    "뭔가 끔찍한 일이 일어날 것 같아 두려웠던 날이 있었어요?",
+    "지난 2주 동안 불길한 예감에 두려움을 느낀 날은 어느 정도였나요?",
+  ] },
+];
+
+export function interpretGAD7(total: number): { severity: string; text: string; recommend: boolean } {
+  if (total <= 4) return { severity: "정상", text: "현재 불안 증상은 거의 없는 수준이에요.", recommend: false };
+  if (total <= 9) return { severity: "가벼운 수준", text: "가벼운 불안감이 있어요. 휴식과 호흡 조절을 챙겨보세요.", recommend: false };
+  if (total <= 14) return { severity: "중간 수준", text: "중간 정도의 불안 증상이 보여요. 전문가와 상담해 보시길 권해요.", recommend: true };
+  return { severity: "심한 수준", text: "불안 증상이 심한 수준이에요. 꼭 전문가의 도움을 받아보세요.", recommend: true };
+}
+
+/** 척도 레지스트리 — mental-flow가 session.scale로 선택 */
+export const SCALES: Record<string, { name: string; items: MentalItem[]; maxTotal: number; interpret: (t: number) => { severity: string; text: string; recommend: boolean } }> = {
+  PHQ9: { name: "우울(PHQ-9)", items: PHQ9_ITEMS, maxTotal: 27, interpret: interpretPHQ9 },
+  GAD7: { name: "불안(GAD-7)", items: GAD7_ITEMS, maxTotal: 21, interpret: interpretGAD7 },
+};
+
 /** 응답 안내 (재질문 시 함께 제시) */
 export const ANSWER_GUIDE = "「전혀 없었다 / 며칠 정도 / 2주의 절반 이상 / 거의 매일」 중에 가까운 걸로 편하게 말씀해 주세요.";
 

@@ -62,5 +62,11 @@ export async function GET() {
     };
   }));
 
+  // 감사 로그 — 전문가의 환자 데이터 열람 기록 (규제 대비, 실패 무시)
+  prisma.$executeRawUnsafe(
+    `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, '*', 'list')`,
+    `eal_${Date.now()}_${session.user.id.slice(0, 8)}`, session.user.id,
+  ).catch(() => {});
+
   return NextResponse.json({ patients });
 }

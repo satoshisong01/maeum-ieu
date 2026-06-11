@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
 
-interface ResultRow { id: string; scale: string; date: string; total: number; severity: string; text: string; recommend: boolean }
+interface ResultRow { id: string; scale: string; scaleName?: string; maxTotal?: number; date: string; total: number; severity: string; crisis?: boolean; text: string; recommend: boolean }
 
 const SEV_STYLE: Record<string, string> = {
   "정상": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
@@ -66,11 +66,16 @@ export default function MentalPage() {
 
         {!loading && latest && (
           <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">최근 결과 ({latest.date})</h2>
+            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">최근 결과 — {latest.scaleName ?? "우울(PHQ-9)"} ({latest.date})</h2>
             <div className="flex items-center gap-4">
-              <span className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{latest.total}<span className="text-base font-normal text-zinc-400">/27</span></span>
+              <span className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{latest.total}<span className="text-base font-normal text-zinc-400">/{latest.maxTotal ?? 27}</span></span>
               <span className={`rounded-full px-3 py-1 text-sm font-bold ${SEV_STYLE[latest.severity] ?? ""}`}>{latest.severity}</span>
             </div>
+            {latest.crisis && (
+              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-900/30 dark:text-red-200">
+                힘든 생각이 있다고 답해 주셨어요. 혼자 견디지 마세요 — 자살예방 ☎ 109 · 위기상담 ☎ 1577-0199 (24시간)
+              </p>
+            )}
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{latest.text}</p>
             {latest.recommend && (
               <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">

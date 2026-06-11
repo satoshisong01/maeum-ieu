@@ -11,9 +11,10 @@
  */
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { PHQ9_ITEMS, ANSWER_GUIDE, interpretPHQ9, CRISIS_GUIDE, NON_DIAGNOSTIC_NOTICE } from "@/lib/screening/mental-bank";
+import { SCALES, ANSWER_GUIDE, CRISIS_GUIDE, NON_DIAGNOSTIC_NOTICE, type MentalItem } from "@/lib/screening/mental-bank";
 import { classifyFrequencyAnswer } from "@/lib/health/mental-scorer";
 
+const GAD7_TRIGGER_RE = /불안\s*(?:체크|검사|검진|테스트)/;
 const TRIGGER_RE = /마음\s*(?:건강)?\s*(?:체크|검진|검사)|우울\s*(?:검사|체크|테스트|검진)|정신\s*건강\s*(?:체크|검사|검진)/;
 // 과거 경험 서술("병원에서 우울 검사 받았어")은 시작 의도가 아님 — 오발동 가드
 const TRIGGER_PAST_RE = /받았|했었|했어|했지|했거든|다녀왔|다녀온|끝났|해\s*봤/; // \b는 한글에 무력 — 사용 금지(기지 버그 클래스)
@@ -37,10 +38,10 @@ const ACK_BY_SCORE = [
   "많이 힘드셨겠어요. 말씀해 주셔서 고마워요.",
 ];
 
-function askItem(no: number, variantIdx = 0): string {
-  const item = PHQ9_ITEMS[no - 1];
+function askItem(items: MentalItem[], no: number, variantIdx = 0): string {
+  const item = items[no - 1];
   const v = item.variants[variantIdx % item.variants.length];
-  return `${no}/9. ${v}`;
+  return `${no}/${items.length}. ${v}`;
 }
 
 async function getActiveSession(userId: string): Promise<MentalSession | null> {
@@ -71,15 +72,21 @@ export async function handleMentalFlow(params: {
 
   // ── 세션 없음: 트리거 발화면 시작(동의 단계) — 과거 경험 서술은 제외
   if (!session) {
-    if (!TRIGGER_RE.test(userContent) || TRIGGER_PAST_RE.test(userContent)) return null;
+    const wantGad7 = GAD7_TRIGGER_RE.test(userContent);
+    if ((!TRIGGER_RE.test(userContent) && !wantGad7) || TRIGGER_PAST_RE.test(userContent)) return null;
+    const scaleKey = wantGad7 ? "GAD7" : "PHQ9";
+    const scale = SCALES[scaleKey];
     const id = randomUUID();
     await prisma.$executeRawUnsafe(
-      `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, 'PHQ9', 'active', 0)`, id, userId);
+      `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, $3, 'active', 0)`, id, userId, scaleKey);
     return {
       status: "started",
-      reply: `${honorific}, 마음 건강 체크를 시작할게요. 최근 2주간의 기분에 대해 9가지를 여쭤보고, 끝나면 결과를 ${honorific}께만 보여드려요. 약 5분 걸리고, 중간에 "그만할래"라고 하시면 언제든 멈출 수 있어요. 시작해 볼까요?`,
+      reply: `${honorific}, ${scale.name} 자가 점검을 시작할게요. 최근 2주간의 기분에 대해 ${scale.items.length}가지를 여쭤보고, 끝나면 결과를 ${honorific}께만 보여드려요. 약 5분 걸리고, 중간에 "그만할래"라고 하시면 언제든 멈출 수 있어요. 시작해 볼까요?`,
     };
   }
+
+  const scale = SCALES[session.scale] ?? SCALES.PHQ9;
+  const items = scale.items;
 
   // ── 중단 의사
   if (ESCAPE_RE.test(userContent)) {
@@ -91,25 +98,25 @@ export async function handleMentalFlow(params: {
   if (session.current_item === 0) {
     if (AFFIRM_RE.test(userContent)) {
       await setSession(session.id, `current_item = 1, retry_used = false`);
-      return { status: "in_progress", reply: `좋아요, 편하게 답해 주세요. ${ANSWER_GUIDE}\n\n${askItem(1)}` };
+      return { status: "in_progress", reply: `좋아요, 편하게 답해 주세요. ${ANSWER_GUIDE}\n\n${askItem(items, 1)}` };
     }
     if (!session.retry_used) {
       await setSession(session.id, `retry_used = true`);
-      return { status: "retry", reply: `표준 자가 점검(PHQ-9)을 대화로 풀어서 여쭤보는 거예요. 결과는 ${honorific}만 보실 수 있고, 진단이 아닌 참고용이에요. 시작해 볼까요? (싫으시면 "그만할래"라고 해주세요)` };
+      return { status: "retry", reply: `표준 자가 점검(${scale.name})을 대화로 풀어서 여쭤보는 거예요. 결과는 ${honorific}만 보실 수 있고, 진단이 아닌 참고용이에요. 시작해 볼까요? (싫으시면 "그만할래"라고 해주세요)` };
     }
     await setSession(session.id, `status = 'aborted'`);
     return { status: "aborted", reply: `알겠어요, 오늘은 여기까지 할게요. 마음 내키실 때 "마음 건강 체크"라고 불러주세요.` };
   }
 
-  // ── 문항 답변 단계 (1~9)
+  // ── 문항 답변 단계
   const itemNo = session.current_item;
-  const item = PHQ9_ITEMS[itemNo - 1];
+  const item = items[itemNo - 1];
   const score = await classifyFrequencyAnswer(userContent);
 
   if (score < 0) {
     if (!session.retry_used) {
       await setSession(session.id, `retry_used = true`);
-      return { status: "retry", reply: `${nameSoft(companionName)} 다시 한번 여쭤볼게요. ${ANSWER_GUIDE}\n\n${askItem(itemNo, 1)}` };
+      return { status: "retry", reply: `${nameSoft(companionName)} 다시 한번 여쭤볼게요. ${ANSWER_GUIDE}\n\n${askItem(items, itemNo, 1)}` };
     }
     await setSession(session.id, `status = 'aborted'`);
     return { status: "aborted", reply: `답하기 애매한 질문이었나 봐요. 오늘은 여기서 멈출게요 — 나중에 "마음 건강 체크"로 다시 이어가요.` };
@@ -125,22 +132,25 @@ export async function handleMentalFlow(params: {
   const crisisLine = crisis ? `\n\n${CRISIS_GUIDE}` : "";
 
   // ── 마지막 문항이면 결과 산출
-  if (itemNo >= PHQ9_ITEMS.length) {
+  if (itemNo >= items.length) {
     const rows = await prisma.$queryRawUnsafe<{ total: number }[]>(
       `SELECT COALESCE(SUM(score), 0)::int AS total FROM mental_assessments WHERE session_id = $1`, session.id);
     const total = rows[0]?.total ?? 0;
-    const interp = interpretPHQ9(total);
-    await setSession(session.id, `status = 'done', total = $2, severity = $3`, total, interp.severity);
+    const interp = scale.interpret(total);
+    await setSession(session.id, `status = 'done', total = $2, severity = $3, crisis = $4`, total, interp.severity, crisis);
     const recommendLine = interp.recommend ? " 가까운 정신건강복지센터(1577-0199)나 병원에서 상담받아 보시길 권해요." : "";
+    // 9번 양성 후속 케어: 결과 직후 대화를 닫지 않고 마음을 더 나누도록 초대 (보호자 알림은 본인 동의 없인 금지 — T3 원칙)
+    const careLine = crisis ? `\n${honorific}, 괜찮으시면 지금 마음이 어떤지 ${companionName}한테 조금 더 이야기해 주세요. 끝까지 들어드릴게요.` : "";
+    const crossLine = session.scale === "PHQ9" ? `\n불안 점검도 해보고 싶으시면 "불안 체크"라고 말씀해 주세요.` : "";
     return {
       status: "done", crisis,
-      reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${honorific}, 9가지 모두 답해 주셔서 고마워요. 이번 점검 결과는 「${interp.severity}」이에요. ${interp.text}${recommendLine}\n자세한 결과와 지난 기록은 "마음 건강" 페이지에서 ${honorific}만 보실 수 있어요. ${NON_DIAGNOSTIC_NOTICE}`,
+      reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${honorific}, ${items.length}가지 모두 답해 주셔서 고마워요. 이번 점검 결과는 「${interp.severity}」이에요. ${interp.text}${recommendLine}\n자세한 결과와 지난 기록은 "마음 건강" 페이지에서 ${honorific}만 보실 수 있어요. ${NON_DIAGNOSTIC_NOTICE}${careLine}${crossLine}`,
     };
   }
 
   // ── 다음 문항
   await setSession(session.id, `current_item = $2, retry_used = false`, itemNo + 1);
-  return { status: "in_progress", crisis, reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${askItem(itemNo + 1)}` };
+  return { status: "in_progress", crisis, reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${askItem(items, itemNo + 1)}` };
 }
 
 function nameSoft(companionName: string): string {
