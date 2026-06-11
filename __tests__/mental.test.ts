@@ -1,6 +1,6 @@
 /** T3 정신건강 검진 — 질문지 무결성 + 응답 분류 fast-path + 해석 컷오프 */
 import { describe, it, expect } from "vitest";
-import { PHQ9_ITEMS, interpretPHQ9 } from "@/lib/screening/mental-bank";
+import { PHQ9_ITEMS, GAD7_ITEMS, SCALES, interpretPHQ9, interpretGAD7 } from "@/lib/screening/mental-bank";
 import { classifyFast } from "@/lib/health/mental-scorer";
 
 describe("PHQ9_ITEMS 무결성", () => {
@@ -11,6 +11,28 @@ describe("PHQ9_ITEMS 무결성", () => {
       expect(item.variants.length).toBeGreaterThanOrEqual(2);
       expect(!!item.crisis).toBe(item.no === 9);
     });
+  });
+});
+
+describe("GAD7_ITEMS·SCALES 무결성", () => {
+  it("GAD-7은 7문항, crisis 문항 없음", () => {
+    expect(GAD7_ITEMS).toHaveLength(7);
+    GAD7_ITEMS.forEach((item, i) => {
+      expect(item.no).toBe(i + 1);
+      expect(item.variants.length).toBeGreaterThanOrEqual(2);
+      expect(!!item.crisis).toBe(false);
+    });
+  });
+  it("레지스트리 maxTotal 정확 (PHQ9=27, GAD7=21)", () => {
+    expect(SCALES.PHQ9.maxTotal).toBe(27);
+    expect(SCALES.GAD7.maxTotal).toBe(21);
+  });
+  it("GAD-7 컷오프: 4 정상 / 9 가벼움 / 14 중간 / 15+ 심함", () => {
+    expect(interpretGAD7(4).severity).toBe("정상");
+    expect(interpretGAD7(9).severity).toBe("가벼운 수준");
+    expect(interpretGAD7(14).severity).toBe("중간 수준");
+    expect(interpretGAD7(15).severity).toBe("심한 수준");
+    expect(interpretGAD7(10).recommend).toBe(true);
   });
 });
 

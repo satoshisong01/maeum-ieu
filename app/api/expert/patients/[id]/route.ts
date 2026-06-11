@@ -83,7 +83,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     };
   });
 
-  console.log("[expert-detail] viewed", JSON.stringify({ expert: session.user.id.slice(0, 8), patient: patientId.slice(0, 8) }));
+  // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
+  prisma.$executeRawUnsafe(
+    `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, 'detail')`,
+    `eal_${Date.now()}_${session.user.id.slice(0, 8)}`, session.user.id, patientId,
+  ).catch(() => {});
   return NextResponse.json({
     patient: { name: patient.name ?? "이름 미설정", age: patient.age, gender: patient.gender, joinedAt: patient.createdAt },
     overallAvg: recentAvg < 0 ? null : Number(recentAvg.toFixed(2)),

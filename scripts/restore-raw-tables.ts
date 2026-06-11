@@ -84,6 +84,15 @@ async function main() {
         CONSTRAINT mental_assessments_session_item_key UNIQUE (session_id, item_no)
       )`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ma_user ON mental_assessments(user_id, created_at DESC)`);
+    await client.query(`ALTER TABLE mental_session ADD COLUMN IF NOT EXISTS crisis BOOLEAN NOT NULL DEFAULT false`);
+
+    // 전문가 열람 감사 로그
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS expert_access_log (
+        id TEXT PRIMARY KEY, expert_user_id TEXT NOT NULL, patient_user_id TEXT NOT NULL,
+        action TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_eal_expert ON expert_access_log(expert_user_id, created_at DESC)`);
 
     console.log("✓ message_embeddings + cognitive_assessments + conversation_summary 복구 완료");
     const emb = await client.query(`SELECT COUNT(*) FROM message_embeddings`);
