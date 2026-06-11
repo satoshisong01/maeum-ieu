@@ -52,9 +52,10 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tools: any = enableSearch ? [{ googleSearch: {} }] : undefined;
   // gemini-3.5-flash는 thinking 모델 — 기본(무제한) thinking 예산이면 출력 전 ~10초 추론(응답 지연 주범).
-  //   thinkingBudget을 낮은 양수로 제한해 추론시간 단축(첫 응답 빨라짐). 0은 빈응답 유발이라 금지(THINKING_BUDGET>0).
-  //   responseDelay 측정으로 도입(2026-06-05). 품질 저하 시 상향.
-  const THINKING_BUDGET = 512;
+  //   thinkingBudget을 낮은 양수로 제한해 추론시간 단축(첫 응답 빨라짐). 0은 빈응답 유발이라 금지(최소 64로 클램프).
+  //   responseDelay 측정으로 도입(2026-06-05). COMPANION_THINKING_BUDGET env로 A/B 튜닝 가능(2026-06-11).
+  const parsed = parseInt(process.env.COMPANION_THINKING_BUDGET || "512", 10);
+  const THINKING_BUDGET = Number.isFinite(parsed) && parsed >= 64 ? parsed : 512;
   return new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
     // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
     model: "gemini-2.5-flash",
