@@ -124,7 +124,8 @@ export function stripRecallAnswerLeak(text: string): string {
   }
 
   // 1) 회상 컨텍스트 검출 — "외운/외워드린/외워달라고/말씀드린/기억나세요" + 정답 노출 위험
-  const recallContext = /(?:외워[ㄴ던드]|외운|외워달라|외워드|말씀\s*드린|아까\s*(?:드린|말씀)|기억(?:나|해))/.test(text);
+  //    과거 보고형("말씀드렸었죠"/"불러드렸")과 "생각나" 누락으로 정답 3개가 그대로 노출되던 갭 보강 (2026-06-11)
+  const recallContext = /(?:외워[ㄴ던드]|외운|외워달라|외워드|(?:말씀|불러|알려)\s*드(?:린|렸)|아까\s*(?:드린|말씀)|기억(?:나|해)|생각나)/.test(text);
   if (!recallContext) return out.replace(/\s{2,}/g, " ").replace(/\s+([.!?])/g, "$1").trim();
 
   // 정답 나열 뒤에 붙는 계사·종결 어미 — 함께 소거해야 "단어 세 개는 입니다" 같은 잔여 방지.

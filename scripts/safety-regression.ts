@@ -57,6 +57,12 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
   const c4 = stripRecallAnswerLeak("아까 외워드린 단어 세 개, 나무, 자동차, 모자였는데 기억나세요?");
   check("counter-comma 정답 누출 없음", !c4.includes("나무") && !c4.includes("자동차") && !c4.includes("모자"), c4);
   check("counter-comma '세 ' 비문 없음", !/세\s+,/.test(c4) && c4.includes("세 개"), c4);
+  // 과거 보고형("말씀드렸었죠") + "생각나" — 회상 컨텍스트 어휘 누락으로 정답 노출되던 갭 (2026-06-11)
+  const c5 = stripRecallAnswerLeak("할머니, 아까 지윤이가 '하늘', '자동차', '모자' 이렇게 세 단어를 말씀드렸었죠. 혹시 그 단어들이 생각나시는지 말씀해주시겠어요?");
+  check("과거 보고형 정답 누출 없음", !c5.includes("하늘") && !c5.includes("자동차") && !c5.includes("모자"), c5);
+  // 등록(미래형 '불러드릴게요') 발화는 여전히 단어 보존
+  const c6 = stripRecallAnswerLeak("단어 세 개를 불러드릴게요. 하늘, 자동차, 모자예요. 잘 기억해주세요!");
+  check("등록 발화 단어 보존", c6.includes("하늘") && c6.includes("모자"), c6);
 }
 
 // ── A-4: 자살 ideation 활용형 ─────────────────────────────────────────────
