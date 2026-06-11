@@ -48,6 +48,32 @@ export default function MyPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [expertCodeInput, setExpertCodeInput] = useState("");
+  const [linkingExpert, setLinkingExpert] = useState(false);
+  const [expertLinkMsg, setExpertLinkMsg] = useState("");
+
+  async function linkExpert() {
+    if (!expertCodeInput.trim()) return;
+    setLinkingExpert(true);
+    setExpertLinkMsg("");
+    try {
+      const res = await fetch("/api/users/link-expert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: expertCodeInput.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setExpertLinkMsg(`✓ ${data.expertName}님과 연결되었어요.`);
+        setExpertCodeInput("");
+      } else {
+        setExpertLinkMsg(data.error ?? "연결에 실패했어요.");
+      }
+    } catch {
+      setExpertLinkMsg("연결에 실패했어요. 잠시 후 다시 시도해주세요.");
+    }
+    setLinkingExpert(false);
+  }
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -188,6 +214,36 @@ export default function MyPage() {
                   <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
                 </button>
               </div>
+              {screeningMode === "pro" && (
+                <Link href="/expert" className="mt-2 block rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-center text-sm font-semibold text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-200">
+                  🩺 환자 관리 페이지 열기 →
+                </Link>
+              )}
+            </div>
+
+            {/* 전문가 연결 — 환자 본인이 전문가 코드를 입력해 연결(=본인 동의). 채점·요약만 공유, 대화 원문 비공개 */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">전문가 연결 (담당 의사·관리사 코드)</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="전문가 코드 8자리"
+                  value={expertCodeInput}
+                  onChange={(e) => setExpertCodeInput(e.target.value.toUpperCase())}
+                  maxLength={12}
+                  className="flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 font-mono tracking-widest text-zinc-900 outline-none focus:border-teal-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button
+                  type="button"
+                  onClick={linkExpert}
+                  disabled={linkingExpert || expertCodeInput.trim().length < 6}
+                  className="rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-40"
+                >
+                  {linkingExpert ? "연결 중…" : "연결"}
+                </button>
+              </div>
+              {expertLinkMsg && <p className="mt-1 text-xs text-teal-700 dark:text-teal-300">{expertLinkMsg}</p>}
+              <p className="mt-1 text-[11px] text-zinc-400">연결하면 담당 전문가가 인지 등급·추세 요약만 볼 수 있어요 (대화 내용은 공개되지 않아요).</p>
             </div>
 
             {/* 이름 */}
