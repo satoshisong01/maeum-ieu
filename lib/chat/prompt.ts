@@ -101,11 +101,22 @@ export async function buildSystemPrompt(params: {
   mode?: ScreeningMode;
 }): Promise<PromptParts> {
   const { userId, conversationId, timeCtx, weather, mode = "user" } = params;
+  const todayKstEarly = toKstDateString(new Date());
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true, age: true, gender: true, companionName: true, companionRelation: true, userHonorific: true },
-  });
+  // 5개 DB 조회가 전부 상호 독립 — 순차 5 RTT → 병렬 1 RTT (선행 지연 ~150-300ms 절감, 2026-06-11)
+  const [user, dateBlockP, assessedP, userMsgCount, profile, summaries] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, age: true, gender: true, companionName: true, companionRelation: true, userHonorific: true },
+    }),
+    conversationId ? getDateAwareBlock(conversationId, todayKstEarly) : Promise.resolve(""),
+    getTodayAssessedDomains(userId),
+    conversationId && mode !== "pro"
+      ? prisma.message.count({ where: { conversationId, role: "user" } })
+      : Promise.resolve(0),
+    getFullProfile(userId),
+    getRecentSummaries(userId),
+  ]);
   const userName = user?.name?.trim() || "사용자";
   const honorific = user?.userHonorific?.trim() || getHonorific(user?.age ?? null, user?.gender ?? null);
   const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
@@ -131,10 +142,8 @@ export async function buildSystemPrompt(params: {
   · 사용자 "이미자, 나훈아 노래" → "이미자", "나훈아"(❌ "이미자 ${honorific}", "나훈아 ${honorific}")
   · 사용자 친구 "순자" 처럼 실제 어르신이면 "순자 할머니"는 허용.`;
   const envBlock = buildEnvBlock(timeCtx, weather);
-  const todayKst = toKstDateString(new Date());
-  const dateBlock = conversationId ? await getDateAwareBlock(conversationId, todayKst) : "";
-
-  const assessed = await getTodayAssessedDomains(userId);
+  const dateBlock = dateBlockP;
+  const assessed = assessedP;
   const allDomains = ["orientation_time", "orientation_place", "memory_immediate", "memory_delayed", "language", "judgment", "attention_calculation"];
 
   const DOMAIN_KO: Record<string, string> = {
@@ -163,11 +172,8 @@ export async function buildSystemPrompt(params: {
     // 사용자 모드 = 라이트한 일상 수다 80% + 인지 확인 20% (검사 느낌 0이 최우선).
     //   서버가 "이번 턴은 수다 / 이번 턴은 슬쩍 확인"을 정해 비율을 보장하고,
     //   LLM은 정해진 후보를 대화에 녹이기만 함.
-    // 턴 인덱스: 이 대화의 사용자 발화 수 + 1 (현재 발화는 응답 생성 후 저장되므로 아직 미반영).
-    let userTurnIndex = 1;
-    if (conversationId) {
-      userTurnIndex = (await prisma.message.count({ where: { conversationId, role: "user" } })) + 1;
-    }
+    // 턴 인덱스: 이 대화의 사용자 발화 수 + 1 (현재 발화는 응답 생성 후 저장되므로 아직 미반영. 카운트는 상단 병렬 배치에서 조회)
+    const userTurnIndex = userMsgCount + 1;
     const bankReady = isBankReady();
     const chitchatPool = bankReady ? sampleQuestionsForDomain("chitchat", 4).map((q) => q.text) : [];
     const chitchatBlock = chitchatPool.length
@@ -199,12 +205,7 @@ export async function buildSystemPrompt(params: {
     }
   }
 
-  // Phase 1: 구조화된 사용자 프로필 블록 + 과거 대화 요약본 (Phase 3)
-  //   prompt fix가 누적되어 LLM이 우선순위 못 잡는 문제 해결 + 환각 차단
-  const [profile, summaries] = await Promise.all([
-    getFullProfile(userId),
-    getRecentSummaries(userId),
-  ]);
+  // Phase 1: 구조화된 사용자 프로필 블록 + 과거 대화 요약본 (상단 병렬 배치에서 조회됨)
   const profileBlock = renderProfileForPrompt(profile);
   const summaryBlock = renderSummariesForPrompt(summaries);
 

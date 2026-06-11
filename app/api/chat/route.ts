@@ -25,6 +25,7 @@ import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEsc
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
+import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -58,7 +59,22 @@ function buildChatContents(params: {
   now?: Date;
   maxRecent?: number;
 }): GeminiTurn[] {
-  const { messages, currentUserMessage, memories, hintBlock, now = new Date(), maxRecent = 20 } = params;
+  // maxRecent 20→24: DB 이력 도입과 함께 컨텍스트 창 소폭 확대 (세션 내 재질문 감소, 토큰 +α 수용)
+  const { messages, currentUserMessage, memories, hintBlock, now = new Date(), maxRecent = 24 } = params;
+
+  // 컨텍스트 창(24) 밖 25~80번째 메시지는 사용자 발화만 압축해 다이제스트로 주입 —
+  //   "30~60메시지 전 이야기를 기억 못 하는" 세션 중기 기억 공백 해소 (RAG는 랭킹 운에 좌우되어 불충분, 2026-06-11).
+  //   사용자 발화만(상대 발화가 기억의 앵커) + 60자 클립 + 최대 40줄 ≈ 1k 토큰 이내.
+  const older = messages.slice(0, -maxRecent);
+  const olderDigest = older
+    .filter((m) => m.role === "user")
+    .slice(-40)
+    .map((m) => {
+      const label = m.createdAt ? `[${getRelativeTimeLabel(m.createdAt, now)}] ` : "";
+      const body = m.content.replace(/\s+/g, " ").trim().slice(0, 60);
+      return `· ${label}${body}`;
+    })
+    .join("\n");
 
   const recent = messages.slice(-maxRecent);
   // 마지막이 user이고 currentUserMessage와 동일하면 prior에서 제외 (텍스트 모드)
@@ -97,6 +113,7 @@ function buildChatContents(params: {
 
   const cleanedHints = (hintBlock || "").trim();
   const finalText = [
+    olderDigest ? `[이번 세션 앞부분 — 사용자 발화 요약 (위 대화 직전 흐름, 질문받으면 참고)]\n${olderDigest}` : "",
     memories ? `[참고 — 과거 메모리]\n${memories}` : "",
     cleanedHints,
     `${qaMarker}[현재 사용자 발화]\n${currentUserMessage || "(빈 메시지)"}`,
@@ -124,6 +141,26 @@ async function fetchMemories(userId: string, query: string): Promise<string> {
   catch { return ""; }
 }
 
+/**
+ * 대화 이력을 DB에서 직접 로드 (최근 80개) — 클라이언트 slice(50)·컨텍스트 윈도우(20) 너머의
+ * 세션 내 기억 공백("아까 외운 단어를 외운 적 없다", 화투 재질문) 해소.
+ * DB가 ground truth이므로 클라이언트 페이로드 의존도 제거. 실패 시 빈 배열(호출부가 클라이언트 이력으로 폴백).
+ */
+async function fetchRecentHistory(conversationId: string): Promise<{ role: string; content: string; createdAt?: string }[]> {
+  try {
+    const rows = await prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: "desc" },
+      take: 80,
+      select: { role: true, content: true, createdAt: true },
+    });
+    return rows.reverse().map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt.toISOString() }));
+  } catch (e) {
+    console.warn("[history] DB fetch failed — falling back to client messages:", (e as Error).message);
+    return [];
+  }
+}
+
 function toSafeError(e: unknown): string {
   const raw = e instanceof Error ? e.message : "";
   const isQuota = /429|Too Many|quota|Quota exceeded|rate|GoogleGenerativeAI/.test(raw);
@@ -139,8 +176,9 @@ async function runCognitiveAnalysis(params: {
   assistantResponse: string;
   historyText: string;
   envBlock: string;
+  honorific?: string;
 }): Promise<void> {
-  const { userId, conversationId, userMsgId, userMessage, assistantResponse, historyText, envBlock } = params;
+  const { userId, conversationId, userMsgId, userMessage, assistantResponse, historyText, envBlock, honorific } = params;
   try {
     const analysis = await analyzeCognitive({ userMessage, assistantResponse, historyText, envBlock });
 
@@ -166,6 +204,10 @@ async function runCognitiveAnalysis(params: {
         || "인지 이상징후 감지";
       // 사용자 메시지에 이상징후 마킹 (이상 행동은 사용자 발화)
       await markAnomaly(userMsgId, note);
+      // C2: 악화 추세면 보호자 알림 (C2_NOTIFY=1 게이트 + 72h 디바운스 — 이상 턴에만 평가해 집계비용 절감)
+      maybeNotifyCognitiveDecline({ userId, userMsgId, userName: honorific || "사용자" })
+        .then((r) => { if (r.sent) console.log("[c2-notify] sent:", r.reason); })
+        .catch((e) => console.error("[c2-notify]", e));
     }
   } catch (e) {
     console.error("[cognitive-analysis] FAILED:", e);
@@ -375,21 +417,17 @@ async function handleAudioMessage(params: {
   systemPrompt: string; envBlock: string; honorific: string; userName: string;
   companionName: string; companionRelation: string;
   userId: string; conversationId?: string;
-  audioData: string; audioMimeType: string; historyText: string;
+  sttPromise: Promise<string>; historyText: string;
   messages: { role: string; content: string; createdAt?: string }[];
   profile: FullProfile;
   clientTimeIso?: string;
   timings?: Record<string, number>;
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, audioData, audioMimeType, historyText, messages, profile, clientTimeIso, timings } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings } = params;
 
-  // 1단계: 음성 → 텍스트 변환
-  let transcription = "";
-  try {
-    transcription = await transcribeAudio(audioData, audioMimeType);
-  } catch (e) {
-    console.warn("[STT] transcription failed:", e);
-  }
+  // 1단계: 음성 → 텍스트 변환 — POST 초입에서 이미 시작됨(프롬프트 빌드와 병렬). 여기선 대기만.
+  const transcription0 = await sttPromise;
+  let transcription = transcription0 || "";
 
   // 1.4단계: 응급 발화 감지 — moderation·STT 게이트보다 먼저 (안전 우선)
   const emergency = await evaluateEmergency({ userContent: transcription, conversationId });
@@ -517,7 +555,7 @@ async function handleAudioMessage(params: {
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
       if (transcription) {
         extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
         maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
@@ -737,7 +775,7 @@ async function handleTextMessage(params: {
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock }).catch((e) => console.error("[bg-cognitive]", e));
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
       extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
       maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
     },
@@ -779,15 +817,24 @@ export async function POST(req: Request) {
     const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
     const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
 
-    // weather와 RAG(임베딩 HTTP)는 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
+    // 음성 STT를 가장 먼저 시작 — weather/프롬프트/이력 조회와 병렬로 진행해 음성 왕복 지연 단축.
+    //   (STT는 시스템 프롬프트와 무관하므로 직렬일 이유가 없음. 실패는 핸들러에서 빈 전사로 처리)
+    const sttPromise = isAudio && audio
+      ? transcribeAudio(audio.data, audio.mimeType).catch((e) => { console.warn("[STT] transcription failed:", e); return ""; })
+      : null;
+
+    // weather · RAG(임베딩 HTTP) · DB 이력은 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
     //   인사 턴은 RAG 불필요, 음성 턴은 STT 후 transcription 기준으로 핸들러가 직접 검색.
     const skipMemories = isInitialGreeting || isReturningGreeting || isAudio || !lastUserMessage;
     let _m = performance.now();
-    const [weatherCtx, memories] = await Promise.all([
+    const [weatherCtx, memories, dbHistory] = await Promise.all([
       getWeatherContext(ctx?.latitude, ctx?.longitude),
       skipMemories ? Promise.resolve("") : fetchMemories(userId, lastUserMessage),
+      conversationId && !isInitialGreeting ? fetchRecentHistory(conversationId) : Promise.resolve([]),
     ]);
     _t.weatherMs = Math.round(performance.now() - _m);
+    // DB 이력이 있으면 그것이 ground truth (클라이언트 slice 50·미저장 경합 시에만 폴백)
+    const history = dbHistory.length > 0 ? dbHistory : (messages ?? []);
     _m = performance.now();
     const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx, mode,
@@ -797,7 +844,7 @@ export async function POST(req: Request) {
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
 
-    const historyText = buildHistoryText(messages ?? []);
+    const historyText = buildHistoryText(history);
 
     // 응급 신호(L1 이상)나 부적절 발언이 섞인 발화는 단락하지 않고 일반 경로로 —
     // 시간 즉답이 응급 마킹/누적·모더레이션 카운트를 삼키는 것 방지(음성 1.55단계와 동일 정책).
@@ -807,15 +854,15 @@ export async function POST(req: Request) {
       return handleDateTimeQuestion(lastUserMessage, honorific, conversationId, userId, ctx?.currentTime);
     }
 
-    if (isAudio && audio) {
+    if (isAudio && sttPromise) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
-        audioData: audio.data, audioMimeType: audio.mimeType, historyText, messages: messages ?? [], profile,
+        sttPromise, historyText, messages: history, profile,
         clientTimeIso: ctx?.currentTime, timings: _t,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: messages ?? [], companionName, companionRelation, honorific, profile, timings: _t });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });

@@ -397,3 +397,23 @@ KO_REPORTIVE STT 발화 삭제(extractText isUserSpeech) / 음성 날짜단락 L
 
 ### 검증
 vitest 78/78 · safety-regression 38/38 · tsc 0 · prompt-leak 클린. test-emergency-detect.ts 34/36의 실패 2건은 L2 기존 실패(이번 변경 무관, 스크립트 노후 — vitest가 기준).
+
+---
+
+## 2026-06-11 (오후) — T1·T2 잔여 갭 반복 1라운드
+
+### Fix 4건
+| 항목 | 내용 | 검증 |
+|---|---|---|
+| 세션 중기 기억 (T2) | 서버가 DB에서 최근 80메시지 직접 로드(클라 slice 의존 제거) + 컨텍스트 창 24 + **창 밖 25~80번째 사용자 발화 압축 다이제스트 주입**. RAG 랭킹 운에 좌우되던 30~60메시지 전 회상 해소 | 라이브: 56메시지 전 "텃밭 공룡 농담→옆집 개" 정확 회상 (수정 전 동일 질문 실패 확인) |
+| 음성 왕복 단축 (T2) | STT를 POST 초입에서 시작 — weather·프롬프트·이력 조회(~1.2s)와 병렬. 구조상 ~1-1.5s 단축 | 코드 검증 (음성 실측은 차기) |
+| 선행 지연 (T1·T2) | buildSystemPrompt 5개 순차 쿼리 → 단일 Promise.all | DEBUG_TIMING 실측 promptMs **72ms** |
+| C2 보호자 알림 (T1·T2) | lib/health/cognitive-alert.ts 신설 — 최근7일 vs 이전30일 추세(detectAcuteChange 재사용), 급성악화 또는 악화+중증 시 notifyGuardian, 72h 디바운스, **C2_NOTIFY=1 게이트(기본 off — 정책 결정 대기)** | tsc·단위 경로 검증 (웹훅 실발송은 보호자 설정 계정 필요) |
+
+### 실측 (텍스트 턴)
+weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 72 · 선행계 1.25s · 첫 문장 4.1s(LLM 생성 ~2.8s 지배). 스모크 10턴: 빈응답·누출 0.
+
+### 미해결/다음
+- 첫 문장 4.1s의 지배 요인은 LLM 생성(thinking 512 포함) — 단축하려면 thinking 추가 하향 A/B 또는 모델 전략 필요
+- C2 알림 정책 결정 필요(발동 임계·문구·채널) → 결정 후 C2_NOTIFY=1
+- T1 다환자 관리 — 설계안 제시(전문가-환자 연결 방식이 제품 결정): ExpertPatient 테이블 + 초대코드 연결 + /expert 환자목록 + 권한·감사로그
