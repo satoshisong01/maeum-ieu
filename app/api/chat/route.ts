@@ -276,8 +276,9 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
 /** 음성 → 텍스트 변환 (STT 전용) */
 async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
   const sttModel = new GoogleGenerativeAI(getApiKey()).getGenerativeModel({
-    model: "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
-    generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+    model: process.env.STT_MODEL || "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
+    // STT가 음성 왕복의 56%(평균 3.7s) 병목 — 전사엔 추론 불필요해 thinking 최소화(0은 빈응답 유발 금지, 64 클램프)
+    generationConfig: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 } } as any,
     safetySettings: COMPANION_SAFETY_SETTINGS,
   });
 
@@ -428,6 +429,7 @@ async function handleAudioMessage(params: {
 
   // 1단계: 음성 → 텍스트 변환 — POST 초입에서 이미 시작됨(프롬프트 빌드와 병렬). 여기선 대기만.
   const transcription0 = await sttPromise;
+  if (timings) timings.sttMs = Math.round(performance.now() - timings.start);
   let transcription = transcription0 || "";
 
   // 1.4단계: 응급 발화 감지 — moderation·STT 게이트보다 먼저 (안전 우선)

@@ -72,7 +72,7 @@ async function main() {
           try {
             const ev = JSON.parse(line.slice(5));
             if (ev.type === "chunk" && !firstChunkAt) firstChunkAt = performance.now() - t0;
-            if (ev.type === "done") { timings = ev.timings || null; transcription = ev.transcription || ""; }
+            if (ev.type === "done") { timings = ev.timing || null; transcription = ev.transcription || ""; }
             if (ev.transcription && !transcription) transcription = ev.transcription;
           } catch {}
         }
