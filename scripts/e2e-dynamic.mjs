@@ -222,7 +222,7 @@ async function sendAndRead(page, text) {
     } else {
       console.log(`✅ 누출·빈응답·이상 0건 — 유동형 대화 전 구간 클린`);
     }
-    console.log(`\n계정: ${email}  (검증: node scripts/_check-leak.mjs ${STAMP})`);
+    console.log(`\n계정: ${email}  (검증: node scripts/archive/_check-leak.mjs ${STAMP})`);
     if (HEADED) { console.log(`\n(브라우저 5초 후 닫힘)`); await page.waitForTimeout(5000); }
     await browser.close();
     await pool.end();

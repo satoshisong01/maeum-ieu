@@ -10,8 +10,8 @@
  */
 import "dotenv/config";
 import fs from "fs";
-import { analyzeCognitive } from "../lib/chat/cognitive-analyzer";
-import { classifySeverity, computeOverallAvg } from "../lib/health/severity";
+import { analyzeCognitive } from "../../lib/chat/cognitive-analyzer";
+import { classifySeverity, computeOverallAvg } from "../../lib/health/severity";
 
 // 산출 경로 — 패치/버전별 reports 폴더 (env로 오버라이드 가능)
 const OUT_DIR = process.env.REPORT_DIR || "docs/reports/2026-06-02_gemini-3.5-flash";

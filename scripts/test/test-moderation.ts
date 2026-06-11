@@ -1,5 +1,5 @@
 /** moderation.ts 패턴 검증 — 정상 발화 false positive 없는지 확인 */
-import { detectInappropriate } from "../lib/chat/moderation";
+import { detectInappropriate } from "../../lib/chat/moderation";
 
 const cases: Array<{ text: string; expect: string; label: string }> = [
   // ▼ 정상 — false positive 없어야 함

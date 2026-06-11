@@ -1,5 +1,5 @@
 // detectEmergency L1/L2/L3 분류 + 과거/비유 가드 검증
-import { detectEmergency, shouldEscalateL1ToL2 } from "../lib/chat/emergency";
+import { detectEmergency, shouldEscalateL1ToL2 } from "../../lib/chat/emergency";
 
 interface Case { text: string; level: number; category: string; label: string }
 

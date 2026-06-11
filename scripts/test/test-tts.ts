@@ -5,7 +5,7 @@
 import "dotenv/config";
 import { GoogleGenAI } from "@google/genai";
 import { writeFile } from "node:fs/promises";
-import { pcmToWav } from "../lib/audio";
+import { pcmToWav } from "../../lib/audio";
 
 async function main() {
   const apiKey = process.env.GEMINI_API_KEY;
