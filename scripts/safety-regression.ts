@@ -151,6 +151,19 @@ console.log("\n[relation-contradiction] 가족 순서 모순 검출 (아드님 �
   check("순서표현 없으면 모순경고 없음", !w2.some((w) => w.startsWith("relation_mismatch")), JSON.stringify(w2));
 }
 
+// ── #13: 존댓말 활용형이 장소 접미사(시/면)로 오추출 → wholesale 교체 오발동 금지 ──
+console.log("\n[fact-noun] 존댓말 밀집 응답 wholesale 교체 오발동 금지");
+{
+  const emptyProfile: any = { family: [], profile: null };
+  // 김치 사이클 재현 — '편하시군요/담그시는군요/먹어주면' 등 활용형만 있는 정상 응답 (>120자)
+  const kimchi = "할머니, 김치는 직접 담가야 마음이 편하시군요. 아드님들도 할머니께서 담그시는 김치를 더 좋아하신다니 정말 자랑스러우시겠어요. 정성껏 담가서 아드님들이 맛있게 먹어주면 그걸로 충분하다고 하시는 말씀이 참 따뜻하네요.";
+  const r = factCheckResponse({ aiText: kimchi, profile: emptyProfile, recentUserText: "김치는 내가 직접 담가야 맘이 편하지", memories: "", honorific: "할머니", currentUserText: "그럼그럼, 김치는 내가 직접 담가야 맘이 편하지. 아들들도 내 김치를 더 좋아하고." });
+  check("존댓말 밀집 응답 미교체", r.cleaned === kimchi, `score=${r.groundingScore}`);
+  // 진짜 장소(처소격 직결)는 여전히 후보로 추출 — 미근거면 score 하락
+  const place = factCheckResponse({ aiText: "할머니, 어제 장안동에 다녀오셨다면서요? 장안동에서 뭐 하셨어요? 재미있는 일이 많으셨을 것 같아요. 누구랑 같이 가셨는지도 궁금하네요. 다음에 또 가시면 지윤이한테도 이야기해 주세요.", profile: emptyProfile, recentUserText: "산책 다녀왔어", memories: "", honorific: "할머니", currentUserText: "산책 다녀왔어" });
+  check("처소격 직결 장소는 후보 유지(score<1)", place.groundingScore < 1, `score=${place.groundingScore}`);
+}
+
 // ── #12: 보속증 안전망 — 동일 발화 3턴 연속 반복 → memory_immediate 강제 마킹 ──
 console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
 {
