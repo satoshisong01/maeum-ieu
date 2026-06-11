@@ -1,7 +1,7 @@
 /** 응답 후처리 — route.ts에서 분리(2026-06-10). 순수 텍스트 변환만: DB/LLM 의존성 없음. 동작 변경 없음. */
 
 import type { FullProfile } from "@/lib/chat/profile";
-import { normalizeImnida, stripRecallAnswerLeak, eunNeun, iGa, eulReul, gwaWa } from "@/lib/chat/korean-particle";
+import { normalizeImnida, stripRecallAnswerLeak, fixFamiliarNameParticles, eunNeun, iGa, eulReul, gwaWa } from "@/lib/chat/korean-particle";
 
 /**
  * 앵무새 반응 제거 — AI 응답의 첫 문장이 사용자 발화 핵심 단어를 과도하게 반복하면 그 문장 삭제.
@@ -334,6 +334,7 @@ export function postProcessReply(
     ["fixWordChainStart", (t) => fixWordChainStart(t)],
     ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
     ["normalizeImnida", (t) => normalizeImnida(t)],
+    ["fixFamiliarNameParticles", (t) => fixFamiliarNameParticles(t, companionName)],
     ["stripRecallAnswerLeak", (t) => stripRecallAnswerLeak(t)],
   ];
   let text = rawText;

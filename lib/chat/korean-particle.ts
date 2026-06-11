@@ -84,6 +84,20 @@ export function normalizeImnida(text: string, knownNames: string[] = []): string
 }
 
 /**
+ * 동반자 이름 조사 오류 정정 — LLM이 받침 있는 이름에 받침 없는 조사를 붙이는 실수
+ * ("지윤가 기억하고 있지요" / "지윤랑 이야기"). 받침 있는 이름만 친근체로 정정:
+ *   지윤가→지윤이가, 지윤는→지윤이는, 지윤랑→지윤이랑, 지윤를→지윤이를, 지윤와→지윤이와, 지윤야→지윤아
+ * "지윤이가"처럼 이미 올바른 형태는 '이'가 끼어 있어 패턴에 안 걸림.
+ */
+export function fixFamiliarNameParticles(text: string, name: string): string {
+  if (!text || !name || !hasJongseong(name)) return text;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text
+    .replace(new RegExp(`(?<![가-힣])${esc}(가|는|를|랑|와)(?![가-힣])`, "g"), `${name}이$1`)
+    .replace(new RegExp(`(?<![가-힣])${esc}야(?![가-힣])`, "g"), `${name}아`);
+}
+
+/**
  * 회상 평가 정답 노출 차단 — AI가 "외워드린 단어 세 개 기억나세요? '나무', '자동차', '모자'" 같이
  * 정답을 함께 노출하는 회귀가 prompt 강화로도 자주 재발. 응답 후처리에서 단서 부분 자동 제거.
  *
