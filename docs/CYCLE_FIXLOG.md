@@ -471,3 +471,12 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - E2E: 오발동 가드/버튼 시작/그만할래 중단/해제·재연결 전부 PASS. vitest 103/103 · safety 38/38
 
 ### 남은 후보: T3 GAD-7 · 9번 양성 후속 케어 / T2 음성 실측 / 감사로그 테이블 / C2 정책 결정
+
+## 2026-06-11 (오전) — 반복 J·K: GAD-7 + 위기 후속 + 감사로그 (4890768)
+
+- **J (T3 GAD-7)**: SCALES 레지스트리(PHQ9/GAD7)로 mental-flow 척도 일반화. "불안 체크" 트리거, 컷오프 5/10/15. PHQ9 완료 → GAD-7 교차 제안(crossLine). 9번 양성 시 careLine(위기 후속 초대) + mental_session.crisis 저장 + /mental 위기 배너(109/1577-0199)
+- **K (T1 감사로그)**: expert_access_log 테이블 + patients list('*')/detail INSERT(실패 무시). restore-raw-tables 패리티 갱신
+- 라이브 E2E: "불안 체크도 해볼래"→GAD-7 안내→7문항 진행→합계 3 「정상」 정확 · DB scale=GAD7 행 확인 · 전문가 로그인→list/detail 호출→감사 2행 적재
+- 검증: vitest 106/106 (GAD-7 무결성·컷오프 +3) · safety 38/38 · tsc 0
+
+### 남은 후보: T2 음성 실측 / 9번 양성 후속 케어 심화 / C2 정책 결정 / /expert 감사로그 노출

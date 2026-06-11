@@ -180,3 +180,19 @@ describe("postProcessReply (파이프라인 스모크)", () => {
     expect(out).toBe("오늘 점심은 맛있게 드셨다니 다행이고 산책까지 다녀오셨다니 정말 잘하셨습니다!");
   });
 });
+
+describe("fixFamiliarNameParticles — 동반자 이름 조사 정정", () => {
+  it("받침 있는 이름의 오류 조사를 친근체로 정정", async () => {
+    const { fixFamiliarNameParticles } = await import("@/lib/chat/korean-particle");
+    expect(fixFamiliarNameParticles("지윤가 잘 기억하고 있지요.", "지윤")).toBe("지윤이가 잘 기억하고 있지요.");
+    expect(fixFamiliarNameParticles("오늘 지윤랑 이야기 많이 했네요!", "지윤")).toBe("오늘 지윤이랑 이야기 많이 했네요!");
+    expect(fixFamiliarNameParticles("지윤야, 고마워.", "지윤")).toBe("지윤아, 고마워.");
+  });
+  it("이미 올바른 형태·받침 없는 이름·한글 연접은 그대로", async () => {
+    const { fixFamiliarNameParticles } = await import("@/lib/chat/korean-particle");
+    expect(fixFamiliarNameParticles("지윤이가 있을게요. 지윤이랑 가요.", "지윤")).toBe("지윤이가 있을게요. 지윤이랑 가요.");
+    expect(fixFamiliarNameParticles("수지가 좋아요.", "수지")).toBe("수지가 좋아요.");
+    expect(fixFamiliarNameParticles("지윤가요?", "지윤")).toBe("지윤가요?");
+    expect(fixFamiliarNameParticles("지윤도 그래요.", "지윤")).toBe("지윤도 그래요.");
+  });
+});

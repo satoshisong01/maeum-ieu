@@ -20,6 +20,8 @@ const TRIGGER_RE = /마음\s*(?:건강)?\s*(?:체크|검진|검사)|우울\s*(?:
 const TRIGGER_PAST_RE = /받았|했었|했어|했지|했거든|다녀왔|다녀온|끝났|해\s*봤/; // \b는 한글에 무력 — 사용 금지(기지 버그 클래스)
 const ESCAPE_RE = /그만\s*(?:할|하|둬|두)|안\s*할(?:래|게)|나중에\s*(?:할|하)|중단|취소|스톱|관두/;
 const AFFIRM_RE = /응|어\s|그래|네|예\b|좋아|좋지|시작|해\s*보자|하자|할래|해\s*줘|그러자|오냐|궁금/;
+// 동의 단계에서 검진을 화제로 삼고 있는지(질문·망설임 포함) — 미해당이면 딴 주제로 보고 비켜남
+const CONSENT_TOPIC_RE = /검사|체크|점검|테스트|우울|불안|마음|점수|결과|질문|뭐|뭔|어떻|왜|무슨|몇\s*(?:개|가지)|무서|걱정|부담|싫|글쎄|괜찮|고민/;
 
 interface MentalSession {
   id: string; scale: string; status: string; current_item: number; retry_used: boolean;
@@ -99,6 +101,12 @@ export async function handleMentalFlow(params: {
     if (AFFIRM_RE.test(userContent)) {
       await setSession(session.id, `current_item = 1, retry_used = false`);
       return { status: "in_progress", reply: `좋아요, 편하게 답해 주세요. ${ANSWER_GUIDE}\n\n${askItem(items, 1)}` };
+    }
+    // 딴 주제 발화("그 전에 손주 전화 온다고 했나?") — 검진이 대화를 가로채지 않도록
+    // 조용히 세션을 접고 일반 대화로 위임. 원하면 트리거로 다시 시작.
+    if (userContent.length >= 10 && !CONSENT_TOPIC_RE.test(userContent)) {
+      await setSession(session.id, `status = 'aborted'`);
+      return null;
     }
     if (!session.retry_used) {
       await setSession(session.id, `retry_used = true`);
