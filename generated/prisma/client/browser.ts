@@ -23,6 +23,13 @@ export * from './enums';
  */
 export type User = Prisma.UserModel
 /**
+ * Model ExpertPatient
+ * 전문가(의사·간호사·보호사) ↔ 환자 연결. 환자 본인이 마이페이지에서 전문가 코드를 입력해 연결(=본인 동의).
+ * 전문가는 연결된 환자의 채점·요약만 열람(대화 원문 비공개 — 프라이버시 기본값).
+ * ⚠️ 신규 테이블 생성은 prisma db push 금지(raw 테이블 drop 사고 이력) — 수동 SQL(scripts/ops-create-expert-tables.ts) + prisma generate.
+ */
+export type ExpertPatient = Prisma.ExpertPatientModel
+/**
  * Model MedicationSchedule
  * 일과/복약 알림 스케줄. 한 사용자에 여러 약 등록 가능.
  * times: ["09:00", "13:00", "20:00"] (KST 24시간 표기)

@@ -52,6 +52,7 @@ export const AnyNull = runtime.AnyNull
 
 export const ModelName = {
   User: 'User',
+  ExpertPatient: 'ExpertPatient',
   MedicationSchedule: 'MedicationSchedule',
   Account: 'Account',
   Session: 'Session',
@@ -94,11 +95,23 @@ export const UserScalarFieldEnum = {
   companionRelation: 'companionRelation',
   userHonorific: 'userHonorific',
   screeningMode: 'screeningMode',
+  expertCode: 'expertCode',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const ExpertPatientScalarFieldEnum = {
+  id: 'id',
+  expertUserId: 'expertUserId',
+  patientUserId: 'patientUserId',
+  status: 'status',
+  createdAt: 'createdAt'
+} as const
+
+export type ExpertPatientScalarFieldEnum = (typeof ExpertPatientScalarFieldEnum)[keyof typeof ExpertPatientScalarFieldEnum]
 
 
 export const MedicationScheduleScalarFieldEnum = {

@@ -52,6 +52,7 @@ export type UserMinAggregateOutputType = {
   companionRelation: string | null
   userHonorific: string | null
   screeningMode: string | null
+  expertCode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -74,6 +75,7 @@ export type UserMaxAggregateOutputType = {
   companionRelation: string | null
   userHonorific: string | null
   screeningMode: string | null
+  expertCode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -96,6 +98,7 @@ export type UserCountAggregateOutputType = {
   companionRelation: number
   userHonorific: number
   screeningMode: number
+  expertCode: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -128,6 +131,7 @@ export type UserMinAggregateInputType = {
   companionRelation?: true
   userHonorific?: true
   screeningMode?: true
+  expertCode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -150,6 +154,7 @@ export type UserMaxAggregateInputType = {
   companionRelation?: true
   userHonorific?: true
   screeningMode?: true
+  expertCode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -172,6 +177,7 @@ export type UserCountAggregateInputType = {
   companionRelation?: true
   userHonorific?: true
   screeningMode?: true
+  expertCode?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -281,6 +287,7 @@ export type UserGroupByOutputType = {
   companionRelation: string | null
   userHonorific: string | null
   screeningMode: string
+  expertCode: string | null
   createdAt: Date
   updatedAt: Date
   _count: UserCountAggregateOutputType | null
@@ -326,12 +333,15 @@ export type UserWhereInput = {
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
   screeningMode?: Prisma.StringFilter<"User"> | string
+  expertCode?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
   sessions?: Prisma.SessionListRelationFilter
   conversations?: Prisma.ConversationListRelationFilter
   medicationSchedules?: Prisma.MedicationScheduleListRelationFilter
+  expertLinks?: Prisma.ExpertPatientListRelationFilter
+  patientLinks?: Prisma.ExpertPatientListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -352,17 +362,21 @@ export type UserOrderByWithRelationInput = {
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
+  expertCode?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   accounts?: Prisma.AccountOrderByRelationAggregateInput
   sessions?: Prisma.SessionOrderByRelationAggregateInput
   conversations?: Prisma.ConversationOrderByRelationAggregateInput
   medicationSchedules?: Prisma.MedicationScheduleOrderByRelationAggregateInput
+  expertLinks?: Prisma.ExpertPatientOrderByRelationAggregateInput
+  patientLinks?: Prisma.ExpertPatientOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   email?: string
+  expertCode?: string
   AND?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   OR?: Prisma.UserWhereInput[]
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
@@ -387,7 +401,9 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   sessions?: Prisma.SessionListRelationFilter
   conversations?: Prisma.ConversationListRelationFilter
   medicationSchedules?: Prisma.MedicationScheduleListRelationFilter
-}, "id" | "email">
+  expertLinks?: Prisma.ExpertPatientListRelationFilter
+  patientLinks?: Prisma.ExpertPatientListRelationFilter
+}, "id" | "email" | "expertCode">
 
 export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -407,6 +423,7 @@ export type UserOrderByWithAggregationInput = {
   companionRelation?: Prisma.SortOrderInput | Prisma.SortOrder
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
+  expertCode?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
@@ -437,6 +454,7 @@ export type UserScalarWhereWithAggregatesInput = {
   companionRelation?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   screeningMode?: Prisma.StringWithAggregatesFilter<"User"> | string
+  expertCode?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
@@ -459,12 +477,15 @@ export type UserCreateInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -485,12 +506,15 @@ export type UserUncheckedCreateInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
 }
 
 export type UserUpdateInput = {
@@ -511,12 +535,15 @@ export type UserUpdateInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -537,12 +564,15 @@ export type UserUncheckedUpdateInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -563,6 +593,7 @@ export type UserCreateManyInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -585,6 +616,7 @@ export type UserUpdateManyMutationInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -607,6 +639,7 @@ export type UserUncheckedUpdateManyInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -629,6 +662,7 @@ export type UserCountOrderByAggregateInput = {
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
+  expertCode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -655,6 +689,7 @@ export type UserMaxOrderByAggregateInput = {
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
+  expertCode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -677,6 +712,7 @@ export type UserMinOrderByAggregateInput = {
   companionRelation?: Prisma.SortOrder
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
+  expertCode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -712,6 +748,34 @@ export type NullableIntFieldUpdateOperationsInput = {
 
 export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
+}
+
+export type UserCreateNestedOneWithoutExpertLinksInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutExpertLinksInput, Prisma.UserUncheckedCreateWithoutExpertLinksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutExpertLinksInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserCreateNestedOneWithoutPatientLinksInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPatientLinksInput, Prisma.UserUncheckedCreateWithoutPatientLinksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPatientLinksInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutExpertLinksNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutExpertLinksInput, Prisma.UserUncheckedCreateWithoutExpertLinksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutExpertLinksInput
+  upsert?: Prisma.UserUpsertWithoutExpertLinksInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutExpertLinksInput, Prisma.UserUpdateWithoutExpertLinksInput>, Prisma.UserUncheckedUpdateWithoutExpertLinksInput>
+}
+
+export type UserUpdateOneRequiredWithoutPatientLinksNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPatientLinksInput, Prisma.UserUncheckedCreateWithoutPatientLinksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPatientLinksInput
+  upsert?: Prisma.UserUpsertWithoutPatientLinksInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPatientLinksInput, Prisma.UserUpdateWithoutPatientLinksInput>, Prisma.UserUncheckedUpdateWithoutPatientLinksInput>
 }
 
 export type UserCreateNestedOneWithoutMedicationSchedulesInput = {
@@ -770,6 +834,262 @@ export type UserUpdateOneRequiredWithoutConversationsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutConversationsInput, Prisma.UserUpdateWithoutConversationsInput>, Prisma.UserUncheckedUpdateWithoutConversationsInput>
 }
 
+export type UserCreateWithoutExpertLinksInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  screeningMode?: string
+  expertCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
+}
+
+export type UserUncheckedCreateWithoutExpertLinksInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  screeningMode?: string
+  expertCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
+}
+
+export type UserCreateOrConnectWithoutExpertLinksInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutExpertLinksInput, Prisma.UserUncheckedCreateWithoutExpertLinksInput>
+}
+
+export type UserCreateWithoutPatientLinksInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  screeningMode?: string
+  expertCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+}
+
+export type UserUncheckedCreateWithoutPatientLinksInput = {
+  id?: string
+  name?: string | null
+  email: string
+  emailVerified?: Date | string | null
+  password?: string | null
+  image?: string | null
+  age?: number | null
+  gender?: string | null
+  guardianName?: string | null
+  guardianPhone?: string | null
+  guardianRelation?: string | null
+  guardianEmail?: string | null
+  guardianWebhookUrl?: string | null
+  companionName?: string | null
+  companionRelation?: string | null
+  userHonorific?: string | null
+  screeningMode?: string
+  expertCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+}
+
+export type UserCreateOrConnectWithoutPatientLinksInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutPatientLinksInput, Prisma.UserUncheckedCreateWithoutPatientLinksInput>
+}
+
+export type UserUpsertWithoutExpertLinksInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutExpertLinksInput, Prisma.UserUncheckedUpdateWithoutExpertLinksInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutExpertLinksInput, Prisma.UserUncheckedCreateWithoutExpertLinksInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutExpertLinksInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutExpertLinksInput, Prisma.UserUncheckedUpdateWithoutExpertLinksInput>
+}
+
+export type UserUpdateWithoutExpertLinksInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
+}
+
+export type UserUncheckedUpdateWithoutExpertLinksInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
+}
+
+export type UserUpsertWithoutPatientLinksInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutPatientLinksInput, Prisma.UserUncheckedUpdateWithoutPatientLinksInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutPatientLinksInput, Prisma.UserUncheckedCreateWithoutPatientLinksInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutPatientLinksInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutPatientLinksInput, Prisma.UserUncheckedUpdateWithoutPatientLinksInput>
+}
+
+export type UserUpdateWithoutPatientLinksInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+}
+
+export type UserUncheckedUpdateWithoutPatientLinksInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  password?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  age?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  gender?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianPhone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianEmail?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  guardianWebhookUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+}
+
 export type UserCreateWithoutMedicationSchedulesInput = {
   id?: string
   name?: string | null
@@ -788,11 +1108,14 @@ export type UserCreateWithoutMedicationSchedulesInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
 }
 
 export type UserUncheckedCreateWithoutMedicationSchedulesInput = {
@@ -813,11 +1136,14 @@ export type UserUncheckedCreateWithoutMedicationSchedulesInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
 }
 
 export type UserCreateOrConnectWithoutMedicationSchedulesInput = {
@@ -854,11 +1180,14 @@ export type UserUpdateWithoutMedicationSchedulesInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
 }
 
 export type UserUncheckedUpdateWithoutMedicationSchedulesInput = {
@@ -879,11 +1208,14 @@ export type UserUncheckedUpdateWithoutMedicationSchedulesInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
 }
 
 export type UserCreateWithoutAccountsInput = {
@@ -904,11 +1236,14 @@ export type UserCreateWithoutAccountsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
 }
 
 export type UserUncheckedCreateWithoutAccountsInput = {
@@ -929,11 +1264,14 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
 }
 
 export type UserCreateOrConnectWithoutAccountsInput = {
@@ -970,11 +1308,14 @@ export type UserUpdateWithoutAccountsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAccountsInput = {
@@ -995,11 +1336,14 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
 }
 
 export type UserCreateWithoutSessionsInput = {
@@ -1020,11 +1364,14 @@ export type UserCreateWithoutSessionsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -1045,11 +1392,14 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   conversations?: Prisma.ConversationUncheckedCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -1086,11 +1436,14 @@ export type UserUpdateWithoutSessionsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -1111,11 +1464,14 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   conversations?: Prisma.ConversationUncheckedUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
 }
 
 export type UserCreateWithoutConversationsInput = {
@@ -1136,11 +1492,14 @@ export type UserCreateWithoutConversationsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientCreateNestedManyWithoutPatientInput
 }
 
 export type UserUncheckedCreateWithoutConversationsInput = {
@@ -1161,11 +1520,14 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   companionRelation?: string | null
   userHonorific?: string | null
   screeningMode?: string
+  expertCode?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedCreateNestedManyWithoutUserInput
+  expertLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutExpertInput
+  patientLinks?: Prisma.ExpertPatientUncheckedCreateNestedManyWithoutPatientInput
 }
 
 export type UserCreateOrConnectWithoutConversationsInput = {
@@ -1202,11 +1564,14 @@ export type UserUpdateWithoutConversationsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUpdateManyWithoutPatientNestedInput
 }
 
 export type UserUncheckedUpdateWithoutConversationsInput = {
@@ -1227,11 +1592,14 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   companionRelation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
+  expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   medicationSchedules?: Prisma.MedicationScheduleUncheckedUpdateManyWithoutUserNestedInput
+  expertLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutExpertNestedInput
+  patientLinks?: Prisma.ExpertPatientUncheckedUpdateManyWithoutPatientNestedInput
 }
 
 
@@ -1244,6 +1612,8 @@ export type UserCountOutputType = {
   sessions: number
   conversations: number
   medicationSchedules: number
+  expertLinks: number
+  patientLinks: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1251,6 +1621,8 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   sessions?: boolean | UserCountOutputTypeCountSessionsArgs
   conversations?: boolean | UserCountOutputTypeCountConversationsArgs
   medicationSchedules?: boolean | UserCountOutputTypeCountMedicationSchedulesArgs
+  expertLinks?: boolean | UserCountOutputTypeCountExpertLinksArgs
+  patientLinks?: boolean | UserCountOutputTypeCountPatientLinksArgs
 }
 
 /**
@@ -1291,6 +1663,20 @@ export type UserCountOutputTypeCountMedicationSchedulesArgs<ExtArgs extends runt
   where?: Prisma.MedicationScheduleWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountExpertLinksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpertPatientWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountPatientLinksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpertPatientWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1310,12 +1696,15 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   companionRelation?: boolean
   userHonorific?: boolean
   screeningMode?: boolean
+  expertCode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   conversations?: boolean | Prisma.User$conversationsArgs<ExtArgs>
   medicationSchedules?: boolean | Prisma.User$medicationSchedulesArgs<ExtArgs>
+  expertLinks?: boolean | Prisma.User$expertLinksArgs<ExtArgs>
+  patientLinks?: boolean | Prisma.User$patientLinksArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -1337,6 +1726,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   companionRelation?: boolean
   userHonorific?: boolean
   screeningMode?: boolean
+  expertCode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1359,6 +1749,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   companionRelation?: boolean
   userHonorific?: boolean
   screeningMode?: boolean
+  expertCode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1381,16 +1772,19 @@ export type UserSelectScalar = {
   companionRelation?: boolean
   userHonorific?: boolean
   screeningMode?: boolean
+  expertCode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "screeningMode" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "screeningMode" | "expertCode" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   conversations?: boolean | Prisma.User$conversationsArgs<ExtArgs>
   medicationSchedules?: boolean | Prisma.User$medicationSchedulesArgs<ExtArgs>
+  expertLinks?: boolean | Prisma.User$expertLinksArgs<ExtArgs>
+  patientLinks?: boolean | Prisma.User$patientLinksArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1403,6 +1797,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     sessions: Prisma.$SessionPayload<ExtArgs>[]
     conversations: Prisma.$ConversationPayload<ExtArgs>[]
     medicationSchedules: Prisma.$MedicationSchedulePayload<ExtArgs>[]
+    expertLinks: Prisma.$ExpertPatientPayload<ExtArgs>[]
+    patientLinks: Prisma.$ExpertPatientPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1422,6 +1818,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     companionRelation: string | null
     userHonorific: string | null
     screeningMode: string
+    expertCode: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["user"]>
@@ -1822,6 +2219,8 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   sessions<T extends Prisma.User$sessionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$sessionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SessionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   conversations<T extends Prisma.User$conversationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$conversationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ConversationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   medicationSchedules<T extends Prisma.User$medicationSchedulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$medicationSchedulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MedicationSchedulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  expertLinks<T extends Prisma.User$expertLinksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$expertLinksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpertPatientPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  patientLinks<T extends Prisma.User$patientLinksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$patientLinksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpertPatientPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1868,6 +2267,7 @@ export interface UserFieldRefs {
   readonly companionRelation: Prisma.FieldRef<"User", 'String'>
   readonly userHonorific: Prisma.FieldRef<"User", 'String'>
   readonly screeningMode: Prisma.FieldRef<"User", 'String'>
+  readonly expertCode: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }
@@ -2351,6 +2751,54 @@ export type User$medicationSchedulesArgs<ExtArgs extends runtime.Types.Extension
   take?: number
   skip?: number
   distinct?: Prisma.MedicationScheduleScalarFieldEnum | Prisma.MedicationScheduleScalarFieldEnum[]
+}
+
+/**
+ * User.expertLinks
+ */
+export type User$expertLinksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpertPatient
+   */
+  select?: Prisma.ExpertPatientSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpertPatient
+   */
+  omit?: Prisma.ExpertPatientOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpertPatientInclude<ExtArgs> | null
+  where?: Prisma.ExpertPatientWhereInput
+  orderBy?: Prisma.ExpertPatientOrderByWithRelationInput | Prisma.ExpertPatientOrderByWithRelationInput[]
+  cursor?: Prisma.ExpertPatientWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpertPatientScalarFieldEnum | Prisma.ExpertPatientScalarFieldEnum[]
+}
+
+/**
+ * User.patientLinks
+ */
+export type User$patientLinksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpertPatient
+   */
+  select?: Prisma.ExpertPatientSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpertPatient
+   */
+  omit?: Prisma.ExpertPatientOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpertPatientInclude<ExtArgs> | null
+  where?: Prisma.ExpertPatientWhereInput
+  orderBy?: Prisma.ExpertPatientOrderByWithRelationInput | Prisma.ExpertPatientOrderByWithRelationInput[]
+  cursor?: Prisma.ExpertPatientWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpertPatientScalarFieldEnum | Prisma.ExpertPatientScalarFieldEnum[]
 }
 
 /**

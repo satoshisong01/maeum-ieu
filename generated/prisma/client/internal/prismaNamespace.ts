@@ -385,6 +385,7 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   User: 'User',
+  ExpertPatient: 'ExpertPatient',
   MedicationSchedule: 'MedicationSchedule',
   Account: 'Account',
   Session: 'Session',
@@ -406,7 +407,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "medicationSchedule" | "account" | "session" | "verificationToken" | "conversation" | "message"
+    modelProps: "user" | "expertPatient" | "medicationSchedule" | "account" | "session" | "verificationToken" | "conversation" | "message"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -481,6 +482,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.UserCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.UserCountAggregateOutputType> | number
+        }
+      }
+    }
+    ExpertPatient: {
+      payload: Prisma.$ExpertPatientPayload<ExtArgs>
+      fields: Prisma.ExpertPatientFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ExpertPatientFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ExpertPatientFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        findFirst: {
+          args: Prisma.ExpertPatientFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ExpertPatientFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        findMany: {
+          args: Prisma.ExpertPatientFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>[]
+        }
+        create: {
+          args: Prisma.ExpertPatientCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        createMany: {
+          args: Prisma.ExpertPatientCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ExpertPatientCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>[]
+        }
+        delete: {
+          args: Prisma.ExpertPatientDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        update: {
+          args: Prisma.ExpertPatientUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        deleteMany: {
+          args: Prisma.ExpertPatientDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ExpertPatientUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ExpertPatientUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>[]
+        }
+        upsert: {
+          args: Prisma.ExpertPatientUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpertPatientPayload>
+        }
+        aggregate: {
+          args: Prisma.ExpertPatientAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateExpertPatient>
+        }
+        groupBy: {
+          args: Prisma.ExpertPatientGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpertPatientGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ExpertPatientCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpertPatientCountAggregateOutputType> | number
         }
       }
     }
@@ -985,11 +1060,23 @@ export const UserScalarFieldEnum = {
   companionRelation: 'companionRelation',
   userHonorific: 'userHonorific',
   screeningMode: 'screeningMode',
+  expertCode: 'expertCode',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const ExpertPatientScalarFieldEnum = {
+  id: 'id',
+  expertUserId: 'expertUserId',
+  patientUserId: 'patientUserId',
+  status: 'status',
+  createdAt: 'createdAt'
+} as const
+
+export type ExpertPatientScalarFieldEnum = (typeof ExpertPatientScalarFieldEnum)[keyof typeof ExpertPatientScalarFieldEnum]
 
 
 export const MedicationScheduleScalarFieldEnum = {
@@ -1287,6 +1374,7 @@ export type PrismaClientOptions = ({
 }
 export type GlobalOmitConfig = {
   user?: Prisma.UserOmit
+  expertPatient?: Prisma.ExpertPatientOmit
   medicationSchedule?: Prisma.MedicationScheduleOmit
   account?: Prisma.AccountOmit
   session?: Prisma.SessionOmit
