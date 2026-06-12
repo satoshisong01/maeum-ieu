@@ -1001,6 +1001,13 @@ export default function ChatPage() {
           </span>
           <ThemeToggle />
           <Link
+            href="/live"
+            className="rounded-lg bg-violet-50 px-2 py-1 text-[10px] font-medium leading-tight text-violet-600 hover:bg-violet-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+            title="라이브 음성 대화 (베타) — 첫 응답 1.4초"
+          >
+            🎙 라이브<br />베타
+          </Link>
+          <Link
             href="/dashboard"
             className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
           >

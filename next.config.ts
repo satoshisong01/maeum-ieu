@@ -9,7 +9,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  // Live 음성(베타): 클라가 ephemeral token으로 Gemini Live WS에 직결 — API key는 비노출(서버 발급 토큰만)
+  "connect-src 'self' wss://generativelanguage.googleapis.com https://generativelanguage.googleapis.com",
   "media-src 'self' blob: data:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
