@@ -11,17 +11,19 @@
  */
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { SCALES, ANSWER_GUIDE, CRISIS_GUIDE, NON_DIAGNOSTIC_NOTICE, type MentalItem } from "@/lib/screening/mental-bank";
-import { classifyFrequencyAnswer } from "@/lib/health/mental-scorer";
+import { SCALES, CRISIS_GUIDE, NON_DIAGNOSTIC_NOTICE, type MentalItem } from "@/lib/screening/mental-bank";
+import { classifyAnswer } from "@/lib/health/mental-scorer";
 
 const GAD7_TRIGGER_RE = /불안\s*(?:체크|검사|검진|테스트)/;
+const UCLA3_TRIGGER_RE = /외로움\s*(?:체크|검사|검진|테스트)/;
+const BFI10_TRIGGER_RE = /성격\s*(?:체크|검사|검진|테스트|알아보)/;
 const TRIGGER_RE = /마음\s*(?:건강)?\s*(?:체크|검진|검사)|우울\s*(?:검사|체크|테스트|검진)|정신\s*건강\s*(?:체크|검사|검진)/;
 // 과거 경험 서술("병원에서 우울 검사 받았어")은 시작 의도가 아님 — 오발동 가드
 const TRIGGER_PAST_RE = /받았|했었|했어|했지|했거든|다녀왔|다녀온|끝났|해\s*봤/; // \b는 한글에 무력 — 사용 금지(기지 버그 클래스)
 const ESCAPE_RE = /그만\s*(?:할|하|둬|두)|안\s*할(?:래|게)|나중에\s*(?:할|하)|중단|취소|스톱|관두/;
 const AFFIRM_RE = /응|어\s|그래|네|예\b|좋아|좋지|시작|해\s*보자|하자|할래|해\s*줘|그러자|오냐|궁금/;
 // 동의 단계에서 검진을 화제로 삼고 있는지(질문·망설임 포함) — 미해당이면 딴 주제로 보고 비켜남
-const CONSENT_TOPIC_RE = /검사|체크|점검|테스트|우울|불안|마음|점수|결과|질문|뭐|뭔|어떻|왜|무슨|몇\s*(?:개|가지)|무서|걱정|부담|싫|글쎄|괜찮|고민/;
+const CONSENT_TOPIC_RE = /검사|체크|점검|테스트|우울|불안|성격|외로|마음|점수|결과|질문|뭐|뭔|어떻|왜|무슨|몇\s*(?:개|가지)|무서|걱정|부담|싫|글쎄|괜찮|고민/;
 
 interface MentalSession {
   id: string; scale: string; status: string; current_item: number; retry_used: boolean;
@@ -39,6 +41,17 @@ const ACK_BY_SCORE = [
   "적지 않게 힘드셨겠어요.",
   "많이 힘드셨겠어요. 말씀해 주셔서 고마워요.",
 ];
+
+/** answerType별 수긍 멘트 — 증상 빈도(freq4/freq3)는 공감형, 성격 동의(agree5)는 중립형(좋고 나쁨 없음) */
+function ackFor(answerType: string, score: number): string {
+  if (answerType === "agree5") {
+    return ["그렇진 않으시군요.", "조금은 아니시군요.", "중간쯤이시군요.", "그런 편이시군요.", "확실히 그러시군요."][score] ?? "알겠어요.";
+  }
+  if (answerType === "freq3") {
+    return ["다행이에요.", "가끔 그러시는군요.", "자주 그러셨다니 마음이 쓰여요."][score - 1] ?? "알겠어요.";
+  }
+  return ACK_BY_SCORE[score] ?? "알겠어요.";
+}
 
 function askItem(items: MentalItem[], no: number, variantIdx = 0): string {
   const item = items[no - 1];
@@ -74,16 +87,23 @@ export async function handleMentalFlow(params: {
 
   // ── 세션 없음: 트리거 발화면 시작(동의 단계) — 과거 경험 서술은 제외
   if (!session) {
-    const wantGad7 = GAD7_TRIGGER_RE.test(userContent);
-    if ((!TRIGGER_RE.test(userContent) && !wantGad7) || TRIGGER_PAST_RE.test(userContent)) return null;
-    const scaleKey = wantGad7 ? "GAD7" : "PHQ9";
+    const scaleKey = UCLA3_TRIGGER_RE.test(userContent) ? "UCLA3"
+      : BFI10_TRIGGER_RE.test(userContent) ? "BFI10"
+      : GAD7_TRIGGER_RE.test(userContent) ? "GAD7"
+      : TRIGGER_RE.test(userContent) ? "PHQ9" : null;
+    if (!scaleKey || TRIGGER_PAST_RE.test(userContent)) return null;
     const scale = SCALES[scaleKey];
     const id = randomUUID();
     await prisma.$executeRawUnsafe(
       `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, $3, 'active', 0)`, id, userId, scaleKey);
+    const aboutLine = scaleKey === "BFI10"
+      ? `평소 본인의 모습에 대해 ${scale.items.length}가지를 여쭤보고`
+      : scaleKey === "UCLA3"
+        ? `요즘 느끼시는 것에 대해 ${scale.items.length}가지를 여쭤보고`
+        : `최근 2주간의 기분에 대해 ${scale.items.length}가지를 여쭤보고`;
     return {
       status: "started",
-      reply: `${honorific}, ${scale.name} 자가 점검을 시작할게요. 최근 2주간의 기분에 대해 ${scale.items.length}가지를 여쭤보고, 끝나면 결과를 ${honorific}께만 보여드려요. 약 5분 걸리고, 중간에 "그만할래"라고 하시면 언제든 멈출 수 있어요. 시작해 볼까요?`,
+      reply: `${honorific}, ${scale.name} 자가 점검을 시작할게요. ${aboutLine}, 끝나면 결과를 ${honorific}께만 보여드려요. 중간에 "그만할래"라고 하시면 언제든 멈출 수 있어요. 시작해 볼까요?`,
     };
   }
 
@@ -100,7 +120,7 @@ export async function handleMentalFlow(params: {
   if (session.current_item === 0) {
     if (AFFIRM_RE.test(userContent)) {
       await setSession(session.id, `current_item = 1, retry_used = false`);
-      return { status: "in_progress", reply: `좋아요, 편하게 답해 주세요. ${ANSWER_GUIDE}\n\n${askItem(items, 1)}` };
+      return { status: "in_progress", reply: `좋아요, 편하게 답해 주세요. ${scale.answerGuide}\n\n${askItem(items, 1)}` };
     }
     // 딴 주제 발화("그 전에 손주 전화 온다고 했나?") — 검진이 대화를 가로채지 않도록
     // 조용히 세션을 접고 일반 대화로 위임. 원하면 트리거로 다시 시작.
@@ -119,16 +139,20 @@ export async function handleMentalFlow(params: {
   // ── 문항 답변 단계
   const itemNo = session.current_item;
   const item = items[itemNo - 1];
-  const score = await classifyFrequencyAnswer(userContent);
+  const rawScore = await classifyAnswer(userContent, scale.answerType);
 
-  if (score < 0) {
+  if (rawScore < 0) {
     if (!session.retry_used) {
       await setSession(session.id, `retry_used = true`);
-      return { status: "retry", reply: `${nameSoft(companionName)} 다시 한번 여쭤볼게요. ${ANSWER_GUIDE}\n\n${askItem(items, itemNo, 1)}` };
+      return { status: "retry", reply: `${nameSoft(companionName)} 다시 한번 여쭤볼게요. ${scale.answerGuide}\n\n${askItem(items, itemNo, 1)}` };
     }
     await setSession(session.id, `status = 'aborted'`);
     return { status: "aborted", reply: `답하기 애매한 질문이었나 봐요. 오늘은 여기서 멈출게요 — 나중에 "마음 건강 체크"로 다시 이어가요.` };
   }
+
+  // 역채점 문항(BFI-10)은 진점수로 뒤집어 저장 — 결과 산출 시 추가 변환 불필요
+  const maxScore = scale.answerType === "agree5" ? 4 : 3;
+  const score = item.reverse ? maxScore - rawScore : rawScore;
 
   // 점수 저장 (원문 비보존, 멱등)
   await prisma.$executeRawUnsafe(
@@ -138,27 +162,33 @@ export async function handleMentalFlow(params: {
 
   const crisis = !!item.crisis && score >= 1;
   const crisisLine = crisis ? `\n\n${CRISIS_GUIDE}` : "";
+  const ack = ackFor(scale.answerType, rawScore); // 수긍 멘트는 사용자가 말한 그대로(역채점 전) 기준
 
   // ── 마지막 문항이면 결과 산출
   if (itemNo >= items.length) {
-    const rows = await prisma.$queryRawUnsafe<{ total: number }[]>(
-      `SELECT COALESCE(SUM(score), 0)::int AS total FROM mental_assessments WHERE session_id = $1`, session.id);
+    const rows = await prisma.$queryRawUnsafe<{ item_no: number; score: number; total: number }[]>(
+      `SELECT item_no, score, SUM(score) OVER ()::int AS total FROM mental_assessments WHERE session_id = $1`, session.id);
     const total = rows[0]?.total ?? 0;
-    const interp = scale.interpret(total);
+    const interp = scale.interpretItems
+      ? scale.interpretItems(rows.map((r) => ({ itemNo: r.item_no, score: r.score })))
+      : scale.interpret(total);
     await setSession(session.id, `status = 'done', total = $2, severity = $3, crisis = $4`, total, interp.severity, crisis);
     const recommendLine = interp.recommend ? " 가까운 정신건강복지센터(1577-0199)나 병원에서 상담받아 보시길 권해요." : "";
     // 9번 양성 후속 케어: 결과 직후 대화를 닫지 않고 마음을 더 나누도록 초대 (보호자 알림은 본인 동의 없인 금지 — T3 원칙)
     const careLine = crisis ? `\n${honorific}, 괜찮으시면 지금 마음이 어떤지 ${companionName}한테 조금 더 이야기해 주세요. 끝까지 들어드릴게요.` : "";
     const crossLine = session.scale === "PHQ9" ? `\n불안 점검도 해보고 싶으시면 "불안 체크"라고 말씀해 주세요.` : "";
+    const resultLine = scale.interpretItems
+      ? `${interp.text}` // 프로파일형(BFI-10) — 등급 표현 없이 프로파일 그대로
+      : `이번 점검 결과는 「${interp.severity}」이에요. ${interp.text}${recommendLine}`;
     return {
       status: "done", crisis,
-      reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${honorific}, ${items.length}가지 모두 답해 주셔서 고마워요. 이번 점검 결과는 「${interp.severity}」이에요. ${interp.text}${recommendLine}\n자세한 결과와 지난 기록은 "마음 건강" 페이지에서 ${honorific}만 보실 수 있어요. ${NON_DIAGNOSTIC_NOTICE}${careLine}${crossLine}`,
+      reply: `${ack}${crisisLine}\n\n${honorific}, ${items.length}가지 모두 답해 주셔서 고마워요. ${resultLine}\n자세한 결과와 지난 기록은 "마음 건강" 페이지에서 ${honorific}만 보실 수 있어요. ${NON_DIAGNOSTIC_NOTICE}${careLine}${crossLine}`,
     };
   }
 
   // ── 다음 문항
   await setSession(session.id, `current_item = $2, retry_used = false`, itemNo + 1);
-  return { status: "in_progress", crisis, reply: `${ACK_BY_SCORE[score]}${crisisLine}\n\n${askItem(items, itemNo + 1)}` };
+  return { status: "in_progress", crisis, reply: `${ack}${crisisLine}\n\n${askItem(items, itemNo + 1)}` };
 }
 
 function nameSoft(companionName: string): string {
