@@ -43,7 +43,7 @@ export const authOptions: NextAuthOptions = {
         });
         if (dbUser) {
           token.name = dbUser.name;
-          token.screeningMode = dbUser.screeningMode === "pro" ? "pro" : "user";
+          token.screeningMode = dbUser.screeningMode === "pro" ? "pro" : dbUser.screeningMode === "general" ? "general" : "user";
         }
       }
       return token;

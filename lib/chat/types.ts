@@ -11,8 +11,8 @@ export interface ClientContext {
   longitude?: number;
 }
 
-/** 선별 모드: user=공감 대화에 자연스럽게 끼워넣기 / pro=표준화 검사 시행(전문가·관리사용) */
-export type ScreeningMode = "user" | "pro";
+/** 선별 모드: user=공감 대화에 자연스럽게 끼워넣기 / pro=표준화 검사 시행(전문가·관리사용) / general=일반인 정신건강(인지 선별 없음) */
+export type ScreeningMode = "user" | "pro" | "general";
 
 export interface ChatRequestBody {
   messages?: { role: string; content: string; createdAt?: string }[];

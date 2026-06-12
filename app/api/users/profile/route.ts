@@ -104,7 +104,7 @@ export async function PATCH(req: Request) {
   if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
   if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
   if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
-  if (screeningMode !== undefined) updateData.screeningMode = screeningMode === "pro" ? "pro" : "user";
+  if (screeningMode !== undefined) updateData.screeningMode = screeningMode === "pro" ? "pro" : screeningMode === "general" ? "general" : "user";
   if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
 
   const updated = await prisma.user.update({

@@ -22,7 +22,7 @@ export default function SignupPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
-  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user");
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro" | "general">("user");
   const [medicationDrafts, setMedicationDrafts] = useState<MedicationDraft[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -81,7 +81,7 @@ export default function SignupPage() {
           {/* 계정 유형 — 가입 후 변경 불가에 가까운 핵심 선택 */}
           <div>
             <p className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">계정 유형</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setScreeningMode("user")}
@@ -97,6 +97,14 @@ export default function SignupPage() {
               >
                 <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
                 <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreeningMode("general")}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+              >
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🧠 일반인</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">마음 건강 자가점검</span>
               </button>
             </div>
           </div>
