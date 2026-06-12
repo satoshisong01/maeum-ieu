@@ -63,6 +63,9 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
   // 등록(미래형 '불러드릴게요') 발화는 여전히 단어 보존
   const c6 = stripRecallAnswerLeak("단어 세 개를 불러드릴게요. 하늘, 자동차, 모자예요. 잘 기억해주세요!");
   check("등록 발화 단어 보존", c6.includes("하늘") && c6.includes("모자"), c6);
+  // 따라하기 재요청(아직 등록 단계)도 단어 보존 — '불러드린'(과거 보고형)이 있어도 따라하기면 등록 (2026-06-12 빈따옴표 버그)
+  const c7 = stripRecallAnswerLeak("방금 불러드린 단어 세 개, '나무, 자동차, 모자'를 다시 한번 따라 말씀해주시겠어요?");
+  check("따라하기 재요청 단어 보존", c7.includes("나무") && c7.includes("모자"), c7);
 }
 
 // ── A-4: 자살 ideation 활용형 ─────────────────────────────────────────────
