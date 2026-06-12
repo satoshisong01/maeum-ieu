@@ -194,6 +194,31 @@ describe("normalizeHonorific", () => {
   });
 });
 
+describe("limitVocativeOpening — 연속 호명 제한", () => {
+  it("직전 응답도 호칭 시작이면 이번 선두 호칭 제거", async () => {
+    const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
+    expect(limitVocativeOpening("할머니, 오늘 날씨가 참 좋아요.", "할머니, 어제는 잘 주무셨어요?", "할머니"))
+      .toBe("오늘 날씨가 참 좋아요.");
+  });
+  it("직전 응답이 호칭 시작이 아니면 유지 (첫 호명 허용)", async () => {
+    const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
+    const t = "할머니, 오늘 날씨가 참 좋아요.";
+    expect(limitVocativeOpening(t, "네, 맞아요. 즐거운 하루였죠.", "할머니")).toBe(t);
+  });
+  it("이번 응답이 호칭 시작이 아니면 무변경", async () => {
+    const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
+    const t = "오늘은 어떤 하루 보내셨어요?";
+    expect(limitVocativeOpening(t, "할머니, 안녕하세요.", "할머니")).toBe(t);
+  });
+  it("주어('할머니는/할머니께서')는 호격이 아님 — 절대 깎지 않음", async () => {
+    const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
+    const subj = "할머니는 김치부침개를 가장 좋아하시는군요!";
+    expect(limitVocativeOpening(subj, "할머니, 어제는 잘 주무셨어요?", "할머니")).toBe(subj);
+    const subj2 = "할머니께서 말씀하신 대로예요.";
+    expect(limitVocativeOpening(subj2, "할머니, 안녕하세요.", "할머니")).toBe(subj2);
+  });
+});
+
 describe("postProcessReply (파이프라인 스모크)", () => {
   const opts = { userText: "응 그래", companionName: "민지", ctx: "", honorific: "할머니", family: [], prevAi: "" };
 
