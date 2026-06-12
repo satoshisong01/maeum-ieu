@@ -19,12 +19,29 @@ export async function GET() {
       WHERE user_id = $1 AND status = 'done'
       ORDER BY created_at DESC LIMIT 24`, session.user.id);
 
+  // 프로파일형 척도(BFI-10)는 문항별 점수로 해석 — 해당 세션만 일괄 조회
+  const profileSessionIds = rows.filter((r) => SCALES[r.scale]?.interpretItems).map((r) => r.id);
+  const itemScores = new Map<string, { itemNo: number; score: number }[]>();
+  if (profileSessionIds.length > 0) {
+    const assess = await prisma.$queryRawUnsafe<{ session_id: string; item_no: number; score: number }[]>(
+      `SELECT session_id, item_no, score FROM mental_assessments WHERE session_id = ANY($1)`,
+      profileSessionIds);
+    for (const a of assess) {
+      const list = itemScores.get(a.session_id) ?? [];
+      list.push({ itemNo: a.item_no, score: a.score });
+      itemScores.set(a.session_id, list);
+    }
+  }
+
   const results = rows.map((r) => {
     const sc = SCALES[r.scale] ?? SCALES.PHQ9;
-    const interp = sc.interpret(r.total);
+    const interp = sc.interpretItems
+      ? sc.interpretItems(itemScores.get(r.id) ?? [])
+      : sc.interpret(r.total);
     return {
       id: r.id, scale: r.scale, scaleName: sc.name, maxTotal: sc.maxTotal, date: r.created_at,
       total: r.total, severity: r.severity, crisis: r.crisis, text: interp.text, recommend: interp.recommend,
+      profile: !!sc.interpretItems,
     };
   });
   return NextResponse.json({ results });

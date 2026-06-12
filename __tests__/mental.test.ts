@@ -1,7 +1,7 @@
 /** T3 정신건강 검진 — 질문지 무결성 + 응답 분류 fast-path + 해석 컷오프 */
 import { describe, it, expect } from "vitest";
-import { PHQ9_ITEMS, GAD7_ITEMS, SCALES, interpretPHQ9, interpretGAD7 } from "@/lib/screening/mental-bank";
-import { classifyFast } from "@/lib/health/mental-scorer";
+import { PHQ9_ITEMS, GAD7_ITEMS, UCLA3_ITEMS, BFI10_ITEMS, SCALES, interpretPHQ9, interpretGAD7, interpretUCLA3, interpretBFI10Profile } from "@/lib/screening/mental-bank";
+import { classifyFast, classifyAgree5Fast, classifyFreq3Fast } from "@/lib/health/mental-scorer";
 
 describe("PHQ9_ITEMS 무결성", () => {
   it("9문항, 각 2개 이상 변형, 9번만 crisis", () => {
@@ -34,6 +34,52 @@ describe("GAD7_ITEMS·SCALES 무결성", () => {
     expect(interpretGAD7(15).severity).toBe("심한 수준");
     expect(interpretGAD7(10).recommend).toBe(true);
   });
+});
+
+describe("UCLA-3·BFI-10 무결성", () => {
+  it("UCLA-3은 3문항(빈도 1~3), BFI-10은 10문항(동의 0~4, 역문항 5개)", () => {
+    expect(UCLA3_ITEMS).toHaveLength(3);
+    expect(BFI10_ITEMS).toHaveLength(10);
+    expect(BFI10_ITEMS.filter((i) => i.reverse)).toHaveLength(5);
+    expect(SCALES.UCLA3.maxTotal).toBe(9);
+    expect(SCALES.UCLA3.answerType).toBe("freq3");
+    expect(SCALES.BFI10.answerType).toBe("agree5");
+    expect(SCALES.BFI10.interpretItems).toBeDefined();
+  });
+  it("UCLA-3 컷오프: 5 정상 / 7 다소 높음 / 8+ 높음(권고)", () => {
+    expect(interpretUCLA3(5).severity).toBe("정상");
+    expect(interpretUCLA3(7).severity).toBe("다소 높음");
+    expect(interpretUCLA3(8).severity).toBe("높음");
+    expect(interpretUCLA3(8).recommend).toBe(true);
+  });
+  it("BFI-10 프로파일: 요인별 합산(역채점은 저장 시 반영된 값 기준)", () => {
+    // 전 문항 4점이면 모든 요인 8/8
+    const all4 = BFI10_ITEMS.map((i) => ({ itemNo: i.no, score: 4 }));
+    const p = interpretBFI10Profile(all4);
+    expect(p.severity).toBe("프로파일");
+    expect(p.text).toContain("외향성 8/8");
+    expect(p.text).toContain("개방성 8/8");
+    expect(p.recommend).toBe(false);
+  });
+});
+
+describe("classifyAgree5Fast — 동의 척도", () => {
+  it.each([
+    ["매우 그렇지, 딱 내 얘기야", 4], ["정말 그래", 4],
+    ["그런 편이지", 3], ["맞아 맞아", 3],
+    ["보통이야, 반반인 것 같아", 2],
+    ["아닌 편이야", 1], ["별로 안 그래", 1],
+    ["전혀 아니야", 0], ["절대 아니지", 0],
+  ])("'%s' → %d", (a, e) => expect(classifyAgree5Fast(a as string)).toBe(e));
+  it("모호하면 -1", () => expect(classifyAgree5Fast("글쎄 그게 무슨 말이야")).toBe(-1));
+});
+
+describe("classifyFreq3Fast — 3점 빈도", () => {
+  it.each([
+    ["거의 없어", 1], ["전혀 안 그래", 1],
+    ["가끔 그렇지", 2], ["어쩌다 한 번씩", 2],
+    ["자주 그래", 3], ["맨날 그렇지", 3],
+  ])("'%s' → %d", (a, e) => expect(classifyFreq3Fast(a as string)).toBe(e));
 });
 
 describe("classifyFast — 빈도 응답 정규식 분류", () => {

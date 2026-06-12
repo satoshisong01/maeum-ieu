@@ -30,30 +30,91 @@ const SCHEMA: Schema = {
   required: ["score"],
 };
 
-const CLASSIFY_PROMPT = `다음은 "지난 2주 동안 얼마나 자주 그랬는지" 묻는 설문에 대한 한국어 답변입니다.
+// ── 5점 동의 척도 (BFI-10): 0 전혀 아니다 ~ 4 매우 그렇다 ──
+// 순서 중요 — 강한 표현 먼저("정말 그래"가 "그래"보다, "전혀"가 "아니"보다 앞서 판정)
+const AGREE5_PATTERNS: Array<{ score: 0 | 1 | 2 | 3 | 4; pattern: RegExp }> = [
+  { score: 4, pattern: /매우\s*그(?:래|렇|러)|정말\s*그(?:래|렇|러)|완전\s*(?:그래|맞)|딱\s*(?:나|내)\s*(?:얘기|이야기|모습)|아주\s*그(?:래|렇)|백\s*퍼|항상\s*그(?:래|렇)/ },
+  { score: 0, pattern: /전혀\s*아니|절대\s*아니|하나도\s*안?\s*(?:맞|그)|정반대|전혀\s*안\s*그(?:래|렇)|말도\s*안\s*돼/ },
+  { score: 3, pattern: /그런\s*편|그렇\s*[지긴]|맞는\s*것\s*같|맞아|그래\s*그래|대체로\s*그(?:래|렇)|좀\s*그(?:래|런|렇)|그렇다고\s*봐/ },
+  { score: 1, pattern: /아닌\s*편|별로\s*안?\s*(?:그|맞)|잘\s*안\s*그(?:래|렇)|그렇진\s*않|아니(?:야|에요|지)?\s*[.!~]?$|안\s*맞(?:아|는)/ },
+  { score: 2, pattern: /보통|반반|중간|그럴\s*때도\s*있|때에\s*따라|글쎄\s*반|어중간/ },
+];
+
+// ── 3점 빈도 척도 (UCLA-3): 1 거의 없다 / 2 가끔 / 3 자주 ──
+const FREQ3_PATTERNS: Array<{ score: 1 | 2 | 3; pattern: RegExp }> = [
+  { score: 3, pattern: /자주|맨날|매일|항상|늘\s*그(?:래|렇)|수시로|밤낮없이|허구한\s*날/ },
+  { score: 1, pattern: /거의\s*없|전혀|별로\s*없|하나도\s*없|없어|없었|안\s*그(?:래|렇)|그런\s*적\s*없/ },
+  { score: 2, pattern: /가끔|종종|때때로|이따금|어쩌다|간혹|있긴\s*(?:있|해)|좀\s*있/ },
+];
+
+export function classifyAgree5Fast(answer: string): number {
+  const t = answer.trim();
+  if (!t) return -1;
+  for (const { score, pattern } of AGREE5_PATTERNS) if (pattern.test(t)) return score;
+  return -1;
+}
+
+export function classifyFreq3Fast(answer: string): number {
+  const t = answer.trim();
+  if (!t) return -1;
+  for (const { score, pattern } of FREQ3_PATTERNS) if (pattern.test(t)) return score;
+  return -1;
+}
+
+const PROMPTS: Record<string, { prompt: string; min: number; max: number; fast: (a: string) => number }> = {
+  freq4: {
+    min: 0, max: 3, fast: classifyFast,
+    prompt: `다음은 "지난 2주 동안 얼마나 자주 그랬는지" 묻는 설문에 대한 한국어 답변입니다.
 답변을 빈도 점수로 분류하세요:
 0 = 전혀 없었다 / 1 = 며칠 정도 / 2 = 2주의 절반 이상 / 3 = 거의 매일
 답변이 빈도와 무관하거나(딴 얘기, 질문) 판단이 정말 불가능하면 -1.
-주의: 부정("안 그래", "없어")은 0. 약한 긍정("좀 그랬어", "가끔")은 1. 강한 긍정("계속", "내내")은 3.
-JSON {"score": n} 만 출력.`;
+주의: 부정("안 그래", "없어")은 0. 약한 긍정("좀 그랬어", "가끔")은 1. 강한 긍정("계속", "내내")은 3.`,
+  },
+  agree5: {
+    min: 0, max: 4, fast: classifyAgree5Fast,
+    prompt: `다음은 "이 말이 본인과 얼마나 맞는지" 묻는 성격 설문에 대한 한국어 답변입니다.
+동의 정도를 분류하세요:
+0 = 전혀 아니다 / 1 = 아닌 편이다 / 2 = 보통이다 / 3 = 그런 편이다 / 4 = 매우 그렇다
+답변이 동의 여부와 무관하거나 판단이 정말 불가능하면 -1.
+주의: 겸손한 부분 긍정("뭐 좀 그렇긴 하지")은 3. 망설이는 중립("글쎄, 반반인 것 같아")은 2.`,
+  },
+  freq3: {
+    min: 1, max: 3, fast: classifyFreq3Fast,
+    prompt: `다음은 "얼마나 자주 그렇게 느끼는지" 묻는 설문에 대한 한국어 답변입니다.
+빈도를 분류하세요:
+1 = 거의 없다 / 2 = 가끔 그렇다 / 3 = 자주 그렇다
+답변이 빈도와 무관하거나 판단이 정말 불가능하면 -1.
+주의: 부정("안 외로워", "없어")은 1. "요즘 들어 좀"같은 약한 긍정은 2.`,
+  },
+};
 
-export async function classifyFrequencyAnswer(answer: string): Promise<number> {
-  const fast = classifyFast(answer);
-  if (fast >= 0) return fast;
+/**
+ * answerType별 답변 분류 — 1차 정규식 fast-path(비용 0), 모호할 때만 경량 LLM.
+ * 반환: 점수 또는 -1(분류 불가 → 재질문).
+ */
+export async function classifyAnswer(answer: string, answerType: "freq4" | "agree5" | "freq3" = "freq4"): Promise<number> {
+  const cfg = PROMPTS[answerType] ?? PROMPTS.freq4;
+  const fast = cfg.fast(answer);
+  if (fast >= cfg.min) return fast;
 
   if (!process.env.GEMINI_API_KEY) return -1;
   try {
     const res = await getGenAI().models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `${CLASSIFY_PROMPT}\n\n답변: ${answer.slice(0, 200)}`,
+      contents: `${cfg.prompt}\nJSON {"score": n} 만 출력.\n\n답변: ${answer.slice(0, 200)}`,
       config: { temperature: 0, maxOutputTokens: 64, responseMimeType: "application/json", responseSchema: SCHEMA, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS },
     });
     logUsage("mental-classify", res);
     const parsed = JSON.parse((res.text ?? "").trim()) as { score?: number };
     const s = typeof parsed.score === "number" ? Math.round(parsed.score) : -1;
-    return s >= 0 && s <= 3 ? s : -1;
+    return s >= cfg.min && s <= cfg.max ? s : -1;
   } catch (e) {
     console.warn("[mental-scorer] classify error:", (e as Error).message);
     return -1;
   }
+}
+
+/** 기존 호출부 호환 (freq4 전용) */
+export async function classifyFrequencyAnswer(answer: string): Promise<number> {
+  return classifyAnswer(answer, "freq4");
 }
