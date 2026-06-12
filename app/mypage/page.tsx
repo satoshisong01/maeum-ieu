@@ -41,7 +41,7 @@ export default function MyPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
-  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user");
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro" | "general">("user");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -136,7 +136,7 @@ export default function MyPage() {
           setCompanionName(data.companionName ?? "");
           setCompanionRelation(data.companionRelation ?? "");
           setUserHonorific(data.userHonorific ?? "");
-          setScreeningMode(data.screeningMode === "pro" ? "pro" : "user");
+          setScreeningMode(data.screeningMode === "pro" ? "pro" : data.screeningMode === "general" ? "general" : "user");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -236,7 +236,7 @@ export default function MyPage() {
             {/* 계정 유형(모드) — 가입 시 잘못 골랐을 때 변경 */}
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">계정 유형</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setScreeningMode("user")}
@@ -253,6 +253,14 @@ export default function MyPage() {
                   <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
                   <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setScreeningMode("general")}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+                >
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🧠 일반인</span>
+                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">마음 건강 자가점검</span>
+                </button>
               </div>
               {screeningMode === "pro" && (
                 <Link href="/expert" className="mt-2 block rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-center text-sm font-semibold text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-200">
@@ -261,13 +269,15 @@ export default function MyPage() {
               )}
             </div>
 
-            {/* 마음 건강 체크 — T3 본인용 결과 */}
-            <Link href="/mental" className="block rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-center text-sm font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
-              🧠 마음 건강 체크 결과 보기 →
-            </Link>
+            {/* 마음 건강 체크 — T3 본인용 결과 (일반인 계정 전용 — 모드 간 플로우 비혼합) */}
+            {screeningMode === "general" && (
+              <Link href="/mental" className="block rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-center text-sm font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+                🧠 마음 건강 체크 결과 보기 →
+              </Link>
+            )}
 
-            {/* 전문가 연결 — 환자 본인이 전문가 코드를 입력해 연결(=본인 동의). 채점·요약만 공유, 대화 원문 비공개 */}
-            <div>
+            {/* 전문가 연결 — 인지 선별(사용자) 계정 전용. 환자 본인이 전문가 코드를 입력해 연결(=본인 동의). 채점·요약만 공유, 대화 원문 비공개 */}
+            <div className={screeningMode === "user" ? "" : "hidden"}>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">전문가 연결 (담당 의사·관리사 코드)</label>
               <div className="flex gap-2">
                 <input

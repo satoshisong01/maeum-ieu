@@ -232,10 +232,10 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
 }
 
 /** 2) 재접속 인사 — AI가 먼저 인지 질문을 자연스럽게 포함 */
-async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string, userId?: string) {
+async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string, userId?: string, mode?: string) {
   const model = getTextModel(systemPrompt, false); // 인사엔 googleSearch 불필요(지연·비용 절감)
-  // T3 후속: 위기 체크인(7일 내) / 2주 경과 재검 권유 — 실패는 null 무해화
-  const mentalHint = userId ? await getMentalFollowupHint(userId) : null;
+  // T3 후속: 위기 체크인(7일 내) / 2주 경과 재검 권유 — 일반인(general) 전용, 실패는 null 무해화
+  const mentalHint = userId && mode === "general" ? await getMentalFollowupHint(userId) : null;
   const { text } = await generateWithFallback(
     model,
     `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.${mentalHint ?? ""}
@@ -251,8 +251,7 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
 **시간대와 다른 식사 질문(아침인데 "점심 드셨어요?")은 절대 금지**.
 
 또는 아래 중 하나로 대체 가능:
-- 오늘의 기분/컨디션 질문
-- 인지 선별 프로토콜에서 아직 확인 안 한 영역의 질문 하나 (시험이 아닌 자연스러운 대화 형식으로)
+- 오늘의 기분/컨디션 질문${mode !== "general" ? "\n- 인지 선별 프로토콜에서 아직 확인 안 한 영역의 질문 하나 (시험이 아닌 자연스러운 대화 형식으로)" : ""}
 
 2~3문장 이내. 절대 자기소개 반복하지 마세요.`,
     `${honorific}, 다시 오셨네요! 오늘 하루 어떻게 보내고 계세요?`,
@@ -425,8 +424,9 @@ async function handleAudioMessage(params: {
   profile: FullProfile;
   clientTimeIso?: string;
   timings?: Record<string, number>;
+  mode: "user" | "pro" | "general";
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings } = params;
+  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings, mode } = params;
 
   // 1단계: 음성 → 텍스트 변환 — POST 초입에서 이미 시작됨(프롬프트 빌드와 병렬). 여기선 대기만.
   const transcription0 = await sttPromise;
@@ -483,8 +483,10 @@ async function handleAudioMessage(params: {
     transcription = correction.corrected;
   }
 
-  // 1.49단계: T3 마음 건강 체크 — 음성 모드도 지원 (텍스트 핸들러와 동일: 응급 이후·모더레이션 이전)
-  const mentalVoice = await handleMentalFlow({ userId, userContent: transcription, honorific, companionName });
+  // 1.49단계: T3 마음 건강 체크 — 일반인(general) 전용 (모드 간 플로우 비혼합 원칙: 사용자/전문가=인지 선별, 일반인=정신건강)
+  const mentalVoice = mode === "general"
+    ? await handleMentalFlow({ userId, userContent: transcription, honorific, companionName })
+    : null;
   if (mentalVoice) {
     if (conversationId) {
       await saveMessages({ conversationId, userId, userContent: transcription || "(음성 메시지)", assistantContent: mentalVoice.reply, skipAssistantEmbedding: true });
@@ -568,7 +570,8 @@ async function handleAudioMessage(params: {
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
+      // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
+      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
       if (transcription) {
         extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
         maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
@@ -699,8 +702,9 @@ async function handleTextMessage(params: {
   companionName: string; companionRelation: string; honorific: string;
   profile: FullProfile;
   timings?: Record<string, number>;
+  mode: "user" | "pro" | "general";
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings } = params;
+  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings, mode } = params;
 
   // 응급 발화 감지 — moderation보다 먼저
   const emergency = await evaluateEmergency({ userContent, conversationId });
@@ -711,10 +715,13 @@ async function handleTextMessage(params: {
     });
   }
 
-  // T3 마음 건강 체크(PHQ-9) — 응급(L3) 이후·모더레이션 이전:
+  // T3 마음 건강 체크(PHQ-9 등) — 일반인(general) 전용. 응급(L3) 이후·모더레이션 이전:
   //   9번 문항 답변("죽고 싶다는 생각이 며칠…")이 self_harm 모더레이션에 가로채여 검진이 끊기지 않도록.
   //   검진 턴은 LLM 우회 즉답(JSON) — 정형 문항이라 RAG 임베딩도 제외.
-  const mental = await handleMentalFlow({ userId, userContent, honorific, companionName });
+  //   사용자/전문가 모드에선 미작동 — 모드 간 플로우 비혼합 원칙(사용자·전문가=인지 선별, 일반인=정신건강).
+  const mental = mode === "general"
+    ? await handleMentalFlow({ userId, userContent, honorific, companionName })
+    : null;
   if (mental) {
     if (conversationId) {
       await saveMessages({ conversationId, userId, userContent, assistantContent: mental.reply, skipAssistantEmbedding: true });
@@ -799,7 +806,8 @@ async function handleTextMessage(params: {
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
+      // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
+      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
       extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
       maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
     },
@@ -824,7 +832,10 @@ export async function POST(req: Request) {
     const userId = session.user.id;
     // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
     // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
-    const mode = session.user.screeningMode === "pro" ? "pro" : "user";
+    const mode: "user" | "pro" | "general" =
+      session.user.screeningMode === "pro" ? "pro"
+      : session.user.screeningMode === "general" ? "general"
+      : "user";
 
     // 고비용 엔드포인트 폭주 방어 — 단일 계정 분당 40회 (정상 대화는 충분, 자동화 남용 차단)
     const rl = checkRateLimit(`chat:${userId}`, 40, 60_000);
@@ -866,7 +877,7 @@ export async function POST(req: Request) {
     _t.promptMs = Math.round(performance.now() - _m);
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
-    if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId);
+    if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId, mode);
 
     const historyText = buildHistoryText(history);
 
@@ -882,11 +893,11 @@ export async function POST(req: Request) {
       return handleAudioMessage({
         systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
         sttPromise, historyText, messages: history, profile,
-        clientTimeIso: ctx?.currentTime, timings: _t,
+        clientTimeIso: ctx?.currentTime, timings: _t, mode,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t });
+    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });

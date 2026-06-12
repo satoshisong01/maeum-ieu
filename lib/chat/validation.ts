@@ -18,7 +18,7 @@ export const ChatRequestSchema = z.object({
   conversationId: z.string().max(100).optional(),
   isInitialGreeting: z.boolean().optional(),
   isReturningGreeting: z.boolean().optional(),
-  mode: z.enum(["user", "pro"]).optional(), // 선별 모드(전문가 검사 시행 / 사용자 대화)
+  mode: z.enum(["user", "pro", "general"]).optional(), // 선별 모드(전문가 검사 시행 / 사용자 대화 / 일반인 정신건강) — 서버는 세션 역할로 재결정(스푸핑 무시)
 
   audio: z
     .object({

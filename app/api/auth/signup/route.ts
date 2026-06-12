@@ -76,7 +76,7 @@ export async function POST(req: Request) {
         companionName: companionName?.trim() || undefined,
         companionRelation: companionRelation?.trim() || undefined,
         userHonorific: userHonorific?.trim() || null,
-        screeningMode: screeningMode === "pro" ? "pro" : "user", // 계정 역할(가입 시 선택)
+        screeningMode: screeningMode === "pro" ? "pro" : screeningMode === "general" ? "general" : "user", // 계정 역할(가입 시 선택)
       },
     });
 

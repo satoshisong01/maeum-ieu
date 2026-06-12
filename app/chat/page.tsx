@@ -104,8 +104,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
-  // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 / pro=표준검사 시행)
-  const screeningMode: "user" | "pro" = session?.user?.screeningMode === "pro" ? "pro" : "user";
+  // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 선별 / pro=표준검사 시행 / general=마음 건강 자가점검)
+  const screeningMode: "user" | "pro" | "general" =
+    session?.user?.screeningMode === "pro" ? "pro"
+    : session?.user?.screeningMode === "general" ? "general"
+    : "user";
   const [loading, setLoading] = useState(false);
   const [micAllowed, setMicAllowed] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
@@ -983,7 +986,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className={`flex h-screen flex-col overflow-hidden border-t-4 ${screeningMode === "pro" ? "border-teal-500 bg-[#e6f0f1] dark:border-teal-700 dark:bg-[#0a1315]" : "border-blue-400 bg-[#f0f2f5] dark:border-blue-800 dark:bg-[#0b0d10]"}`}>
+    <div className={`flex h-screen flex-col overflow-hidden border-t-4 ${screeningMode === "pro" ? "border-teal-500 bg-[#e6f0f1] dark:border-teal-700 dark:bg-[#0a1315]" : screeningMode === "general" ? "border-violet-400 bg-[#f3f0f7] dark:border-violet-800 dark:bg-[#0e0b13]" : "border-blue-400 bg-[#f0f2f5] dark:border-blue-800 dark:bg-[#0b0d10]"}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3 dark:border-zinc-700 dark:bg-zinc-900">
         <h1 className="text-sm font-semibold leading-tight text-zinc-800 sm:text-base dark:text-zinc-100">
           마음<br />이음
@@ -991,10 +994,10 @@ export default function ChatPage() {
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* 계정 역할 표기(읽기전용) — 전환은 계정으로 결정됨 */}
           <span
-            className={`rounded-lg px-2 py-1 text-[10px] font-semibold leading-tight sm:text-xs ${screeningMode === "pro" ? "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"}`}
-            title={screeningMode === "pro" ? "전문가 계정 — 표준 인지선별 검사 시행" : "사용자 계정 — 일상 대화형 선별"}
+            className={`rounded-lg px-2 py-1 text-[10px] font-semibold leading-tight sm:text-xs ${screeningMode === "pro" ? "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" : screeningMode === "general" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"}`}
+            title={screeningMode === "pro" ? "전문가 계정 — 표준 인지선별 검사 시행" : screeningMode === "general" ? "일반인 계정 — 마음 건강 자가점검" : "사용자 계정 — 일상 대화형 선별"}
           >
-            {screeningMode === "pro" ? "🩺 전문가" : "👵 사용자"}
+            {screeningMode === "pro" ? "🩺 전문가" : screeningMode === "general" ? "🧠 일반인" : "👵 사용자"}
           </span>
           <ThemeToggle />
           <Link
@@ -1125,15 +1128,27 @@ export default function ChatPage() {
           ) : textOnly ? (
             /* 텍스트 전용 모드 */
             <div className="space-y-2">
-              {/* T3 마음 건강 체크 진입 — 발화 트리거의 발견성 보완 (검진 중에는 숨김 불필요: 트리거 재발화는 무해) */}
-              <button
-                type="button"
-                onClick={() => sendMessage("마음 건강 체크 시작할래")}
-                disabled={loading}
-                className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
-              >
-                🧠 마음 건강 체크
-              </button>
+              {/* T3 검진 진입 — 일반인 계정 전용(모드 간 플로우 비혼합). 발화 트리거의 발견성 보완 */}
+              {screeningMode === "general" && (
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: "🧠 마음 건강 체크", msg: "마음 건강 체크 시작할래" },
+                    { label: "😟 불안 체크", msg: "불안 체크 해볼래" },
+                    { label: "🍂 외로움 체크", msg: "외로움 체크 해볼래" },
+                    { label: "🎨 성격 검사", msg: "성격 검사 해볼래" },
+                  ].map((b) => (
+                    <button
+                      key={b.label}
+                      type="button"
+                      onClick={() => sendMessage(b.msg)}
+                      disabled={loading}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
                 <input
                   type="text"
