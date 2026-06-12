@@ -87,7 +87,8 @@ export async function extractWithLLM(params: {
     const res = await getGenAI().models.generateContent({
       model: "gemini-2.5-flash", // 비용 최적화: 단순 정보추출 — 3.5 불필요
       contents: prompt,
-      config: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json", safetySettings: COMPANION_SAFETY_SETTINGS },
+      // thinkingBudget 미지정 시 추출 1회당 thinking ~750tok 누수(비용 실측 2026-06-12) — 단순 추출엔 불필요
+      config: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 128 }, safetySettings: COMPANION_SAFETY_SETTINGS },
     });
     logUsage("profile", res);
     const raw = (res.text ?? "").trim();
