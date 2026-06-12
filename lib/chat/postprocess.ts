@@ -365,16 +365,44 @@ export function trimIncomplete(text: string): string {
 }
 
 /**
+ * 부모 referent 복원 — 사용자가 "어머니가 해주시는 닭갈비"라고 했는데 AI가
+ * "${honorific}께서 해주시는"으로 행위 주체를 사용자로 뒤바꾸는 LLM 혼동(기지 클래스, 2026-06-12 재발).
+ * 사용자 현재 발화에 부모 지칭이 있고, AI 응답에 "호칭+께서/이/가 ~주시는"(수혜 관형 구문)이 있으면
+ * 부모 지칭으로 복원. "말씀해 주셔서"류(사용자→AI 감사 표현, 주셔서/주시면)는 건드리지 않음.
+ */
+const PARENT_TERM_RE = /(어머님|어머니|엄마|아버님|아버지|아빠)/;
+export function fixParentReferent(text: string, userText: string, honorific: string): string {
+  if (!text || !userText || !honorific) return text;
+  const m = userText.match(PARENT_TERM_RE);
+  if (!m) return text;
+  const mother = /어머님|어머니|엄마/.test(userText);
+  const father = /아버님|아버지|아빠/.test(userText);
+  if (mother && father) return text; // 둘 다 언급 — 어느 쪽인지 모호하므로 보존
+  const parent = mother ? "어머님" : "아버님";
+  const esc = honorific.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(
+    new RegExp(`(?<![가-힣])${esc}(?:께서|이|가)\\s*([가-힣]{0,4}주시는)`, "g"),
+    `${parent}께서 $1`,
+  );
+}
+
+/**
  * 연속 호명 제한 — 직전 AI 응답이 호칭("할머니," 등)으로 시작했는데 이번 응답도 같은 호칭으로
  * 시작하면 이번 선두 호칭을 제거. 매 턴 "할머니, ~"로 시작하는 기계적 패턴 차단(2026-06-12 사용자 피드백).
  * 프롬프트 빈도 지시의 결정적 안전망 — 최악의 경우에도 연속 2턴 이상 호명 시작이 불가능해짐.
  */
 export function limitVocativeOpening(text: string, prevAi: string, honorific: string): string {
-  if (!text || !prevAi || !honorific) return text;
+  if (!text || !honorific) return text;
   // 호격은 구두점(,!~) 필수 — "할머니는/할머니께서"(주어)를 깎아 "는 김치부침개를…" 비문을
   // 만들던 부작용 방지(2026-06-12 라이브 발견, 호격 쉼표 only 기지 패턴).
   const opening = new RegExp(`^\\s*${honorific}\\s*[,!~]+\\s*`);
-  if (!opening.test(prevAi) || !opening.test(text)) return text;
+  if (!opening.test(text)) return text;
+  // 기본은 호칭 없이 시작(2026-06-12 사용자 피드백: 매번/절반도 많음 — 4~5턴에 한 번).
+  // 보존 조건: 직전 응답이 호격 시작이 아니었고 + 결정적 1/4 게이트 통과 시에만.
+  // (문장 중간 호칭은 영향 없음 — 선두 호격만 다룸)
+  const prevStarted = prevAi ? opening.test(prevAi) : false;
+  const keep = !prevStarted && text.length % 4 === 0;
+  if (keep) return text;
   const stripped = text.replace(opening, "");
   // 제거 후 비거나 너무 짧아지면(호칭 단독 응답) 원문 유지
   return stripped.trim().length >= 5 ? stripped : text;
@@ -401,6 +429,7 @@ export function postProcessReply(
     ["fixWordChainStart", (t) => fixWordChainStart(t)],
     ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
     ["limitVocativeOpening", (t) => limitVocativeOpening(t, prevAi, honorific)],
+    ["fixParentReferent", (t) => fixParentReferent(t, userText, honorific)],
     ["normalizeImnida", (t) => normalizeImnida(t)],
     ["fixFamiliarNameParticles", (t) => fixFamiliarNameParticles(t, companionName)],
     ["stripRecallAnswerLeak", (t) => stripRecallAnswerLeak(t)],

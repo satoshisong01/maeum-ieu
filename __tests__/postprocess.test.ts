@@ -194,16 +194,25 @@ describe("normalizeHonorific", () => {
   });
 });
 
-describe("limitVocativeOpening — 연속 호명 제한", () => {
-  it("직전 응답도 호칭 시작이면 이번 선두 호칭 제거", async () => {
+describe("limitVocativeOpening — 호명 기본 제거 + 4~5턴 1회", () => {
+  it("기본은 선두 호격 제거 (1/4 게이트 미통과 시)", async () => {
     const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
-    expect(limitVocativeOpening("할머니, 오늘 날씨가 참 좋아요.", "할머니, 어제는 잘 주무셨어요?", "할머니"))
-      .toBe("오늘 날씨가 참 좋아요.");
+    const t = "할머니, 오늘 날씨가 참 좋아요!"; // length 17 → %4!=0 → 제거
+    expect(t.length % 4).not.toBe(0);
+    expect(limitVocativeOpening(t, "네, 맞아요.", "할머니")).toBe("오늘 날씨가 참 좋아요!");
   });
-  it("직전 응답이 호칭 시작이 아니면 유지 (첫 호명 허용)", async () => {
+  it("직전 비호격 + 1/4 게이트 통과 시에만 보존", async () => {
     const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
-    const t = "할머니, 오늘 날씨가 참 좋아요.";
-    expect(limitVocativeOpening(t, "네, 맞아요. 즐거운 하루였죠.", "할머니")).toBe(t);
+    const t = "할머니, 오늘 날씨가 참 좋아요!!!!"; // 패딩으로 length%4==0 맞춤
+    const padded = t + "!".repeat((4 - (t.length % 4)) % 4);
+    expect(padded.length % 4).toBe(0);
+    expect(limitVocativeOpening(padded, "네, 맞아요.", "할머니")).toBe(padded);
+  });
+  it("직전 응답도 호격 시작이면 게이트 무관 제거 (연속 호명 차단)", async () => {
+    const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
+    const t = "할머니, 오늘 날씨가 참 좋아요!";
+    const padded = t + "!".repeat((4 - (t.length % 4)) % 4);
+    expect(limitVocativeOpening(padded, "할머니, 어제는 잘 주무셨어요?", "할머니")).toBe(padded.replace(/^할머니,\s*/, ""));
   });
   it("이번 응답이 호칭 시작이 아니면 무변경", async () => {
     const { limitVocativeOpening } = await import("@/lib/chat/postprocess");
@@ -216,6 +225,28 @@ describe("limitVocativeOpening — 연속 호명 제한", () => {
     expect(limitVocativeOpening(subj, "할머니, 어제는 잘 주무셨어요?", "할머니")).toBe(subj);
     const subj2 = "할머니께서 말씀하신 대로예요.";
     expect(limitVocativeOpening(subj2, "할머니, 안녕하세요.", "할머니")).toBe(subj2);
+  });
+});
+
+describe("fixParentReferent — 부모 행위주체 복원", () => {
+  it("어머니 발화 미러링에서 호칭+주시는 → 어머님 복원", async () => {
+    const { fixParentReferent } = await import("@/lib/chat/postprocess");
+    expect(fixParentReferent(
+      "선생님께서 끓여주시는 김치찌개가 많이 그리우시군요.",
+      "어머니가 끓여주시는 김치찌개도 그립네요", "선생님",
+    )).toBe("어머님께서 끓여주시는 김치찌개가 많이 그리우시군요.");
+  });
+  it("부모 언급 없으면 무변경, 주셔서(감사 표현)는 보존", async () => {
+    const { fixParentReferent } = await import("@/lib/chat/postprocess");
+    const t1 = "선생님께서 끓여주시는 찌개라니 맛있겠어요.";
+    expect(fixParentReferent(t1, "오늘 야근했어요", "선생님")).toBe(t1);
+    const t2 = "선생님께서 말씀해 주셔서 고마워요.";
+    expect(fixParentReferent(t2, "어머니가 해주시던 밥이 그리워요", "선생님")).toBe(t2);
+  });
+  it("부모 양쪽 다 언급 시 모호 — 보존", async () => {
+    const { fixParentReferent } = await import("@/lib/chat/postprocess");
+    const t = "선생님께서 만들어주시는 음식이 최고죠.";
+    expect(fixParentReferent(t, "어머니랑 아버지가 만들어주시던 음식", "선생님")).toBe(t);
   });
 });
 
