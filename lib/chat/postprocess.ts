@@ -365,6 +365,22 @@ export function trimIncomplete(text: string): string {
 }
 
 /**
+ * 연속 호명 제한 — 직전 AI 응답이 호칭("할머니," 등)으로 시작했는데 이번 응답도 같은 호칭으로
+ * 시작하면 이번 선두 호칭을 제거. 매 턴 "할머니, ~"로 시작하는 기계적 패턴 차단(2026-06-12 사용자 피드백).
+ * 프롬프트 빈도 지시의 결정적 안전망 — 최악의 경우에도 연속 2턴 이상 호명 시작이 불가능해짐.
+ */
+export function limitVocativeOpening(text: string, prevAi: string, honorific: string): string {
+  if (!text || !prevAi || !honorific) return text;
+  // 호격은 구두점(,!~) 필수 — "할머니는/할머니께서"(주어)를 깎아 "는 김치부침개를…" 비문을
+  // 만들던 부작용 방지(2026-06-12 라이브 발견, 호격 쉼표 only 기지 패턴).
+  const opening = new RegExp(`^\\s*${honorific}\\s*[,!~]+\\s*`);
+  if (!opening.test(prevAi) || !opening.test(text)) return text;
+  const stripped = text.replace(opening, "");
+  // 제거 후 비거나 너무 짧아지면(호칭 단독 응답) 원문 유지
+  return stripped.trim().length >= 5 ? stripped : text;
+}
+
+/**
  * 응답 후처리 파이프라인 — 11단 변환을 명시적 순서로 실행 + 단계별 관측.
  * 기존 중첩 1줄 호출(양 핸들러 중복)을 단일화. 어떤 단계가 응답을 통째로 비우면 로깅(빈응답 버그 원인 추적).
  * 순서는 load-bearing이므로 변경 주의(removeUngroundedClaims/removeParrot이 빈 문자열을 만들 수 있어 호출부 가드 필수).
@@ -384,6 +400,7 @@ export function postProcessReply(
     ["fixChildGenderHonorific", (t) => fixChildGenderHonorific(t, family, ctx)],
     ["fixWordChainStart", (t) => fixWordChainStart(t)],
     ["removeRepeatedOpening", (t) => removeRepeatedOpening(t, prevAi)],
+    ["limitVocativeOpening", (t) => limitVocativeOpening(t, prevAi, honorific)],
     ["normalizeImnida", (t) => normalizeImnida(t)],
     ["fixFamiliarNameParticles", (t) => fixFamiliarNameParticles(t, companionName)],
     ["stripRecallAnswerLeak", (t) => stripRecallAnswerLeak(t)],

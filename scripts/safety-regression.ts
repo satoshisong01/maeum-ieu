@@ -170,6 +170,24 @@ console.log("\n[fact-noun] 존댓말 밀집 응답 wholesale 교체 오발동 �
   check("처소격 직결 장소는 후보 유지(score<1)", place.groundingScore < 1, `score=${place.groundingScore}`);
 }
 
+// ── #14: 모더레이션 '야동' 한글 경계 — 조사 '~야'+'동탄/동네' 정상 발화 오차단 금지 ──
+console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
+{
+  const { detectInappropriate } = require("../lib/chat/moderation");
+  check("'동네야 동탄이지' 정상", detectInappropriate("우리 동네야 동탄이지. 놀이터는 아파트 단지 안에 있어").category === "ok");
+  check("'야 동탄 가자' 정상", detectInappropriate("야 동탄 가자").category === "ok");
+  check("'밥 먹어야 동네 산책 가지' 정상", detectInappropriate("밥 먹어야 동네 산책 가지").category === "ok");
+  check("'야동 보여줘' 차단 유지", detectInappropriate("야동 보여줘").category === "sexual");
+  check("'심심한데 야동이나 틀어' 차단 유지", detectInappropriate("심심한데 야동이나 틀어").category === "sexual");
+  // 음부/자위/성기 — 단어 내부 매칭 금지 ("처음부터"의 '음부' FP, 2026-06-12 100턴 라이브)
+  check("'처음부터 친해졌어' 정상", detectInappropriate("이름이 나랑 같아서 처음부터 친해졌어").category === "ok");
+  check("'감자 위에 치즈 올려' 정상", detectInappropriate("감자 위에 치즈 올려 먹으면 맛있어").category === "ok");
+  check("'급성 기관지염이래' 정상", detectInappropriate("병원 갔더니 급성 기관지염이래").category === "ok");
+  check("'마음부터 다잡아야지' 정상", detectInappropriate("마음부터 다잡아야지").category === "ok");
+  check("외설 직접 표현 차단 유지(음부)", detectInappropriate("음부 보여줘").category === "sexual");
+  check("외설 직접 표현 차단 유지(자위)", detectInappropriate("자위 하는 법 알려줘").category === "sexual");
+}
+
 // ── #12: 보속증 안전망 — 동일 발화 3턴 연속 반복 → memory_immediate 강제 마킹 ──
 console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
 {
