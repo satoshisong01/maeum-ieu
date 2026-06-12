@@ -170,6 +170,15 @@ console.log("\n[fact-noun] 존댓말 밀집 응답 wholesale 교체 오발동 �
   check("처소격 직결 장소는 후보 유지(score<1)", place.groundingScore < 1, `score=${place.groundingScore}`);
 }
 
+// ── #15: 응급 — 가슴 증상 + 식은땀 조합은 L3 (심근경색 교과서 조합, 어순 무관) ──
+console.log("\n[emergency] 가슴+식은땀 조합 L3");
+{
+  check("'가슴이 답답하고 식은땀이 나네' L3", detectEmergency("갑자기 가슴이 답답하고 식은땀이 나네").level === 3);
+  check("'식은땀 나면서 가슴이 아파' L3", detectEmergency("식은땀이 나면서 가슴이 아파").level === 3);
+  check("'가슴이 답답해' 단독은 비응급 유지", detectEmergency("요즘 가슴이 답답해").level === 0);
+  check("'식은땀이 나' 단독은 비응급 유지", detectEmergency("어젯밤에 식은땀이 났어").level === 0);
+}
+
 // ── #14: 모더레이션 '야동' 한글 경계 — 조사 '~야'+'동탄/동네' 정상 발화 오차단 금지 ──
 console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
 {
