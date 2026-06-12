@@ -27,6 +27,7 @@ import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
 import { handleMentalFlow } from "@/lib/health/mental-flow";
+import { getMentalFollowupHint } from "@/lib/health/mental-followup";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -231,11 +232,13 @@ async function handleFirstGreeting(systemPrompt: string, userName: string, honor
 }
 
 /** 2) 재접속 인사 — AI가 먼저 인지 질문을 자연스럽게 포함 */
-async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string) {
+async function handleReturningGreeting(systemPrompt: string, userName: string, honorific: string, conversationId?: string, userId?: string) {
   const model = getTextModel(systemPrompt, false); // 인사엔 googleSearch 불필요(지연·비용 절감)
+  // T3 후속: 위기 체크인(7일 내) / 2주 경과 재검 권유 — 실패는 null 무해화
+  const mentalHint = userId ? await getMentalFollowupHint(userId) : null;
   const { text } = await generateWithFallback(
     model,
-    `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.
+    `${userName}(${honorific})님이 다시 돌아왔습니다. 자기소개 반복하지 말고, "다시 오셨네요" 스타일로 따뜻하게 반겨주세요.${mentalHint ?? ""}
 
 [중요 — 시간대에 맞는 인사·식사 질문]
 위 [현재 환경 정보]의 "시간대" 라벨(새벽/아침/오전/점심/오후/저녁/밤)을 **반드시 확인**해서 시간대에 맞는 식사 질문을 하세요:
@@ -863,7 +866,7 @@ export async function POST(req: Request) {
     _t.promptMs = Math.round(performance.now() - _m);
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
-    if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId);
+    if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId);
 
     const historyText = buildHistoryText(history);
 

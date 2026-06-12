@@ -37,7 +37,11 @@ export default function MentalPage() {
   }, [status, router]);
 
   const latest = results[0];
-  const maxTotal = 27;
+  // 척도별 추이 분리 — PHQ-9(27점)와 GAD-7(21점)을 한 그래프에 섞으면 점수 비교가 왜곡됨
+  const byScale = results.reduce<Record<string, ResultRow[]>>((acc, r) => {
+    (acc[r.scale] ??= []).push(r);
+    return acc;
+  }, {});
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -85,20 +89,25 @@ export default function MentalPage() {
           </section>
         )}
 
-        {!loading && results.length > 1 && (
-          <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">추이</h2>
-            <div className="flex h-24 items-end gap-2">
-              {[...results].reverse().map((r) => (
-                <div key={r.id} className="flex flex-1 flex-col items-center gap-1" title={`${r.total}점 (${r.severity})`}>
-                  <div className={`w-full rounded-t ${r.total >= 10 ? "bg-orange-400" : r.total >= 5 ? "bg-amber-400" : "bg-emerald-400"}`}
-                    style={{ height: `${Math.max(4, (r.total / maxTotal) * 80)}px` }} />
-                  <span className="text-[10px] text-zinc-400">{r.date.slice(5)}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+        {!loading && Object.entries(byScale).filter(([, rows]) => rows.length > 1).map(([scale, rows]) => {
+          const max = rows[0].maxTotal ?? (scale === "GAD7" ? 21 : 27);
+          const warn = Math.round(max * 0.37); // PHQ9 10/27, GAD7 8/21 근사 — 색 구간용
+          const mild = Math.round(max * 0.19);
+          return (
+            <section key={scale} className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">추이 — {rows[0].scaleName ?? scale}</h2>
+              <div className="flex h-24 items-end gap-2">
+                {[...rows].reverse().map((r) => (
+                  <div key={r.id} className="flex flex-1 flex-col items-center gap-1" title={`${r.total}점 (${r.severity})`}>
+                    <div className={`w-full rounded-t ${r.total >= warn ? "bg-orange-400" : r.total >= mild ? "bg-amber-400" : "bg-emerald-400"}`}
+                      style={{ height: `${Math.max(4, (r.total / max) * 80)}px` }} />
+                    <span className="text-[10px] text-zinc-400">{r.date.slice(5)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
 
         {!loading && results.length === 0 && (
           <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
@@ -107,7 +116,7 @@ export default function MentalPage() {
         )}
 
         <footer className="mt-8 space-y-1 text-[11px] text-zinc-400">
-          <p>· 이 결과는 의학적 진단이 아닌 자가 점검(PHQ-9 기반)이에요. 정확한 평가는 전문의와 상담해 주세요.</p>
+          <p>· 이 결과는 의학적 진단이 아닌 자가 점검(PHQ-9·GAD-7 기반)이에요. 정확한 평가는 전문의와 상담해 주세요.</p>
           <p>· 마음이 많이 힘들 땐: 자살예방 상담전화 ☎ 109 · 정신건강 위기상담 ☎ 1577-0199 (24시간)</p>
         </footer>
       </main>
