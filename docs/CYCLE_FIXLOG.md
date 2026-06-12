@@ -542,3 +542,12 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 회기간 기억(김씨 할머니 문병) · 분석기 채점(불가능거래2·속담0·2/3회상1·연속빼기0) · 모드혼입 0(3역할) ·
 검진 채점(PHQ-9 11 중간·UCLA-3 8 높음 수기일치) · 표준검사 7영역 완주 · 응급 119 · 평균 지연 ~4s
 수위: vitest 139/139 · safety 61/61
+
+## 2026-06-12 (심야 2) — 전문가 검사 결과지 + 라이브 음성(베타) (3b3568f·d0e09cf)
+
+- **검사 결과지(T1)**: /api/expert/session-report + /expert 섹션 — 일자별 7영역 카드(색 등급)·근거 펼침·종합 소견. E2E: "7/7 시행 — 주의 1건: 지연 기억(1점)" 정확
+- **라이브 음성 베타(T2)**: /live — Gemini Live 직결(ephemeral token, API key 비노출). 첫 AI 응답 브라우저 실측 **1.05초**(기존 6.1초). 안전망 게이트(출력 전사 선행→검사→재생, 위반 시 턴 음소거), barge-in, 턴 회송(/api/live/turn: 저장+인지분석+응급 신호)
+- 핵심 발견: **Constrained 연결은 클라 config 무시** — 전사 설정·페르소나를 토큰 발급 시 서버가 고정해야 함(전사 미수신 버그로 실증). CSP connect-src에 Gemini WS 추가(키는 비노출)
+- runCognitiveAnalysis → lib/chat/cognitive-run.ts 추출(경로 공유, route 분리 백로그 일부)
+- v1 제약: /live는 일반 대화 전용(검진·모더레이션 즉답 게이트 미지원 — 화면에 명시), 입력 전사 품질은 현행 STT 대비 거칢(인지분석 신뢰도 관찰 필요), 보이스가 Gemini 보이스
+- 검증: tsc 0 · vitest 139 · safety 61 · next build PASS · fakemic E2E 풀체인(전사·응답·DB 저장)
