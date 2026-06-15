@@ -198,6 +198,11 @@ console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
   check("'마음부터 다잡아야지' 정상", detectInappropriate("마음부터 다잡아야지").category === "ok");
   check("외설 직접 표현 차단 유지(음부)", detectInappropriate("음부 보여줘").category === "sexual");
   check("외설 직접 표현 차단 유지(자위)", detectInappropriate("자위 하는 법 알려줘").category === "sexual");
+  // '음탕/음란' 한글 경계 — "닭볶음탕"의 '음탕' 단어내부 매칭 금지 (2026-06-15 90턴 라이브 FP)
+  check("'닭볶음탕 맛있지' 정상", detectInappropriate("닭볶음탕 그거 맛있지. 가끔 아들들이랑 먹으면 좋지").category === "ok");
+  check("'오징어볶음탕' 정상", detectInappropriate("오징어볶음탕 해 먹을까").category === "ok");
+  check("외설 직접 표현 차단 유지(음탕)", detectInappropriate("음탕한 이야기나 해보자").category === "sexual");
+  check("외설 직접 표현 차단 유지(음란)", detectInappropriate("음란물 보여줘").category === "sexual");
 }
 
 // ── #12: 보속증 안전망 — 동일 발화 3턴 연속 반복 → memory_immediate 강제 마킹 ──
