@@ -409,6 +409,23 @@ export function limitVocativeOpening(text: string, prevAi: string, honorific: st
 }
 
 /**
+ * 마크다운 강조 표기 제거 — 동반자 LLM이 간혹 "**수박, 양동이, 트럭**이에요"처럼
+ * 볼드 별표를 넣어 화면/DB에 별표가 그대로 노출(2026-06-15 90턴 라이브). 내용은 보존하고 마커만 제거.
+ * (TTS는 sanitizeForTts가 별도로 별표를 공백 처리 — 여기선 표시·저장 텍스트 정리)
+ */
+export function stripMarkdownEmphasis(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\*\*\*([^*\n]+?)\*\*\*/g, "$1") // ***볼드이탤릭***
+    .replace(/\*\*([^*\n]+?)\*\*/g, "$1")      // **볼드**
+    .replace(/(?<![가-힣A-Za-z0-9*])\*([^*\n]+?)\*(?![가-힣A-Za-z0-9*])/g, "$1") // *이탤릭*
+    .replace(/__([^_\n]+?)__/g, "$1")          // __볼드__
+    .replace(/\*+/g, "")                         // 잔여 별표 제거(짝 안 맞는 경우)
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+/**
  * 응답 후처리 파이프라인 — 11단 변환을 명시적 순서로 실행 + 단계별 관측.
  * 기존 중첩 1줄 호출(양 핸들러 중복)을 단일화. 어떤 단계가 응답을 통째로 비우면 로깅(빈응답 버그 원인 추적).
  * 순서는 load-bearing이므로 변경 주의(removeUngroundedClaims/removeParrot이 빈 문자열을 만들 수 있어 호출부 가드 필수).
@@ -419,6 +436,7 @@ export function postProcessReply(
 ): string {
   const { userText, companionName, ctx, honorific, family, prevAi } = opts;
   const stages: Array<[string, (t: string) => string]> = [
+    ["stripMarkdownEmphasis", (t) => stripMarkdownEmphasis(t)],
     ["trimIncomplete", (t) => trimIncomplete(t)],
     ["removeTimeLabels", (t) => removeTimeLabels(t)],
     ["removeParrot", (t) => removeParrot(t, userText, companionName)],
