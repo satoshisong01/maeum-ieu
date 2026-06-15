@@ -9,8 +9,24 @@ import {
   fixWordChainStart,
   removeRepeatedOpening,
   trimIncomplete,
+  stripMarkdownEmphasis,
   postProcessReply,
 } from "@/lib/chat/postprocess";
+
+describe("stripMarkdownEmphasis", () => {
+  it("**볼드** 마커를 제거하고 내용은 보존한다 (2026-06-15 라이브 누출)", () => {
+    expect(stripMarkdownEmphasis("단어 세 개예요! **수박, 양동이, 트럭**이에요.")).toBe("단어 세 개예요! 수박, 양동이, 트럭이에요.");
+  });
+  it("*이탤릭*도 제거한다", () => {
+    expect(stripMarkdownEmphasis("그건 *정말* 좋네요")).toBe("그건 정말 좋네요");
+  });
+  it("별표 없는 문장은 그대로 둔다", () => {
+    expect(stripMarkdownEmphasis("오늘 날씨가 참 좋네요.")).toBe("오늘 날씨가 참 좋네요.");
+  });
+  it("짝 안 맞는 잔여 별표도 제거한다", () => {
+    expect(stripMarkdownEmphasis("나무, 자동차, 모자**")).toBe("나무, 자동차, 모자");
+  });
+});
 
 describe("removeTimeLabels", () => {
   it("[방금] 라벨을 제거한다", () => {
