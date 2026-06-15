@@ -240,5 +240,29 @@ console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
   check("짧은 맞장구 반복 → 미발동", !r3.isAnomaly);
 }
 
+// ── #15: 검진 중단 死정규식 — "그만두면 신경 쓰여"(서술)가 검진 중단으로 오발동 금지 ──
+console.log("\n[mental-escape] '그만두면' 서술 → 검진 오중단 금지 (2026-06-15 BFI-10 라이브 FP)");
+{
+  const { isAbortIntent } = require("../lib/health/mental-flow");
+  check("'그만할래' 중단 의사 감지", isAbortIntent("이제 그만할래") === true);
+  check("'그만하자' 중단 의사 감지", isAbortIntent("이제 그만하자") === true);
+  check("'그만둬' 중단 의사 감지", isAbortIntent("그만둬") === true);
+  check("'그만두면 신경쓰여' 서술 → 오중단 금지", isAbortIntent("그런 편이에요. 중간에 그만두면 계속 신경 쓰여서요") === false);
+  check("'그만두고 다른거' 서술 → 오중단 금지", isAbortIntent("그건 그만두고 다른 일을 했어요") === false);
+  check("'중단/취소' 중단 의사 유지", isAbortIntent("검사 중단할게요") === true);
+}
+
+// ── #16: TTS 검진 머리말 낭독 — "1/10."이 "십분의 일"(분수)로 읽히는 문제 ──
+console.log("\n[tts-text] '1/10.' 머리말 → '첫 번째 문제' 자연화 (2026-06-15 사용자 피드백)");
+{
+  const { sanitizeForTts } = require("../lib/chat/tts-text");
+  check("'1/10.' → '첫 번째 문제'", sanitizeForTts("1/10. 지난 2주 동안").startsWith("첫 번째 문제."));
+  check("'10/10.' → '열 번째 문제'", sanitizeForTts("10/10. 상상력이 풍부한 편이다").startsWith("열 번째 문제."));
+  check("'1/10' 분수 표기 제거(낭독)", !sanitizeForTts("3/9. 잠들기 어렵거나").includes("/"));
+  check("일반 분수 '2/3 정도'는 보존(머리말 아님)", sanitizeForTts("하루 2/3 정도는 그래요").includes("2/3"));
+  check("'2주' 같은 정상 숫자 보존", sanitizeForTts("2주의 절반 이상이요").includes("2주"));
+  check("물결표 제거 유지", !sanitizeForTts("1~2개 정도").includes("~"));
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);

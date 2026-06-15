@@ -19,6 +19,7 @@ import { GoogleGenAI } from "@google/genai";
 import textToSpeech from "@google-cloud/text-to-speech";
 import { authOptions } from "@/lib/auth";
 import { pcmToWav } from "@/lib/audio";
+import { sanitizeForTts } from "@/lib/chat/tts-text";
 
 const DEFAULT_VOICE_GEMINI = "Leda";          // Gemini TTS 음성
 const DEFAULT_VOICE_CLOUD = "ko-KR-Neural2-A"; // Cloud TTS 한국어 여성 자연 음성
@@ -108,19 +109,6 @@ async function synthesizeWithGemini(text: string, voice: string): Promise<{ audi
     } catch (e) { lastErr = e; /* try next model */ }
   }
   throw lastErr instanceof Error ? lastErr : new Error("Gemini TTS all models failed");
-}
-
-/**
- * TTS 합성 전 텍스트 정리 — 음성으로 읽으면 어색한 기호 제거.
- * 예: "~"(물결표 계열)가 "물결표"로 낭독되는 문제. 공백으로 치환해 낭독 방지 +
- *     "1~2" 같은 숫자 범위가 "12"로 병합되는 것 방지. 별표(마크다운 잔여)도 정리.
- */
-function sanitizeForTts(s: string): string {
-  return s
-    .replace(/[~～〜〰]/g, " ") // ~ ～ 〜 〰 → 공백
-    .replace(/\*+/g, " ")                     // 마크다운 별표 잔여 → 공백("별표" 낭독 방지)
-    .replace(/\s{2,}/g, " ")
-    .trim();
 }
 
 export async function POST(req: Request) {
