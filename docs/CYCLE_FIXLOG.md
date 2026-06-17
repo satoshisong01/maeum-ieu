@@ -736,3 +736,11 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - **구현**: `buildSystemPrompt`를 stablePrompt(base+user+profile+summary)/turnBlock(동적)로 분리(systemPrompt 결과 동일). `lib/chat/prompt-cache.ts`(`getPrefixCache`: 사용자별 1캐시·해시키·TTL 600s·best-effort). `getTextModel(…, cachedContent?)`. route 두 핸들러: 캐시 성공 시 cachedContent + turnBlock을 contents로, 실패 시 기존 경로 폴백. **env `PROMPT_CACHE=1`일 때만 활성(기본 off=회귀 0)**.
   - **재측정**: `PROMPT_CACHE=1` 라이브 3턴 → **cached=9472**(기준 0), 응답 정상. 효과적 입력비 **~59%/턴 절감**. 인사/검색(googleSearch) 턴은 미적용.
   - 운영: 프로덕션은 비용 모니터링 후 `PROMPT_CACHE=1` 플립. 저장비용은 활성 다턴 대화에서 순절감(짧은 TTL로 제한).
+- **C5 보호자 화면(A안: 전문가 인프라 재사용) ✅** (2026-06-17) — 새 role/마이그레이션/인증변경 없이 기존 expertCode↔ExpertPatient 흐름을 보호자에 재사용.
+  - 가입 "🩺 전문가" 옵션을 **"🩺 전문가·보호자"(검사 시행·가족 모니터링)** 로 라벨링 → 가족이 같은 계정으로 가입·연결.
+  - **환자 상세(/api/expert/patients/[id] + 페이지)에 복약 추가** — 보호자가 가장 원하던 "약 먹는 시간/이행"을 인지 등급·추세와 함께 읽기전용으로 표시(MedicationSchedule + medication_log 재사용).
+  - **라이브 E2E PASS**: 보호자 가입→코드 발급→어르신 코드 입력 연결→환자 상세에 복약(혈압약·이행률) 표시·페이지 무에러.
+  - 데이터 접근은 기존 ExpertPatient 연결(데이터 주인 동의)로 게이트 — 새 노출 없음. 전용 guardian role/UI 라벨 정밀화는 후속(선택).
+
+## 캠페인 종합 (2026-06-17)
+재참여 + B1~B5 + C1~C5 = **18커밋, 전부 tsc 0 + 라이브 검증 + 양 repo 푸시**. rate-limit은 코드에 한계 명시됨(실구현=Redis 인프라). 잔여 후속(선택): 음성 idle 실기기 검증 · 챗 복약 자동캡처 · 전용 guardian role 라벨 · 광범위 폰트/대비 시각 패스 · 분산 rate-limit(인프라).

@@ -95,8 +95,8 @@ export default function SignupPage() {
                 onClick={() => setScreeningMode("pro")}
                 className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
               >
-                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
-                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가·보호자</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">검사 시행·가족 모니터링</span>
               </button>
               <button
                 type="button"

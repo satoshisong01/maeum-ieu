@@ -18,6 +18,7 @@ interface Detail {
   overallAvg: number | null; tier: string; tierText: string;
   trend: string; trendText: string; trendDelta: number;
   domains: DomainRow[]; weekly: WeekRow[]; events: EventRow[];
+  medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
 }
 
 const TIER_STYLE: Record<string, string> = {
@@ -76,6 +77,37 @@ export default function PatientDetailPage() {
               </div>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{data.trendText || data.tierText}</p>
             </section>
+
+            {data.medication && data.medication.items.length > 0 && (
+              <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">복약 · 오늘</h2>
+                  {data.medication.weekCompliance.expected > 0 && (() => {
+                    const pct = Math.round((data.medication.weekCompliance.confirmed / data.medication.weekCompliance.expected) * 100);
+                    const tone = pct >= 80 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : pct >= 50 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200";
+                    return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>이번 주 이행 {pct}%</span>;
+                  })()}
+                </div>
+                <div className="grid gap-2">
+                  {data.medication.items.map((m) => (
+                    <div key={m.id} className={`rounded-xl px-3 py-2.5 ${m.enabled ? "bg-zinc-50 dark:bg-zinc-800/50" : "bg-zinc-50 opacity-60 dark:bg-zinc-800/30"}`}>
+                      <div className="mb-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">{m.label}{!m.enabled && <span className="ml-1 text-xs text-zinc-400">(알림 꺼짐)</span>}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.times.map((tm) => {
+                          const done = data.medication!.todayConfirmed.includes(`${m.id}|${tm}`);
+                          return (
+                            <span key={tm} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${done ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400"}`}>
+                              {done ? `✓ ${tm} 복용` : `${tm} 미확인`}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-zinc-400">어르신이 복용을 확인하면 ✓로 표시됩니다.</p>
+              </section>
+            )}
 
             <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">영역별 점수 — 최근 7일 vs 이전 30일 (0 정상 ~ 2 주의)</h2>
