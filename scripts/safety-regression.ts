@@ -298,5 +298,17 @@ console.log("\n[keyfacts] 요약 keyFacts 프롬프트 주입");
   check("빈/깨진 keyFacts 방어", renderKeyFacts("") === "" && renderKeyFacts("{bad") === "");
 }
 
+// ── #20: 참여도 감지 — 단답·반복 시 발화량·질문 축소 (과다발화 루프 방지, 2026-06-16) ──
+console.log("\n[engagement] 저참여 감지 + 발화 페이스 hint");
+{
+  const { detectLowEngagement, buildEngagementHint } = require("../lib/chat/engagement");
+  check("단답 '응' → very-low", detectLowEngagement("응", []) === "very-low");
+  check("단답 '몰라' → very-low", detectLowEngagement("몰라", []) === "very-low");
+  check("짧은 반복 → very-low", detectLowEngagement("그래", ["그래"]) === "very-low");
+  check("정상 문장 → none", detectLowEngagement("어제 손주가 놀러 와서 같이 저녁을 맛있게 먹었어요", []) === "none");
+  check("very-low hint는 새 질문 억제", buildEngagementHint("very-low").includes("새 질문"));
+  check("none hint는 기존 기본('답변 직전 점검') 유지", buildEngagementHint("none").includes("답변 직전 점검"));
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
