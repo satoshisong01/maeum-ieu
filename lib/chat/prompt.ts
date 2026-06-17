@@ -7,6 +7,7 @@ import { toKstDateString } from "./time";
 import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./profile";
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
 import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
+import { getCognitiveTierForPrompt, buildCognitiveAdaptationHint, type CognitiveTierResult } from "@/lib/health/cognitive-level";
 
 /**
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
@@ -105,7 +106,7 @@ export async function buildSystemPrompt(params: {
   const todayKstEarly = toKstDateString(new Date());
 
   // 5개 DB 조회가 전부 상호 독립 — 순차 5 RTT → 병렬 1 RTT (선행 지연 ~150-300ms 절감, 2026-06-11)
-  const [user, dateBlockP, assessedP, userMsgCount, profile, summaries] = await Promise.all([
+  const [user, dateBlockP, assessedP, userMsgCount, profile, summaries, cogTier] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, age: true, gender: true, companionName: true, companionRelation: true, userHonorific: true },
@@ -117,6 +118,8 @@ export async function buildSystemPrompt(params: {
       : Promise.resolve(0),
     getFullProfile(userId),
     getRecentSummaries(userId),
+    // 인지 등급 적응은 사용자 모드 전용 — pro(검사자, 표준문항 그대로)·general(인지선별 없음)은 미적용·비용 절감
+    mode === "user" ? getCognitiveTierForPrompt(userId) : Promise.resolve({ tier: "평가전", avg: -1 } as CognitiveTierResult),
   ]);
   const userName = user?.name?.trim() || "사용자";
   const honorific = user?.userHonorific?.trim() || getHonorific(user?.age ?? null, user?.gender ?? null);
@@ -220,6 +223,9 @@ export async function buildSystemPrompt(params: {
     }
   }
 
+  // 인지 등급 적응(폐루프) — 사용자 모드에서 중증/고위험만 발동, 정상/평가전은 빈 문자열(현행 보존)
+  const adaptationBlock = mode === "user" ? buildCognitiveAdaptationHint(cogTier.tier) : "";
+
   // Phase 1: 구조화된 사용자 프로필 블록 + 과거 대화 요약본 (상단 병렬 배치에서 조회됨)
   const profileBlock = renderProfileForPrompt(profile);
   const summaryBlock = renderSummariesForPrompt(summaries);
@@ -229,7 +235,7 @@ export async function buildSystemPrompt(params: {
   //   안정 블록을 앞에, 매 턴 바뀌는 블록(guide/env/date)을 뒤에 둬야 Gemini implicit prefix caching이 적용됨
   //   (이전엔 정적인 protocol이 맨 끝이라 매 턴 cached=0 — usage 로그로 확인된 비용 누수).
   //   protocol은 guide보다 앞 — 턴별 지시(guide)가 recency 우선권을 갖도록.
-  const systemPrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock, includeProtocol ? cognitiveProtocol : "", guideBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
+  const systemPrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock, includeProtocol ? cognitiveProtocol : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
 
   return { systemPrompt, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation, profile };
 }

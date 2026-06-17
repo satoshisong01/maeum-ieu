@@ -655,6 +655,10 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - **설계 긴장 해소**: 능동 재참여와 충돌 없이 — 침묵 강제 아님(한 문장 공감 유지), 질문 강요만 제거.
 - **검증**: safety #20 6건 → safety **93/93** · tsc 0 · vitest 143. **라이브 스모크 PASS**: 단답('응/그래/몰라')→응답 26~44자 1문장·꼬리질문 0, 정상 턴은 평소대로. + pet 회상('나비')·거짓부정 없음 동시 확인.
 
-### 남은 작업(같은 클러스터 — 진행 예정, 중위험)
-- [ ] 능동 재참여(re-engage): 세션 중 침묵 시 동반자가 먼저 한 문장으로 끌어들이기(2회 상한) — page.tsx 음성 echo 리스크 주의
-- [ ] 적응형 난이도 폐루프: severity 등급 → 프롬프트 환류(중증 시 짧은 문장·쉬운 어휘·probe 빈도 조절), 안전 hint 길이 충돌 가드
+### A1 🔴→✅ 적응형 난이도 폐루프 — 측정한 인지 등급을 대화로 환류
+- **증상**: cognitive_assessments 채점·severity 등급이 보호자알림·전문가대시보드·요약에만 쓰이고 **라이브 프롬프트엔 0회 환류**(severity.ts를 prompt/route가 import조차 안 함). 중증도 정상군과 같은 200자·표준 난이도 → 따라오기 버거움.
+- **수정**: `lib/health/cognitive-level.ts` 신설 — `getCognitiveTierForPrompt`(fetchDomainStats+severity 재사용, 최근30일) + `buildCognitiveAdaptationHint`. `buildSystemPrompt` 상단 Promise.all 배치에 tier 조회 1개 추가(추가 RTT 0, 사용자 모드 전용·pro/general 미적용·비용절감), guideBlock 뒤에 적응 블록 주입. **중증=1~2문장·쉬운 어휘, 고위험=한 문장·예/아니오**. 정상/경증/평가전=빈 문자열(현행 동작·프롬프트 캐시 보존). **응급·안전 안내는 길이단축 예외**(안전 hint 충돌 가드).
+- **검증**: tsc 0 · vitest 143 · safety **99/99**(#21 6건). 라이브(중증 시드 계정 30턴)는 후속 권장.
+
+### 남은 작업(같은 클러스터 — 별도 진행)
+- [ ] 능동 재참여(re-engage): 세션 중 침묵 시 동반자가 먼저 한 문장으로 끌어들이기(engagement 다이얼 종속, 2회 상한) — page.tsx 음성 echo 리스크 주의. **사용자가 직접 구현 중이라 조율 후 진행.**
