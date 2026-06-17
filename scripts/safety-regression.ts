@@ -322,5 +322,16 @@ console.log("\n[cognitive-adapt] 인지 등급별 대화 난이도 적응");
   check("적응 지시에 응급·안전 예외 포함(길이충돌 가드)", buildCognitiveAdaptationHint("고위험").includes("응급"));
 }
 
+// ── #22: 검진 결과 요청 감지 — 미완료 시 가짜 결과 환각 방지 (2026-06-16) ──
+console.log("\n[mental-result] 검진 결과 요청 감지(환각 방지)");
+{
+  const { isMentalResultRequest } = require("../lib/health/mental-flow");
+  check("'우울 점수 어때' → 결과요청", isMentalResultRequest("내 우울 점수 어때?") === true);
+  check("'검사 결과 보여줘' → 결과요청", isMentalResultRequest("검사 결과 보여줘") === true);
+  check("'점수 알려줘' → 결과요청", isMentalResultRequest("점수 알려줘") === true);
+  check("'마음 건강 체크 해줘'(트리거) → 결과요청 아님", isMentalResultRequest("마음 건강 체크 해줘") === false);
+  check("'오늘 날씨 좋네' → 결과요청 아님", isMentalResultRequest("오늘 날씨 좋네") === false);
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
