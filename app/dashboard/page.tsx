@@ -52,6 +52,8 @@ export default function DashboardPage() {
   const [cognitive, setCognitive] = useState<CognitiveData | null>(null);
   const [emergency, setEmergency] = useState<EmergencyData | null>(null);
   const [medications, setMedications] = useState<Medication[] | null>(null);
+  const [todayConfirmed, setTodayConfirmed] = useState<string[]>([]);
+  const [weekCompliance, setWeekCompliance] = useState<{ confirmed: number; expected: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -81,6 +83,8 @@ export default function DashboardPage() {
         if (mres && mres.ok) {
           const md = await mres.json();
           setMedications(Array.isArray(md.items) ? md.items : []);
+          setTodayConfirmed(Array.isArray(md.todayConfirmed) ? md.todayConfirmed : []);
+          setWeekCompliance(md.weekCompliance ?? null);
         }
       } catch (e) { console.error(e); setLoadError(true); }
       finally { setLoading(false); }
@@ -137,6 +141,21 @@ export default function DashboardPage() {
   const weakDomains = (cognitive?.domainAverages ?? [])
     .filter((d) => d.avg_score >= 1.0 && d.count >= 2)
     .sort((a, b) => b.avg_score - a.avg_score);
+
+  const confirmDose = async (scheduleId: string, doseTime: string) => {
+    const key = `${scheduleId}|${doseTime}`;
+    if (todayConfirmed.includes(key)) return;
+    try {
+      const r = await fetch("/api/medications/check", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleId, doseTime, status: "confirmed" }),
+      });
+      if (r.ok) {
+        setTodayConfirmed((prev) => (prev.includes(key) ? prev : [...prev, key]));
+        setWeekCompliance((prev) => (prev ? { ...prev, confirmed: prev.confirmed + 1 } : prev));
+      }
+    } catch { /* 무해화 */ }
+  };
 
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
@@ -231,26 +250,45 @@ export default function DashboardPage() {
           );
         })()}
 
-        {/* 복약 일정 — 어르신이 챙기는 약·시간을 보호자가 한눈에 */}
+        {/* 복약 일정 · 오늘 복용 확인 · 주간 이행률 */}
         {medications && medications.length > 0 && (
           <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-zinc-700">복약 일정</h2>
-              <Link href="/mypage" className="text-xs text-blue-600 underline">편집</Link>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-zinc-700">복약 일정 · 오늘</h2>
+              <div className="flex items-center gap-2">
+                {weekCompliance && weekCompliance.expected > 0 && (() => {
+                  const pct = Math.round((weekCompliance.confirmed / weekCompliance.expected) * 100);
+                  const tone = pct >= 80 ? "bg-green-100 text-green-700" : pct >= 50 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700";
+                  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>이번 주 이행 {pct}%</span>;
+                })()}
+                <Link href="/mypage" className="text-xs text-blue-600 underline">편집</Link>
+              </div>
             </div>
             <div className="space-y-2">
               {medications.map((m) => (
-                <div key={m.id} className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 ${m.enabled ? "bg-blue-50" : "bg-zinc-50 opacity-60"}`}>
-                  <span className="text-sm font-medium text-zinc-800">{m.label}{!m.enabled && <span className="ml-1 text-xs text-zinc-400">(알림 꺼짐)</span>}</span>
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {m.times.map((tm) => (
-                      <span key={tm} className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-blue-700 shadow-sm">{tm}</span>
-                    ))}
+                <div key={m.id} className={`rounded-lg px-3 py-2.5 ${m.enabled ? "bg-blue-50" : "bg-zinc-50 opacity-60"}`}>
+                  <div className="mb-1.5 text-sm font-medium text-zinc-800">{m.label}{!m.enabled && <span className="ml-1 text-xs text-zinc-400">(알림 꺼짐)</span>}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {m.times.map((tm) => {
+                      const done = todayConfirmed.includes(`${m.id}|${tm}`);
+                      return done ? (
+                        <span key={tm} className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">✓ {tm} 복용함</span>
+                      ) : (
+                        <button
+                          key={tm}
+                          type="button"
+                          onClick={() => confirmDose(m.id, tm)}
+                          className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        >
+                          {tm} · 복용 확인
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-zinc-400">정해진 시간에 어르신께 복약 안내를 전해 드려요.</p>
+            <p className="mt-2 text-[11px] text-zinc-400">시각을 눌러 복용을 기록하세요. 이번 주 이행률로 챙김 정도를 확인할 수 있어요.</p>
           </div>
         )}
 
