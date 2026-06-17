@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { ThemeToggle } from "../theme-toggle";
 import { useWakeWord } from "./useWakeWord";
+import { classifyMedReply } from "@/lib/chat/medication";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -135,6 +136,7 @@ export default function ChatPage() {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 능동 재참여: 사용자 침묵 idle 타이머
   const reEngageCountRef = useRef(0); // 연속 재참여 횟수(2회 상한 — 발화 감지 시 리셋)
   const reEngageRef = useRef<() => void>(() => {}); // triggerReEngage 보관(startRecording 순환 의존 방지)
+  const pendingMedRef = useRef<{ scheduleId: string; doseTime: string; ts: number } | null>(null); // 복약 리마인더 후 '먹었어' 자동캡처 대기
   const analyserRef = useRef<AnalyserNode | null>(null);
   const vadFrameRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null); // VAD용 AudioContext — stopRecording/언마운트에서 명시적 close (누수 방지)
@@ -622,6 +624,8 @@ export default function ChatPage() {
           ...prev,
           { id: reminderId, role: "assistant", content: triggerResp.text!, createdAt: new Date().toISOString() },
         ]);
+        // 다음 사용자 발화가 "먹었어/응"이면 자동 복용 기록하도록 대기 설정(어르신은 버튼보다 말로 답함)
+        pendingMedRef.current = { scheduleId: first.scheduleId, doseTime: first.slotTime, ts: Date.now() };
         // 음성 재생 (TTS 실패해도 텍스트는 이미 노출)
         speak(triggerResp.text!).catch(() => {});
       } catch (e) {
@@ -641,9 +645,25 @@ export default function ChatPage() {
     };
   }, [status, conversationId, loading, speak]);
 
+  // 복약 자동캡처 — 리마인더 후 다음 발화가 긍정이면 복용 기록(어르신은 버튼보다 말로 답함). 부정/만료면 미기록.
+  const confirmMedIfAffirmed = useCallback(async (text: string) => {
+    const pm = pendingMedRef.current;
+    if (!pm) return;
+    if (Date.now() - pm.ts > 10 * 60_000) { pendingMedRef.current = null; return; } // 10분 만료(엉뚱한 발화 오기록 방지)
+    const verdict = classifyMedReply(text);
+    if (verdict === "unclear") return;            // 애매하면 대기 유지(다음 발화 기회)
+    pendingMedRef.current = null;                 // 긍정/부정 둘 다 대기 해제
+    if (verdict === "not_taken") return;          // 안 먹음 → 미기록
+    const { scheduleId, doseTime } = pm;
+    try {
+      await fetch("/api/medications/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheduleId, doseTime, status: "confirmed" }) });
+    } catch { /* 무해화 */ }
+  }, []);
+
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim() || loading || !conversationId) return;
+      void confirmMedIfAffirmed(content);
       const userMessage: Message = {
         id: createId(),
         role: "user",
@@ -796,6 +816,9 @@ export default function ChatPage() {
           setMessages((prev) => prev.map((m) => (m.id === placeholderId ? { ...m, content: tr || "(음성 메시지)" } : m)));
         });
         setAiSpeaking(false);
+
+        // 복약 리마인더 후 "먹었어/응" 음성 응답 자동 복용 기록
+        if (transcriptionText) void confirmMedIfAffirmed(transcriptionText);
 
         // 종료 명령 감지 — "그만/조용히/끝내자" 등
         if (transcriptionText && SESSION_END_PATTERN.current.test(transcriptionText)) {

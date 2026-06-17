@@ -14,6 +14,20 @@ import { nameSubj } from "./korean-particle";
 export const TOLERANCE_MS = 30 * 60 * 1000; // 30분
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
+/**
+ * 복약 리마인더 직후 사용자 응답 분류 — 자동 복용 기록용.
+ * taken=복용함(기록) / not_taken=안 먹음(대기 해제·미기록) / unclear=애매(다음 발화 대기).
+ * 어르신은 대시보드 버튼보다 말("먹었어"·"응")로 답하므로 챗 자동캡처에 사용.
+ */
+export function classifyMedReply(text: string): "taken" | "not_taken" | "unclear" {
+  const t = (text || "").trim();
+  if (!t) return "unclear";
+  if (/안\s*먹|못\s*먹|아직|나중|이따|싫|건너|안\s*했/.test(t)) return "not_taken";
+  if (/먹었|복용했|챙겨\s*먹|먹음|다\s*먹|먹고\s*왔/.test(t)) return "taken";
+  if (/^(?:응|어|네|예|그래|그럼|당연)[.!~\s]*$/.test(t)) return "taken";
+  return "unclear";
+}
+
 export interface DueSlot {
   scheduleId: string;
   label: string;

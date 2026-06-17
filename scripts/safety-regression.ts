@@ -358,5 +358,18 @@ console.log("\n[lunar] 음력 명시 시 시간지남력 과탐 보정");
   check("음력 미언급 → 보정 안 함(실제 오류 보존)", r2.cognitiveChecks.find((c) => c.domain === "orientation_time").score === 2);
 }
 
+// ── #25: 복약 자동캡처 응답 분류 — 리마인더 후 '먹었어/응'만 기록, 부정/애매 구분 (2026-06-18) ──
+console.log("\n[med-reply] 복약 응답 분류(자동캡처)");
+{
+  const { classifyMedReply } = require("../lib/chat/medication");
+  check("'응 먹었어' → taken", classifyMedReply("응 먹었어") === "taken");
+  check("'네' → taken", classifyMedReply("네") === "taken");
+  check("'챙겨 먹었지' → taken", classifyMedReply("챙겨 먹었지") === "taken");
+  check("'아직 안 먹었어' → not_taken", classifyMedReply("아직 안 먹었어") === "not_taken");
+  check("'나중에 먹을게' → not_taken", classifyMedReply("나중에 먹을게") === "not_taken");
+  check("'먹을게'(미래) → 미기록(taken 아님)", classifyMedReply("이따 먹을게") !== "taken");
+  check("'오늘 날씨 좋네' → unclear", classifyMedReply("오늘 날씨 좋네") === "unclear");
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
