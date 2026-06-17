@@ -8,8 +8,9 @@
  * 이 모듈은 severity 산식(severity.ts)과 집계 쿼리(cognitive-alert.fetchDomainStats)를 재사용해
  * buildSystemPrompt가 등급별 적응 지시를 주입하게 한다. 사용자 모드 전용.
  */
+import { prisma } from "@/lib/prisma";
 import { fetchDomainStats } from "@/lib/health/cognitive-alert";
-import { computeOverallAvg, classifySeverity, type SeverityTier } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, RISK_DOMAIN_THRESHOLD, type SeverityTier } from "@/lib/health/severity";
 
 export interface CognitiveTierResult {
   tier: SeverityTier;
@@ -25,6 +26,21 @@ export async function getCognitiveTierForPrompt(userId: string): Promise<Cogniti
   } catch {
     return { tier: "평가전", avg: -1 };
   }
+}
+
+/**
+ * 최근 30일 영역별 평균이 위험 임계(RISK_DOMAIN_THRESHOLD) 이상인 '약점 영역' 목록.
+ * probe(인지 확인) 턴에서 약점 영역을 우선 관찰해 추세 민감도를 높이는 용도. 오류 시 빈 배열.
+ */
+export async function getWeakDomainsForPrompt(userId: string): Promise<string[]> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ domain: string }[]>(
+      `SELECT domain FROM cognitive_assessments
+        WHERE user_id = $1 AND session_date >= CURRENT_DATE - INTERVAL '30 day'
+        GROUP BY domain HAVING AVG(score) >= $2`,
+      userId, RISK_DOMAIN_THRESHOLD);
+    return rows.map((r) => r.domain);
+  } catch { return []; }
 }
 
 /**

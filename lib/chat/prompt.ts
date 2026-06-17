@@ -7,7 +7,7 @@ import { toKstDateString } from "./time";
 import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./profile";
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
 import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
-import { getCognitiveTierForPrompt, buildCognitiveAdaptationHint, type CognitiveTierResult } from "@/lib/health/cognitive-level";
+import { getCognitiveTierForPrompt, buildCognitiveAdaptationHint, getWeakDomainsForPrompt, type CognitiveTierResult } from "@/lib/health/cognitive-level";
 
 /**
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
@@ -211,7 +211,12 @@ export async function buildSystemPrompt(params: {
     } else {
       // 인지 확인 턴 (≈20%) — 수다 흐름에 딱 하나만 슬쩍
       const probeOrdinal = Math.floor(userTurnIndex / 5);
-      const probeDomain = remaining[probeOrdinal % remaining.length];
+      // 약점 영역(최근 30일 평균 위험 임계 이상) 우선 관찰 — probe 턴에만 조회(비용 최소).
+      //   '오늘 이미 확인한 영역(remaining 제외)'은 자동으로 빠지므로 같은 날 과다 재확인 없음.
+      const weakDomains = await getWeakDomainsForPrompt(userId);
+      const weakInRemaining = remaining.filter((d) => weakDomains.includes(d));
+      const probePool = weakInRemaining.length > 0 ? weakInRemaining : remaining;
+      const probeDomain = probePool[probeOrdinal % probePool.length];
       const probeQs = bankReady ? sampleQuestionsForDomain(probeDomain, 3).map((q) => q.text) : [];
       const probeBlock = probeQs.length
         ? `\n[이번에 슬쩍 확인할 영역: ${DOMAIN_KO[probeDomain] || probeDomain} — 아래 중 하나를 골라 대화에 녹이기]\n${probeQs.map((t) => "· " + t).join("\n")}`
