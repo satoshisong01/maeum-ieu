@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { computeOverallAvg, TIER_BOUNDS } from "@/lib/health/severity";
@@ -47,7 +48,14 @@ function formatShortDate(d: string): string {
 }
 
 export default function DashboardPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  // 사용자(어르신) 본인은 건강기록 비공개 — 결과는 보호자·전문가만. 잘못 진입 시 대화로 돌려보냄(A안).
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.screeningMode === "user") {
+      router.replace("/chat");
+    }
+  }, [status, session, router]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [cognitive, setCognitive] = useState<CognitiveData | null>(null);
   const [emergency, setEmergency] = useState<EmergencyData | null>(null);
