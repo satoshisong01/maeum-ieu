@@ -95,9 +95,20 @@ export async function PATCH(req: Request) {
   if (guardianEmail !== undefined) updateData.guardianEmail = guardianEmail || null;
   if (guardianWebhookUrl !== undefined) {
     const url = (guardianWebhookUrl ?? "").trim();
-    // 기본 URL 형식 검사 — http(s) 만 허용
-    if (url && !/^https?:\/\//i.test(url)) {
-      return NextResponse.json({ error: "Webhook URL은 http:// 또는 https:// 로 시작해야 합니다." }, { status: 400 });
+    if (url) {
+      let host = "";
+      try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ""); } catch { /* invalid */ }
+      const isHttp = /^https?:\/\//i.test(url);
+      // SSRF 방어 — 내부/사설/링크로컬/CGNAT 대역 차단(공개 webhook만 허용)
+      const isPrivate = !host
+        || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")
+        || host === "0.0.0.0" || host === "::1"
+        || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host)
+        || /^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(host);
+      if (!isHttp || isPrivate) {
+        return NextResponse.json({ error: "Webhook URL은 공개된 http(s) 주소여야 합니다(내부·사설 주소 불가)." }, { status: 400 });
+      }
     }
     updateData.guardianWebhookUrl = url || null;
   }
