@@ -114,8 +114,14 @@ export async function handleMentalFlow(params: {
     }
     const scale = SCALES[scaleKey];
     const id = randomUUID();
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, $3, 'active', 0)`, id, userId, scaleKey);
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO mental_session (id, user_id, scale, status, current_item) VALUES ($1, $2, $3, 'active', 0)`, id, userId, scaleKey);
+    } catch (e) {
+      // 동시 요청 경합(부분 unique 위반) — 이미 다른 요청이 active 세션을 만듦. 중복 생성 대신 그 세션을 사용.
+      const existing = await getActiveSession(userId);
+      if (!existing) throw e; // 진짜 다른 오류면 전파
+    }
     const aboutLine = scaleKey === "BFI10"
       ? `평소 본인의 모습에 대해 ${scale.items.length}가지를 여쭤보고`
       : scaleKey === "UCLA3"
