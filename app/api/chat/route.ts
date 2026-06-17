@@ -18,6 +18,7 @@ import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
+import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
@@ -486,9 +487,10 @@ async function handleAudioMessage(params: {
   if (intent.primary !== "daily") {
     console.log("[intent:audio]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
   }
+  const recentUserTexts = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
   const hintBlock = [
     intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
-    "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
+    buildEngagementHint(detectLowEngagement(transcription, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
   const contents = buildChatContents({ messages, currentUserMessage: currentUserMsg, memories, hintBlock });
@@ -710,9 +712,10 @@ async function handleTextMessage(params: {
   if (intent.primary !== "daily") {
     console.log("[intent]", JSON.stringify({ primary: intent.primary, all: intent.intents }));
   }
+  const recentUserTexts = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
   const hintBlock = [
     intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
-    "[답변 직전 점검]\n사용자가 이미 답한 내용은 다시 묻지 말고 아직 안 물어본 주제로 질문하세요. 직전 AI 발화에 사용자가 답을 했다면 그 답을 우선 인정/반영한 뒤 자연스럽게 이어가세요.",
+    buildEngagementHint(detectLowEngagement(userContent, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
 
   const contents = buildChatContents({ messages, currentUserMessage: userContent, memories, hintBlock });
