@@ -693,3 +693,9 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - **conversationId 소유권 검증** — 타 사용자 대화 ID로 이력 열람·주입 차단(명시적 authz, findFirst {id,userId}).
 - (멘탈세션 만료 KST: 검증 결과 `now()` vs `now()` 비교라 타임존 무관 — **오탐, 미수정**)
 - 검증: tsc 0 · safety 104/104.
+
+### B2 핵심 정확성 ✅ (검증 후 수정 — 오탐 다수 배제)
+- **멘탈검진 발화 RAG 오염** — 정신건강 정형 답변("그런 편이에요" 등)이 사용자 RAG에 임베딩돼 일상 대화 회상에 noise. `saveMessages`에 `skipUserEmbedding` 추가, 멘탈 저장 2곳(음성·텍스트)에 적용.
+- **오탐으로 배제(코드 검증)**: BFI-10 역채점(`maxScore-rawScore`는 표준 역문항 공식, 1회만 적용 — 정상) / moderation '자위' 문장끝(`(?![가-힣])` 분기가 이미 처리 — 정상).
+- **위험·투기성으로 보류**: fact-checker FACT_NOUN 한글경계(死 정규식 영역, 라이브 미관찰 FP — 실데이터로 검증 후 결정). 응급 L1→L2 카운트(현 `recent+1` 로직 검토상 정상으로 보임).
+- 검증: tsc 0 · safety 104/104.
