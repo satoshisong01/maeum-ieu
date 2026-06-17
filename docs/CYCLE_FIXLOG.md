@@ -660,5 +660,11 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - **수정**: `lib/health/cognitive-level.ts` 신설 — `getCognitiveTierForPrompt`(fetchDomainStats+severity 재사용, 최근30일) + `buildCognitiveAdaptationHint`. `buildSystemPrompt` 상단 Promise.all 배치에 tier 조회 1개 추가(추가 RTT 0, 사용자 모드 전용·pro/general 미적용·비용절감), guideBlock 뒤에 적응 블록 주입. **중증=1~2문장·쉬운 어휘, 고위험=한 문장·예/아니오**. 정상/경증/평가전=빈 문자열(현행 동작·프롬프트 캐시 보존). **응급·안전 안내는 길이단축 예외**(안전 hint 충돌 가드).
 - **검증**: tsc 0 · vitest 143 · safety **99/99**(#21 6건). 라이브(중증 시드 계정 30턴)는 후속 권장.
 
+### 추가 후속 (백로그 처리, 2026-06-16)
+- **검진 결과 환각 방어** 🔴→✅ — 검진 미완료 상태에서 "점수 어때/결과 보여줘"에 LLM이 가짜 결과를 지어내던 문제. `mental-flow` no-session 분기에 `RESULT_REQUEST_RE` 가드: 완료 세션 있으면 "마음 건강 페이지에서 본인만" 안내, 없으면 "아직 안 하셨어요"(점수 비노출). general 전용. (a73d253, safety #22)
+- **HONORIFIC 감지기 오탐** ✅ — e2e 하네스가 어르신의 배우자 지칭("돌아가신 할아버지")을 오호칭으로 잡던 FP에 `SPOUSE_CTX` 예외 추가 + 회상검증 시드(복실·채송화·춘천·두부). 앱 코드 무관. (8377be6)
+
 ### 남은 작업(같은 클러스터 — 별도 진행)
 - [ ] 능동 재참여(re-engage): 세션 중 침묵 시 동반자가 먼저 한 문장으로 끌어들이기(engagement 다이얼 종속, 2회 상한) — page.tsx 음성 echo 리스크 주의. **사용자가 직접 구현 중이라 조율 후 진행.**
+- [ ] probe 약점 영역 우선 + 빈도 가변(적응형 난이도 후속) — 도메인별 약점 가중 probe. fetchDomainStats가 domain 미반환이라 쿼리 보강 필요 + "오늘 평가한 영역 제외"와의 상호작용 주의.
+- [ ] 텍스트 모드 TTS 게이팅(비용) — 제품 결정 대기.
