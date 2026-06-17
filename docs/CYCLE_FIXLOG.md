@@ -731,3 +731,8 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - **분산 rate-limit** — Redis/Upstash 인프라 필요(서버리스 멀티인스턴스). 현재 인메모리는 단일 인스턴스 한정 — 코드 주석·배포 체크리스트로 명시 권장.
 - **C2 복약 준수기록 ✅** (2026-06-17) — `medication_log` raw 테이블(ops-create, 멱등·db push 금지) + `POST /api/medications/check`(복용 확인, 본인 스케줄만, 멱등 upsert) + `/api/medications` GET에 오늘 복용·주간 이행률 추가 + 대시보드 복약 카드에 **시각별 '복용 확인' 버튼·'✓ 복용함'·'이번 주 이행 %'**. **라이브 스모크 PASS**: 버튼→✓→새로고침 영속·이행률 배지·무에러. tsc 0.
   - 캡처 방식 A안(대시보드 버튼) 채택. 음성 어르신용 챗 리마인더 자동캡처(응답 파싱)는 후속 enhancement.
+- **C4 명시적 프롬프트 캐싱 ✅** (2026-06-17) — 측정→구현→재측정 완결.
+  - **측정**: 격리 프로브로 확인 — 동일 13k systemInstruction 3회 반복도 **암묵 캐시 cached=0(이 계정/모델 미작동)**, **명시적 캐시는 작동**(cached≈프리픽스).
+  - **구현**: `buildSystemPrompt`를 stablePrompt(base+user+profile+summary)/turnBlock(동적)로 분리(systemPrompt 결과 동일). `lib/chat/prompt-cache.ts`(`getPrefixCache`: 사용자별 1캐시·해시키·TTL 600s·best-effort). `getTextModel(…, cachedContent?)`. route 두 핸들러: 캐시 성공 시 cachedContent + turnBlock을 contents로, 실패 시 기존 경로 폴백. **env `PROMPT_CACHE=1`일 때만 활성(기본 off=회귀 0)**.
+  - **재측정**: `PROMPT_CACHE=1` 라이브 3턴 → **cached=9472**(기준 0), 응답 정상. 효과적 입력비 **~59%/턴 절감**. 인사/검색(googleSearch) 턴은 미적용.
+  - 운영: 프로덕션은 비용 모니터링 후 `PROMPT_CACHE=1` 플립. 저장비용은 활성 다턴 대화에서 순절감(짧은 TTL로 제한).

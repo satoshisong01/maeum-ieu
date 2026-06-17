@@ -15,6 +15,7 @@ import { ChatRequestSchema } from "@/lib/chat/validation";
 import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRelativeTimeLabel } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
+import { getPrefixCache } from "@/lib/chat/prompt-cache";
 import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
@@ -393,7 +394,7 @@ function streamCompanionReply(opts: {
 }
 
 async function handleAudioMessage(params: {
-  systemPrompt: string; envBlock: string; honorific: string; userName: string;
+  systemPrompt: string; stablePrompt: string; turnBlock: string; envBlock: string; honorific: string; userName: string;
   companionName: string; companionRelation: string;
   userId: string; conversationId?: string;
   sttPromise: Promise<string>; historyText: string;
@@ -403,7 +404,7 @@ async function handleAudioMessage(params: {
   timings?: Record<string, number>;
   mode: "user" | "pro" | "general";
 }) {
-  const { systemPrompt, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings, mode } = params;
+  const { systemPrompt, stablePrompt, turnBlock, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings, mode } = params;
 
   // 1단계: 음성 → 텍스트 변환 — POST 초입에서 이미 시작됨(프롬프트 빌드와 병렬). 여기선 대기만.
   const transcription0 = await sttPromise;
@@ -496,7 +497,10 @@ async function handleAudioMessage(params: {
 
   // 2단계: 변환된 텍스트로 대화 모델 호출. info_request만 googleSearch 활성(그 외 비활성, 비용·지연 절감)
   const intent = classifyIntent(transcription);
-  const model = getTextModel(systemPrompt, intent.intents.includes("info_request"));
+  const useSearch = intent.intents.includes("info_request");
+  // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
+  const prefixCache = useSearch ? null : await getPrefixCache(userId, stablePrompt);
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch);
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
@@ -514,7 +518,9 @@ async function handleAudioMessage(params: {
     buildEngagementHint(detectLowEngagement(transcription, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
-  const contents = buildChatContents({ messages, currentUserMessage: currentUserMsg, memories, hintBlock });
+  // 캐시 사용 시 systemInstruction에서 빠진 turnBlock(동적 지시)을 contents 앞에 실어 모델에 전달
+  const effectiveHint = prefixCache ? [turnBlock, hintBlock].filter(Boolean).join("\n\n") : hintBlock;
+  const contents = buildChatContents({ messages, currentUserMessage: currentUserMsg, memories, hintBlock: effectiveHint });
 
   const fallback = buildFallbackMessage(honorific, companionName);
   const ctx = `${memories || ""}\n${historyText || ""}\n${transcription || ""}`;
@@ -673,7 +679,7 @@ async function handleInappropriateMessage(params: {
 
 /** 5) 텍스트 요청 (텍스트 모델 — 순수 텍스트 응답) */
 async function handleTextMessage(params: {
-  systemPrompt: string; envBlock: string;
+  systemPrompt: string; stablePrompt: string; turnBlock: string; envBlock: string;
   userId: string; conversationId?: string;
   userContent: string; historyText: string; memories: string;
   messages: { role: string; content: string; createdAt?: string }[];
@@ -682,7 +688,7 @@ async function handleTextMessage(params: {
   timings?: Record<string, number>;
   mode: "user" | "pro" | "general";
 }) {
-  const { systemPrompt, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings, mode } = params;
+  const { systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings, mode } = params;
 
   // 응급 발화 감지 — moderation보다 먼저
   const emergency = await evaluateEmergency({ userContent, conversationId });
@@ -719,7 +725,10 @@ async function handleTextMessage(params: {
 
   // 의도 분류 먼저 — info_request(실시간 정보)만 googleSearch 활성, 그 외엔 비활성(비용·지연 절감)
   const intent = classifyIntent(userContent);
-  const model = getTextModel(systemPrompt, intent.intents.includes("info_request"));
+  const useSearch = intent.intents.includes("info_request");
+  // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
+  const prefixCache = useSearch ? null : await getPrefixCache(userId, stablePrompt);
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch);
 
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
@@ -739,7 +748,9 @@ async function handleTextMessage(params: {
     buildEngagementHint(detectLowEngagement(userContent, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
 
-  const contents = buildChatContents({ messages, currentUserMessage: userContent, memories, hintBlock });
+  // 캐시 사용 시 systemInstruction에서 빠진 turnBlock(동적 지시)을 contents 앞에 실어 모델에 전달
+  const effectiveHint = prefixCache ? [turnBlock, hintBlock].filter(Boolean).join("\n\n") : hintBlock;
+  const contents = buildChatContents({ messages, currentUserMessage: userContent, memories, hintBlock: effectiveHint });
 
   // DEBUG: 환경변수 DEBUG_INPUT=1 설정 시 입력 dump (사용자 간 데이터 누수 진단용).
   //   2026-05-26 abc→rudtjrch 누수 root cause 추적에 사용됨. 평소엔 off.
@@ -858,7 +869,7 @@ export async function POST(req: Request) {
     // DB 이력이 있으면 그것이 ground truth (클라이언트 slice 50·미저장 경합 시에만 폴백)
     const history = dbHistory.length > 0 ? dbHistory : (messages ?? []);
     _m = performance.now();
-    const { systemPrompt, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
+    const { systemPrompt, stablePrompt, turnBlock, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx, mode,
     });
     _t.promptMs = Math.round(performance.now() - _m);
@@ -879,13 +890,13 @@ export async function POST(req: Request) {
 
     if (isAudio && sttPromise) {
       return handleAudioMessage({
-        systemPrompt, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
+        systemPrompt, stablePrompt, turnBlock, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
         sttPromise, historyText, messages: history, profile,
         clientTimeIso: ctx?.currentTime, timings: _t, mode,
       });
     }
 
-    return handleTextMessage({ systemPrompt, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode });
+    return handleTextMessage({ systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });
