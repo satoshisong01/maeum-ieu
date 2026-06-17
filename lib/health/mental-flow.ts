@@ -28,6 +28,10 @@ export const isAbortIntent = (t: string): boolean => ESCAPE_RE.test(t || "");
 const AFFIRM_RE = /응|어\s|그래|네|예\b|좋아|좋지|시작|해\s*보자|하자|할래|해\s*줘|그러자|오냐|궁금/;
 // 동의 단계에서 검진을 화제로 삼고 있는지(질문·망설임 포함) — 미해당이면 딴 주제로 보고 비켜남
 const CONSENT_TOPIC_RE = /검사|체크|점검|테스트|우울|불안|성격|외로|마음|점수|결과|질문|뭐|뭔|어떻|왜|무슨|몇\s*(?:개|가지)|무서|걱정|부담|싫|글쎄|괜찮|고민/;
+// 검진 '결과/점수' 요청 — 진행 중 세션이 없을 때 LLM이 가짜 결과를 지어내지 않도록 결정적 안내로 가로챔.
+const RESULT_REQUEST_RE = /(?:검사|검진|체크|점검|우울|불안|외로움|성격|마음\s*건강)\s*(?:결과|점수|등급|레벨)|(?:결과|점수)\s*(?:가|는|은|이)?\s*(?:어때|어떻게|뭐|보여|알려|나왔|나와|궁금)/;
+/** 검진 결과 요청 감지 (회귀 테스트용 순수 함수). */
+export const isMentalResultRequest = (t: string): boolean => RESULT_REQUEST_RE.test(t || "");
 
 interface MentalSession {
   id: string; scale: string; status: string; current_item: number; retry_used: boolean;
@@ -95,7 +99,19 @@ export async function handleMentalFlow(params: {
       : BFI10_TRIGGER_RE.test(userContent) ? "BFI10"
       : GAD7_TRIGGER_RE.test(userContent) ? "GAD7"
       : TRIGGER_RE.test(userContent) ? "PHQ9" : null;
-    if (!scaleKey || TRIGGER_PAST_RE.test(userContent)) return null;
+    const isStart = !!scaleKey && !TRIGGER_PAST_RE.test(userContent);
+    if (!isStart) {
+      // 시작 트리거가 아닌데 '결과/점수' 요청이면 — 진행 중 세션이 없으므로 LLM 환각(가짜 결과) 방지용 결정적 안내.
+      if (RESULT_REQUEST_RE.test(userContent) && !TRIGGER_PAST_RE.test(userContent)) {
+        const doneRows = await prisma.$queryRawUnsafe<{ scale: string }[]>(
+          `SELECT scale FROM mental_session WHERE user_id = $1 AND status = 'done' ORDER BY updated_at DESC LIMIT 1`, userId);
+        if (doneRows.length > 0) {
+          return { status: "done", reply: `${honorific}, 지난 점검 결과는 "마음 건강" 페이지에서 ${honorific}만 보실 수 있어요. 점수를 대신 말씀드리진 않지만, 요즘 마음이 어떠신지는 언제든 같이 이야기해요.` };
+        }
+        return { status: "aborted", reply: `${honorific}, 아직 마음 건강 점검을 끝내지 않으셨어요. 지금 해보고 싶으시면 "마음 건강 체크"라고 말씀해 주세요.` };
+      }
+      return null;
+    }
     const scale = SCALES[scaleKey];
     const id = randomUUID();
     await prisma.$executeRawUnsafe(
