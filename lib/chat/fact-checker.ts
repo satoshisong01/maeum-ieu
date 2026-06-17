@@ -153,6 +153,8 @@ function isGrounded(name: string, profile: FullProfile, recentUserText: string, 
     if (profile.profile?.spouseName === cand) return true;
     if (recentUserText.includes(cand)) return true;
     if (memories.includes(cand)) return true;
+    // 확정 슬롯 사실(반려동물·취미 등)도 근거 — 주입한 facts를 fact-checker가 도로 삭제하는 자기모순 방지
+    if ((profile.facts ?? []).some((f) => f.factValue.includes(cand))) return true;
   }
   return false;
 }
@@ -176,8 +178,31 @@ function isFamilyContextGrounded(name: string, profile: FullProfile, recentUserT
     if (profile.family.some((m) => m.name === cand)) return true;
     if (profile.profile?.spouseName === cand) return true;
     if (recentUserText.includes(cand)) return true;
+    if ((profile.facts ?? []).some((f) => f.factValue.includes(cand))) return true;
   }
   return false;
+}
+
+const SAID_NEGATIVE_RE = /(?:안|않|없|아니|적\s*없)[가-힣\s]{0,15}(?:다고|라고)\s*(?:하셨|했|말씀|그러셨|하시)/;
+
+/**
+ * 거짓 부정 단언 가드 — AI가 "사용자가 X를 안 한다/없다고 하셨다"고 단언하는데
+ * X가 사용자 확정 사실(facts/family 등)이면 그 문장은 사실과 반대(가스라이팅성) → 제거.
+ * 라이브 결함: '고양이 두부 키워'(턴45) → '고양이 안 키우신다고 하셨잖아요'(턴95).
+ * 확정 사실만 affirmed로 써서 false positive 최소화(사용자가 부정한 걸 정확히 반영하는 정상 응답은 미발동).
+ * export: 회귀 테스트용(순수 함수).
+ */
+export function detectFalseNegationAgainstFacts(aiText: string, affirmed: string[]): { cleaned: string; removed: string[] } {
+  const tokens = affirmed.filter((t) => t && t.length >= 2);
+  if (!aiText || tokens.length === 0) return { cleaned: aiText, removed: [] };
+  const sentences = aiText.split(/(?<=[.!?~])\s+/);
+  const removed: string[] = [];
+  const kept = sentences.filter((s) => {
+    if (SAID_NEGATIVE_RE.test(s) && tokens.some((t) => s.includes(t))) { removed.push(s); return false; }
+    return true;
+  });
+  if (removed.length === 0) return { cleaned: aiText, removed: [] };
+  return { cleaned: kept.join(" ").replace(/\s{2,}/g, " ").trim(), removed };
 }
 
 /** 가족 관계 모순 검증 — 응답에서 "큰아들 X" 라고 하는데 profile에서 X가 둘째인 경우 */
@@ -279,6 +304,24 @@ export function factCheckResponse(input: CheckInput): CheckResult {
     }));
   } else if (result.warnings.length > 0) {
     console.warn("[fact-check] relation warnings:", result.warnings);
+  }
+
+  // 거짓 부정 단언 가드 — AI가 확정 사실을 "안 한다/없다고 하셨다"고 단언하면 그 문장 제거(가스라이팅 방지)
+  const affirmedFacts: string[] = [];
+  for (const fm of profile.family) if (fm.name && fm.name.length >= 2) affirmedFacts.push(fm.name);
+  if (profile.profile?.spouseName) affirmedFacts.push(profile.profile.spouseName);
+  if (profile.profile?.hometown) affirmedFacts.push(profile.profile.hometown);
+  if (profile.profile?.residence) affirmedFacts.push(profile.profile.residence);
+  if (profile.profile?.favoriteFoods) affirmedFacts.push(...profile.profile.favoriteFoods.split(/[\s,]+/));
+  for (const f of (profile.facts ?? [])) affirmedFacts.push(...f.factValue.split(/[\s,]+/));
+  const fn = detectFalseNegationAgainstFacts(result.cleaned, affirmedFacts);
+  if (fn.removed.length > 0) {
+    result.cleaned = fn.cleaned;
+    result.removed.push(...fn.removed);
+    console.warn("[fact-check] removed false-negation sentences:", fn.removed.length);
+    if (result.cleaned.length < 20) {
+      result.cleaned = `${input.honorific}, ${nameSubj(input.companionName || "민지")} 잠깐 헷갈렸나 봐요. 다시 한 번 말씀해주실 수 있으세요?`;
+    }
   }
 
   // grounding score 임계값 미달 시 safe fallback — 매우 공격적이라 임계값 낮춤.

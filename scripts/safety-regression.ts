@@ -264,5 +264,39 @@ console.log("\n[tts-text] '1/10.' 머리말 → '첫 번째 문제' 자연화 (2
   check("물결표 제거 유지", !sanitizeForTts("1~2개 정도").includes("~"));
 }
 
+// ── #17: 반려동물 슬롯 추출 — 회상 견고성(두부 사례) + 음식 '두부' FP 차단 (2026-06-16) ──
+console.log("\n[pet-slot] 반려동물 추출(종 확인 필수)");
+{
+  const { extractPetFromText } = require("../lib/chat/profile-extractor");
+  const r1 = extractPetFromText("요즘 고양이를 키우기 시작했어요. 이름은 두부예요");
+  check("'고양이 키우기…이름은 두부' → 고양이 두부", !!r1 && r1.species === "고양이" && r1.name === "두부");
+  const r2 = extractPetFromText("고양이 두부를 키워");
+  check("'고양이 두부를 키워' → 고양이 두부", !!r2 && r2.species === "고양이" && r2.name === "두부");
+  const r3 = extractPetFromText("얼마 전에 강아지를 입양했어");
+  check("'강아지 입양'(이름 없음) → 강아지", !!r3 && r3.species === "강아지" && r3.name === null);
+  check("음식 '두부'(종 없음) → 미추출", extractPetFromText("저녁에 두부 넣고 된장찌개 끓였어") === null);
+  check("종은 있으나 소유동사 없음 → 미추출", extractPetFromText("고양이는 참 귀여운 동물이지") === null);
+}
+
+// ── #18: 거짓 부정 단언 가드 — 확정 사실을 "안 한다고 하셨다"고 단언 시 제거 (2026-06-16 라이브) ──
+console.log("\n[false-negation] 확정사실 거짓 부정 단언 제거");
+{
+  const { detectFalseNegationAgainstFacts } = require("../lib/chat/fact-checker");
+  const a = detectFalseNegationAgainstFacts("그럼요. 고양이는 안 키우신다고 하셨잖아요. 오늘 점심 드셨어요?", ["고양이", "두부"]);
+  check("확정사실 부정단언 문장 제거", a.removed.length === 1 && !a.cleaned.includes("안 키우"));
+  const b = detectFalseNegationAgainstFacts("재미없다고 하셨죠. 속상하셨겠어요.", ["고양이", "두부"]);
+  check("확정사실 아닌 정상 부정반영은 보존", b.removed.length === 0);
+  check("affirmed 없으면 미발동", detectFalseNegationAgainstFacts("안 키우신다고 하셨잖아요", []).removed.length === 0);
+}
+
+// ── #19: keyFacts 프롬프트 렌더 — 구조화 사실 유실 방지 (2026-06-16) ──
+console.log("\n[keyfacts] 요약 keyFacts 프롬프트 주입");
+{
+  const { renderKeyFacts } = require("../lib/chat/summarizer");
+  const s = renderKeyFacts(JSON.stringify({ hometown: "춘천", favorites: ["두부"], events: [{ when: "다음달", what: "제주여행" }] }));
+  check("사물·이벤트 렌더", s.includes("춘천") && s.includes("두부") && s.includes("제주여행"));
+  check("빈/깨진 keyFacts 방어", renderKeyFacts("") === "" && renderKeyFacts("{bad") === "");
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
