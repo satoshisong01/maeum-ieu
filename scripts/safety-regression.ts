@@ -310,5 +310,17 @@ console.log("\n[engagement] 저참여 감지 + 발화 페이스 hint");
   check("none hint는 기존 기본('답변 직전 점검') 유지", buildEngagementHint("none").includes("답변 직전 점검"));
 }
 
+// ── #21: 인지 등급 적응 — severity→프롬프트 폐루프 (중증/고위험만, 2026-06-16) ──
+console.log("\n[cognitive-adapt] 인지 등급별 대화 난이도 적응");
+{
+  const { buildCognitiveAdaptationHint } = require("../lib/health/cognitive-level");
+  check("중증 → 1~2문장 짧게 지시", buildCognitiveAdaptationHint("중증").includes("1~2문장"));
+  check("고위험 → 한 문장 지시", buildCognitiveAdaptationHint("고위험").includes("한 문장"));
+  check("정상 → 적응 없음(빈 문자열, 현행 보존)", buildCognitiveAdaptationHint("정상") === "");
+  check("경증 → 적응 없음", buildCognitiveAdaptationHint("경증") === "");
+  check("평가전 → 적응 없음", buildCognitiveAdaptationHint("평가전") === "");
+  check("적응 지시에 응급·안전 예외 포함(길이충돌 가드)", buildCognitiveAdaptationHint("고위험").includes("응급"));
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);
