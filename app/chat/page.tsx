@@ -126,6 +126,7 @@ export default function ChatPage() {
   sessionActiveRef.current = sessionActive;
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
+  const textOnlyRef = useRef(false);     // 글씨로 대화 모드 동기화(콜백 stale 클로저 방지) — TTS 게이팅용
   const bottomRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -212,6 +213,8 @@ export default function ChatPage() {
     if (typeof window === "undefined") { onReady?.(); return; }
     const ttsText = cleanForTTS(text);
     if (!ttsText) { onReady?.(); return; }
+    // 글씨로 대화(textOnly) 모드: 음성 출력 생략 — 메시지는 onReady로 렌더, TTS/턴락 없음(비용·429 절감)
+    if (textOnlyRef.current) { onReady?.(); return; }
 
     // 직전 재생 정리
     if (audioElRef.current) {
@@ -299,6 +302,8 @@ export default function ChatPage() {
 
   /** 스트리밍 TTS — 문장을 push하는 대로 순차 재생(다음 것 미리 생성). finish() 후 큐가 비면 락 해제. SSE 응답용. */
   const speakStream = useCallback((): { push: (s: string) => void; finish: () => void } => {
+    // 글씨로 대화(textOnly) 모드: 음성 생략 — 메시지 렌더는 streamAndSpeak의 upsert가 담당(오디오와 분리)
+    if (textOnlyRef.current) return { push: () => {}, finish: () => {} };
     if (audioElRef.current) { try { audioElRef.current.pause(); } catch { /* ignore */ } audioElRef.current = null; }
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     turnLockRef.current = true;
@@ -671,6 +676,7 @@ export default function ChatPage() {
 
   const [micDenied, setMicDenied] = useState(false);
   const [textOnly, setTextOnly] = useState(false); // 텍스트 전용 모드
+  useEffect(() => { textOnlyRef.current = textOnly; }, [textOnly]); // speak/speakStream 콜백이 최신 모드 참조
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
 
   /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
