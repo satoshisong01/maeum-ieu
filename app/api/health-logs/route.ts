@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { computeOverallAvg, detectAcuteChange } from "@/lib/health/severity";
+import { fetchDomainStats } from "@/lib/health/cognitive-alert";
 
 interface CognitiveRow {
   domain: string;
@@ -99,6 +101,24 @@ export async function GET() {
     );
   } catch { /* 컬럼 없을 수 있음 */ }
 
+  // 인지 추세 — 최근 7일 vs 이전 30일 (보호자 알림과 동일 산식 재사용). 자료부족 시 null.
+  let trend: { status: string; delta: number; recentAvg: number; baselineAvg: number; text: string } | null = null;
+  try {
+    const [recentStats, baselineStats] = await Promise.all([
+      fetchDomainStats(userId, 6, 0),
+      fetchDomainStats(userId, 36, 7),
+    ]);
+    const recentAvg = computeOverallAvg(recentStats);
+    const baselineAvg = computeOverallAvg(baselineStats);
+    const t = detectAcuteChange({
+      recentAvg, recentCount: recentStats.reduce((s, d) => s + d.count, 0),
+      baselineAvg, baselineCount: baselineStats.reduce((s, d) => s + d.count, 0),
+    });
+    if (t.status !== "자료부족") {
+      trend = { status: t.status, delta: t.delta, recentAvg, baselineAvg, text: t.text };
+    }
+  } catch { /* 추세 계산 실패는 무해화 */ }
+
   const emergencySummary = {
     totalL3: recentEmergencies.filter((e) => e.emergencyLevel === 3).length,
     totalL2: recentEmergencies.filter((e) => e.emergencyLevel === 2).length,
@@ -111,7 +131,7 @@ export async function GET() {
 
   return NextResponse.json({
     summary: { anomalyCount, recentAnomaly },
-    cognitive: { assessments, domainAverages, dailyTrend },
+    cognitive: { assessments, domainAverages, dailyTrend, trend },
     emergency: {
       summary: emergencySummary,
       recent: recentEmergencies,
