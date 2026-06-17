@@ -35,6 +35,12 @@ const PERSONAS = {
     speakerLabel: "어르신",
     fallback: ["그나저나 오늘 날씨가 참 좋네, 텃밭에 물 줘야겠어.", "요새 무릎이 좀 시큰거리는데 그러려니 하고 지내.", "저녁에 트로트 프로 하는 날인데 벌써 기다려지네.", "아들 녀석들 바빠서 통 못 보는데 보고 싶구먼."],
     extraRule: "동반자가 인지 확인 질문(요일·날짜·계산·단어 외우기 등)을 하면 노인답게 답하세요 — 대부분 맞히되 가끔 헷갈려도 자연스럽습니다.",
+    // 과거 기억 검증: 초반에 고유 사실을 심고, 컨텍스트 윈도우 밖(60·90턴)에서 회상 질문 → AI 응답에 키워드 검증
+    inject: {
+      5: "참, 우리 강아지 이름이 복실이야. 작년부터 키우는데 어찌나 귀여운지 몰라.",
+      20: "내가 제일 좋아하는 꽃은 채송화야. 어릴 때 마당에 가득 폈었거든.",
+    },
+    memProbes: { 60: { utter: "아까 내가 우리 강아지 이름이 뭐라고 했는지 기억하니?", expect: "복실" }, 90: { utter: "내가 제일 좋아한다고 했던 꽃이 뭐였지?", expect: "채송화" } },
   },
   general: {
     name: "박지훈", age: 35, honorific: "선생님", gender: "남성", roleBtn: "일반인",
@@ -45,8 +51,14 @@ const PERSONAS = {
     speakerLabel: "사용자",
     fallback: ["요즘 야근이 많아서 좀 지치네요.", "주말엔 그냥 집에서 쉬기만 했어요.", "잠을 깊게 못 자는 것 같아요.", "운동을 다시 시작해야 하는데 의욕이 안 나네요."],
     extraRule: "AI가 자가점검(검사) 문항을 물으면 솔직한 빈도/동의로 답하세요(예: '며칠 그랬어요', '가끔요', '그런 편이에요'). 검사 중에도 가끔 짧은 부연을 붙여도 좋습니다.",
-    // 일반인 시나리오: 중반·후반에 본인이 검사를 요청 (사용자 주도 — 답변은 전부 동적)
-    inject: { 12: "마음 건강 체크 해볼래요", 32: "성격 검사도 해볼게요" },
+    // 일반인 시나리오: 중반·후반에 본인이 검사를 요청 (사용자 주도 — 답변은 전부 동적) + 기억 검증 시드
+    inject: {
+      5: "참고로 제 고향은 춘천이에요. 호수가 많아서 좋았죠.",
+      12: "마음 건강 체크 해볼래요",
+      32: "성격 검사도 해볼게요",
+      45: "요즘 고양이를 키우기 시작했어요. 이름은 두부예요.",
+    },
+    memProbes: { 70: { utter: "아까 제 고향이 어디라고 했는지 기억하세요?", expect: "춘천" }, 95: { utter: "제 고양이 이름이 뭐라고 했죠?", expect: "두부" } },
   },
   pro: {
     name: "박영감", age: 81, honorific: "할아버지", gender: "남성", roleBtn: "전문가",
@@ -83,6 +95,7 @@ const personaLLM = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerat
 });
 
 async function genUtterance(history, idx) {
+  if (P.memProbes && P.memProbes[idx + 1]) return P.memProbes[idx + 1].utter;
   if (P.inject && P.inject[idx + 1]) return P.inject[idx + 1];
   const convo = history.slice(-12).map((h) => `${h.who === "ai" ? "AI" : P.speakerLabel}: ${h.text}`).join("\n");
   const prompt = `${convo}\n\nAI의 마지막 말에 이어 ${P.speakerLabel}이(가) 할 다음 한 마디만 출력:`;
@@ -120,9 +133,12 @@ function detect(ai, mineUtter) {
   if (ROLE === "general" && COGNITIVE_PROBE_RE.test(ai)) flags.push("MODE_MIX(인지질문→일반인)");
   if ((ROLE === "user" || ROLE === "pro") && MENTAL_RE.test(ai) && !MENTAL_RE.test(mineUtter || "")) flags.push("MODE_MIX(정신건강→" + ROLE + ")");
   // 호칭 (노인 페르소나만 — 반대 성별 호칭 오류)
+  // 예외: 반대 호칭이 '배우자(남편/아내) 지칭' 맥락이면 오호칭 아님 — 어르신이 배우자를 "할아버지/할머니"로
+  //       부르는 정상 용법(돌아가신 남편 회상 등). 이 맥락 단어가 응답에 있으면 오탐으로 보지 않음.
   if (P.honorific === "할머니" || P.honorific === "할아버지") {
     const opp = P.honorific === "할머니" ? "할아버지" : "할머니";
-    if (new RegExp(`${opp}[,!\\s]`).test(ai) && !new RegExp(P.honorific).test(ai)) flags.push(`HONORIFIC(${opp})`);
+    const SPOUSE_CTX = /영감|남편|아내|안사람|바깥양반|돌아가신|사별|살아\s*계|먼저\s*(?:가|떠)|그리|보고\s*싶|생각|추억|함께|같이|곁에|계실\s*때/;
+    if (new RegExp(`${opp}[,!\\s]`).test(ai) && !new RegExp(P.honorific).test(ai) && !SPOUSE_CTX.test(ai)) flags.push(`HONORIFIC(${opp})`);
   }
   return flags;
 }
@@ -213,9 +229,20 @@ async function sendAndRead(page, text) {
   const ctx = await browser.newContext({ viewport: { width: 480, height: 860 } });
   const page = await ctx.newPage();
 
+  // 네트워크·콘솔 관측 — 실시간 환경 문제(요청 실패·서버 오류) 포착
+  const net = { failed: 0, http4xx: 0, http5xx: 0, consoleErrors: 0 };
+  page.on("requestfailed", (req) => { if (req.url().includes("/api/")) { net.failed++; console.log(`  ⚠ [NET] 요청 실패: ${req.url().split("/api/")[1]} — ${req.failure()?.errorText}`); } });
+  page.on("response", (res) => {
+    if (!res.url().includes("/api/")) return;
+    if (res.status() >= 500) { net.http5xx++; console.log(`  ⚠ [NET] HTTP ${res.status()}: ${res.url().split("/api/")[1]}`); }
+    else if (res.status() >= 400 && res.status() !== 401) { net.http4xx++; console.log(`  ⚠ [NET] HTTP ${res.status()}: ${res.url().split("/api/")[1]}`); }
+  });
+  page.on("console", (msg) => { if (msg.type() === "error") net.consoleErrors++; });
+
   const history = [];
   const anomalies = [];
-  let empties = 0, leaks = 0, mixes = 0;
+  const latencies = [];
+  let empties = 0, leaks = 0, mixes = 0, memFails = 0;
 
   try {
     await signupUI(page, email);
@@ -241,9 +268,17 @@ async function sendAndRead(page, text) {
       history.push({ who: "user", text: utter });
       console.log(`🧑 ${P.name}: ${utter}`);
 
+      const t0 = Date.now();
       const ai = await sendAndRead(page, utter);
+      const ms = Date.now() - t0;
+      latencies.push(ms);
       history.push({ who: "ai", text: ai });
       const flags = detect(ai, utter);
+      // 과거 기억 검증 — 회상 질문 턴이면 AI 응답에 기대 키워드 포함 여부 확인
+      const probe = P.memProbes && P.memProbes[t + 1];
+      if (probe && !(ai || "").includes(probe.expect)) { flags.push(`MEMORY_FAIL(기대:${probe.expect})`); memFails++; }
+      if (probe && (ai || "").includes(probe.expect)) console.log(`  ✓ [기억 검증] "${probe.expect}" 회상 성공 (${t + 1}턴째 질문)`);
+      if (ms > 25000) flags.push(`SLOW(${(ms / 1000).toFixed(1)}s)`);
       if (flags.some((f) => f.startsWith("EMPTY"))) empties++;
       if (flags.some((f) => f.startsWith("ENGLISH_LEAK") || f.startsWith("JSON"))) leaks++;
       if (flags.some((f) => f.startsWith("MODE_MIX"))) mixes++;
@@ -259,7 +294,14 @@ async function sendAndRead(page, text) {
     console.error(`\n! 실행 오류: ${e.message.split("\n")[0]}`);
   } finally {
     console.log(`\n===== 완료 (role=${ROLE}) =====`);
-    console.log(`총 ${TURNS}턴 · 빈응답 ${empties} · 누출 ${leaks} · 모드혼입 ${mixes} · 이상감지 ${anomalies.length}`);
+    console.log(`총 ${TURNS}턴 · 빈응답 ${empties} · 누출 ${leaks} · 모드혼입 ${mixes} · 기억실패 ${memFails} · 이상감지 ${anomalies.length}`);
+    if (latencies.length) {
+      const sorted = [...latencies].sort((a, b) => a - b);
+      const avg = Math.round(latencies.reduce((s, v) => s + v, 0) / latencies.length);
+      const p95 = sorted[Math.floor(sorted.length * 0.95)];
+      console.log(`응답 지연: 평균 ${(avg / 1000).toFixed(1)}s · p95 ${(p95 / 1000).toFixed(1)}s · 최대 ${(sorted[sorted.length - 1] / 1000).toFixed(1)}s`);
+    }
+    console.log(`네트워크: 요청실패 ${net.failed} · 5xx ${net.http5xx} · 4xx ${net.http4xx} · 콘솔에러 ${net.consoleErrors}`);
     if (anomalies.length) {
       console.log(`\n[이상감지 상세]`);
       for (const a of anomalies) console.log(`  t${a.t} [${a.flags.join(", ")}]  발화"${a.utter.slice(0, 30)}" → AI"${(a.ai || "(빈)").slice(0, 60)}"`);
