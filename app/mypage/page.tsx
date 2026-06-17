@@ -199,10 +199,22 @@ export default function MyPage() {
     }
   }
 
-  if (status === "loading" || !profile) {
+  if (status === "loading" || (!profile && !error)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5] dark:bg-[#0b0d10]">
-        <p className="text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
+        <p className="text-base text-zinc-600 dark:text-zinc-300">불러오는 중…</p>
+      </div>
+    );
+  }
+  // 프로필 로드 실패 — 무한 로딩 대신 명확한 에러 + 재시도(기존엔 error가 set돼도 로딩 화면에 가려 '먹통' 인상)
+  if (!profile) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f0f2f5] px-6 text-center dark:bg-[#0b0d10]">
+        <p className="text-base text-zinc-700 dark:text-zinc-200">{error || "프로필을 불러올 수 없습니다."}</p>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => location.reload()} className="rounded-lg bg-blue-600 px-5 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">다시 시도</button>
+          <button type="button" onClick={() => router.push("/chat")} className="rounded-lg bg-zinc-200 px-5 py-3 text-base font-medium text-zinc-700 hover:bg-zinc-300">대화로</button>
+        </div>
       </div>
     );
   }

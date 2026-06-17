@@ -125,12 +125,12 @@ export default function SignupPage() {
           />
           <input
             type="password"
-            placeholder="비밀번호"
+            placeholder="비밀번호 (8자 이상)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
-            minLength={6}
+            minLength={8}
           />
           <input
             type="password"
@@ -139,7 +139,7 @@ export default function SignupPage() {
             onChange={(e) => setPasswordConfirm(e.target.value)}
             className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
-            minLength={6}
+            minLength={8}
           />
           <div className="flex gap-2">
             <input
