@@ -755,5 +755,9 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - 🟠 **음력 날짜 시간지남력 과탐** — 음력 처리가 프롬프트에만 있고 후처리 강제 없음. `overrideLunarTimeOrientation`(명시적 '음력'일 때만 시간지남력 0 보정 — 고정밀, 실제 오류 마스킹 방지). (safety #24)
 - 검증: tsc 0 · safety **109/109**(#23·#24 신규 5건) · vitest 143.
 
+## 2026-06-18 — 회귀 안전망 보강 + C2 자동캡처 완성
+- **인지 등급 산식 테스트(severity.test.ts) ✅** — CDR 등급·악화알림의 단일출처(computeOverallAvg/classifySeverity/detectAcuteChange)가 무테스트였음 → 21케이스(가중평균·등급경계·추세경계). vitest 143→164. (mental 채점은 mental.test.ts에 이미 커버 확인)
+- **챗 복약 자동캡처(C2 완성) ✅** — 리마인더 후 어르신이 말("먹었어/응")로 답하면 자동 복용 기록(대시보드 버튼만으론 음성 사용자 데이터 안 쌓임). `classifyMedReply`(taken/not_taken/unclear, 순수·테스트) + pendingMedRef(10분 만료) + 텍스트·음성 양 경로. safety #25(7건). 부정/미래("먹을게")는 미기록.
+
 ## 캠페인 종합 (2026-06-17)
 재참여 + B1~B5 + C1~C5 = **18커밋, 전부 tsc 0 + 라이브 검증 + 양 repo 푸시**. rate-limit은 코드에 한계 명시됨(실구현=Redis 인프라). 잔여 후속(선택): 음성 idle 실기기 검증 · 챗 복약 자동캡처 · 전용 guardian role 라벨 · 광범위 폰트/대비 시각 패스 · 분산 rate-limit(인프라).
