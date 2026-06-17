@@ -12,7 +12,9 @@ interface CognitiveAssessment {
 interface DomainAvg { domain: string; avg_score: number; count: number; }
 interface DailyTrend { session_date: string; avg_score: number; check_count: number; normal: number; borderline: number; warning: number; }
 interface Summary { anomalyCount: number; recentAnomaly: number; }
-interface CognitiveData { assessments: CognitiveAssessment[]; domainAverages: DomainAvg[]; dailyTrend: DailyTrend[]; }
+interface CognitiveTrend { status: string; delta: number; recentAvg: number; baselineAvg: number; text: string; }
+interface CognitiveData { assessments: CognitiveAssessment[]; domainAverages: DomainAvg[]; dailyTrend: DailyTrend[]; trend: CognitiveTrend | null; }
+interface Medication { id: string; label: string; times: string[]; enabled: boolean; }
 
 interface EmergencyRecord {
   id: string;
@@ -36,8 +38,9 @@ const DOMAIN_LABELS: Record<string, string> = {
   attention_calculation: "주의력/계산",
 };
 const SCORE_LABELS = ["정상", "경계", "주의"];
+const SCORE_SYMBOLS = ["✓", "⚠", "✗"]; // 색약 대비 — 색상 외 기호로도 구분
 const SCORE_COLORS = ["bg-green-500", "bg-yellow-500", "bg-red-500"];
-const SCORE_TEXT = ["text-green-600", "text-yellow-600", "text-red-600"];
+const SCORE_TEXT = ["text-green-700", "text-yellow-700", "text-red-700"]; // 대비 강화(600→700)
 
 function formatShortDate(d: string): string {
   return new Date(d + "T00:00:00+09:00").toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" });
@@ -48,7 +51,10 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [cognitive, setCognitive] = useState<CognitiveData | null>(null);
   const [emergency, setEmergency] = useState<EmergencyData | null>(null);
+  const [medications, setMedications] = useState<Medication[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [showExport, setShowExport] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<"week" | "month">("week");
   const [report, setReport] = useState<{
@@ -60,18 +66,26 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
+    setLoading(true); setLoadError(false);
     (async () => {
       try {
-        const res = await fetch("/api/health-logs");
-        if (!res.ok) return;
-        const data = await res.json();
+        const [hres, mres] = await Promise.all([
+          fetch("/api/health-logs"),
+          fetch("/api/medications").catch(() => null),
+        ]);
+        if (!hres.ok) { setLoadError(true); return; }
+        const data = await hres.json();
         setSummary(data.summary ?? null);
         setCognitive(data.cognitive ?? null);
         setEmergency(data.emergency ?? null);
-      } catch (e) { console.error(e); }
+        if (mres && mres.ok) {
+          const md = await mres.json();
+          setMedications(Array.isArray(md.items) ? md.items : []);
+        }
+      } catch (e) { console.error(e); setLoadError(true); }
       finally { setLoading(false); }
     })();
-  }, [status]);
+  }, [status, reloadKey]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -82,7 +96,16 @@ export default function DashboardPage() {
   }, [status, reportPeriod]);
 
   if (status === "loading" || loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5]"><p className="text-zinc-500">로딩 중...</p></div>;
+    return <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5]"><p className="text-base text-zinc-600">불러오는 중…</p></div>;
+  }
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f0f2f5] px-6 text-center">
+        <p className="text-base text-zinc-700">건강 정보를 불러오지 못했어요.<br />잠시 후 다시 시도해 주세요.</p>
+        <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="rounded-lg bg-blue-600 px-5 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">다시 시도</button>
+        <Link href="/chat" className="text-sm text-zinc-500 underline">대화로 돌아가기</Link>
+      </div>
+    );
   }
 
   const totalChecks = cognitive?.domainAverages.reduce((s, d) => s + d.count, 0) ?? 0;
@@ -93,15 +116,20 @@ export default function DashboardPage() {
   // 평가된 영역 수 (최소 3개 영역에서 각 2회 이상 평가되어야 신뢰할 수 있음)
   const evaluatedDomains = (cognitive?.domainAverages ?? []).filter((d) => d.count >= 2).length;
   const isReliable = totalChecks >= 10 && evaluatedDomains >= 3;
+  // 잠정(참고용) 등급 — 5회+2영역이면 '판정 보류' 대신 잠정 결과를 미리 보여줌(보호자가 기다리는 시간 단축)
+  const isProvisional = !isReliable && totalChecks >= 5 && evaluatedDomains >= 2;
+  const showLevel = isReliable || isProvisional;
 
   // CDR 기반 종합 위험도 등급
   const getCdrLevel = (avg: number): { level: string; desc: string; color: string; bgColor: string } => {
     if (avg < 0) return { level: "-", desc: "아직 평가 데이터가 부족합니다. 대화를 더 진행해주세요.", color: "text-zinc-400", bgColor: "bg-zinc-50" };
-    if (!isReliable) return { level: "판정 보류", desc: `데이터가 부족하여 정확한 판정이 어렵습니다. 최소 3개 이상 영역에서 충분한 대화가 필요합니다. (현재 ${evaluatedDomains}개 영역, ${totalChecks}회 평가)`, color: "text-zinc-500", bgColor: "bg-zinc-50" };
-    if (avg < TIER_BOUNDS.normal) return { level: "CDR 0", desc: "정상 — 인지 기능에 특이 사항이 없습니다", color: "text-green-700", bgColor: "bg-green-50" };
-    if (avg < TIER_BOUNDS.mild) return { level: "CDR 0.5", desc: "관찰 필요 — 경미한 인지 변화가 관찰됩니다. 지속적인 모니터링을 권장합니다", color: "text-yellow-700", bgColor: "bg-yellow-50" };
-    if (avg < TIER_BOUNDS.moderate) return { level: "CDR 1", desc: "경도 인지 저하 의심 — 전문의 상담을 권장합니다. 단, AI 분석은 참고용이며 정확한 진단은 전문의만 가능합니다", color: "text-orange-700", bgColor: "bg-orange-50" };
-    return { level: "CDR 2+", desc: "인지 저하 가능성 높음 — 전문의 상담을 강력히 권장합니다. 본 결과는 AI 기반 선별 검사이며, 최종 진단은 반드시 전문의 상담이 필요합니다", color: "text-red-700", bgColor: "bg-red-50" };
+    if (!showLevel) return { level: "판정 보류", desc: `데이터가 부족하여 정확한 판정이 어렵습니다. 최소 3개 이상 영역에서 충분한 대화가 필요합니다. (현재 ${evaluatedDomains}개 영역, ${totalChecks}회 평가)`, color: "text-zinc-500", bgColor: "bg-zinc-50" };
+    const prov = isProvisional ? " ※ 참고용 잠정 결과 — 대화가 더 쌓이면 정확해집니다" : "";
+    const tag = isProvisional ? " (잠정)" : "";
+    if (avg < TIER_BOUNDS.normal) return { level: "CDR 0" + tag, desc: "정상 — 인지 기능에 특이 사항이 없습니다" + prov, color: "text-green-700", bgColor: "bg-green-50" };
+    if (avg < TIER_BOUNDS.mild) return { level: "CDR 0.5" + tag, desc: "관찰 필요 — 경미한 인지 변화가 관찰됩니다. 지속적인 모니터링을 권장합니다" + prov, color: "text-yellow-700", bgColor: "bg-yellow-50" };
+    if (avg < TIER_BOUNDS.moderate) return { level: "CDR 1" + tag, desc: "경도 인지 저하 의심 — 전문의 상담을 권장합니다. 단, AI 분석은 참고용이며 정확한 진단은 전문의만 가능합니다" + prov, color: "text-orange-700", bgColor: "bg-orange-50" };
+    return { level: "CDR 2+" + tag, desc: "인지 저하 가능성 높음 — 전문의 상담을 강력히 권장합니다. 본 결과는 AI 기반 선별 검사이며, 최종 진단은 반드시 전문의 상담이 필요합니다" + prov, color: "text-red-700", bgColor: "bg-red-50" };
   };
   const cdr = getCdrLevel(overallAvg);
 
@@ -143,10 +171,10 @@ export default function DashboardPage() {
         <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <p className="text-xs text-zinc-500">인지 종합</p>
-            <p className={`text-xl font-bold ${oi < 0 || !isReliable ? "text-zinc-400" : SCORE_TEXT[oi]}`}>
-              {oi < 0 ? "미평가" : !isReliable ? "수집 중" : SCORE_LABELS[oi]}
+            <p className={`text-xl font-bold ${oi < 0 || !showLevel ? "text-zinc-400" : SCORE_TEXT[oi]}`}>
+              {oi < 0 ? "미평가" : !showLevel ? "수집 중" : `${SCORE_SYMBOLS[oi]} ${SCORE_LABELS[oi]}`}
             </p>
-            {overallAvg >= 0 && <p className="text-xs text-zinc-400">{overallAvg.toFixed(1)} / 2.0{!isReliable ? " (데이터 부족)" : ""}</p>}
+            {overallAvg >= 0 && <p className="text-xs text-zinc-500">{overallAvg.toFixed(1)} / 2.0{!showLevel ? " (데이터 부족)" : isProvisional ? " (잠정)" : ""}</p>}
           </div>
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <p className="text-xs text-zinc-500">총 평가</p>
@@ -182,6 +210,49 @@ export default function DashboardPage() {
           )}
           <p className="mt-2 text-[10px] text-zinc-400">* 본 결과는 AI 기반 선별 검사이며 의료 진단이 아닙니다</p>
         </div>
+
+        {/* 인지 점수 추세 — 최근 vs 평소 (점수↑=이상↑) */}
+        {cognitive?.trend && (() => {
+          const t = cognitive.trend!;
+          const tone = t.status === "급성악화" ? "text-red-700 bg-red-50" : t.status === "악화" ? "text-orange-700 bg-orange-50" : t.status === "개선" ? "text-green-700 bg-green-50" : "text-zinc-700 bg-zinc-50";
+          const arrow = (t.status === "급성악화" || t.status === "악화") ? "▲ 악화" : t.status === "개선" ? "▼ 개선" : "= 비슷";
+          return (
+            <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-zinc-700">인지 점수 추세 (최근 7일 vs 평소)</h2>
+              <div className={`rounded-lg px-3 py-3 ${tone}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-lg font-bold">{arrow}</span>
+                  <span className="text-sm">최근 {t.recentAvg.toFixed(2)} · 평소 {t.baselineAvg.toFixed(2)} (Δ{t.delta > 0 ? "+" : ""}{t.delta.toFixed(2)})</span>
+                </div>
+                {t.text && <p className="mt-1.5 text-sm leading-relaxed">{t.text}</p>}
+              </div>
+              <p className="mt-2 text-[11px] text-zinc-400">점수는 높을수록 인지 이상 신호가 많음을 뜻합니다.</p>
+            </div>
+          );
+        })()}
+
+        {/* 복약 일정 — 어르신이 챙기는 약·시간을 보호자가 한눈에 */}
+        {medications && medications.length > 0 && (
+          <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-700">복약 일정</h2>
+              <Link href="/mypage" className="text-xs text-blue-600 underline">편집</Link>
+            </div>
+            <div className="space-y-2">
+              {medications.map((m) => (
+                <div key={m.id} className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 ${m.enabled ? "bg-blue-50" : "bg-zinc-50 opacity-60"}`}>
+                  <span className="text-sm font-medium text-zinc-800">{m.label}{!m.enabled && <span className="ml-1 text-xs text-zinc-400">(알림 꺼짐)</span>}</span>
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {m.times.map((tm) => (
+                      <span key={tm} className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-blue-700 shadow-sm">{tm}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-zinc-400">정해진 시간에 어르신께 복약 안내를 전해 드려요.</p>
+          </div>
+        )}
 
         {/* 응급 신호 요약 + 추세 */}
         {emergency && (emergency.summary.totalL1 + emergency.summary.totalL2 + emergency.summary.totalL3) > 0 && (
@@ -313,7 +384,7 @@ export default function DashboardPage() {
                     <div className="mb-1 flex justify-between">
                       <span className="text-sm text-zinc-700">{DOMAIN_LABELS[domain]}</span>
                       <span className={`text-xs font-medium ${ci < 0 ? "text-zinc-400" : SCORE_TEXT[ci]}`}>
-                        {ci < 0 ? "미평가" : `${avg.toFixed(1)} (${item!.count}회)`}
+                        {ci < 0 ? "미평가" : `${SCORE_SYMBOLS[ci]} ${avg.toFixed(1)} (${item!.count}회)`}
                       </span>
                     </div>
                     <div className="h-3 rounded-full bg-zinc-100">
@@ -446,7 +517,7 @@ export default function DashboardPage() {
                       <div>
                         <span className="text-sm font-medium text-zinc-700">{DOMAIN_LABELS[a.domain] ?? a.domain}</span>
                         <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${si === 0 ? "bg-green-100 text-green-700" : si === 1 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
-                          {SCORE_LABELS[si]}
+                          {SCORE_SYMBOLS[si]} {SCORE_LABELS[si]}
                         </span>
                         {a.evidence && <p className="mt-1 text-sm text-zinc-600">&ldquo;{a.evidence}&rdquo;</p>}
                         {a.note && <p className="mt-0.5 text-xs text-zinc-400">{a.note}</p>}
