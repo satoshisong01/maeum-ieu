@@ -666,6 +666,17 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - **텍스트 모드 TTS 게이팅(비용)** ✅ — '글씨로 대화'(textOnly)인데도 매 응답마다 문장단위 `/api/tts` 호출(턴당 수회·429 주원인). `speak()`/`speakStream()` 진입부에서 `textOnlyRef`로 중앙 게이팅 — textOnly면 음성 생략(메시지는 onReady/upsert로 렌더, 턴락 없음). 음성 모드는 무영향. **라이브 스모크 PASS**: textOnly 인사·응답 /api/tts 호출 0, 메시지 정상 렌더. (제품 결정: textOnly=무음)
 - **probe 약점 영역 우선** ✅ — 적응형 난이도 후속. `getWeakDomainsForPrompt`(최근30일 영역평균 ≥ 위험임계)로 약점 영역을 probe 턴에만 조회(비용 최소), `remaining` 안에서 약점 영역 우선 선택. '오늘 확인한 영역'은 remaining에서 빠져 같은날 과다 재확인 없음. tsc 0 · safety 104/104.
 
-### 남은 작업(같은 클러스터 — 별도 진행)
-- [ ] 능동 재참여(re-engage): 세션 중 침묵 시 동반자가 먼저 한 문장으로 끌어들이기(engagement 다이얼 종속, 2회 상한) — page.tsx 음성 echo 리스크 주의. **사용자가 직접 구현 중이라 조율 후 진행.**
+### 능동 재참여(re-engage) 🔴→✅ — 세션 중 침묵 시 동반자 선발화 (2026-06-17)
+- **구현**: 음성 세션에서 20초 침묵하면 idle 타이머 → `triggerReEngage` → `/api/chat {isReEngage, reEngageAttempt}` → `speak()`로 재생. speak() 경로를 그대로 타서 turnLock·600ms echo지연·speakGen·재청취를 상속. 서버 `handleReEngageGreeting`(attempt 1=주제 가볍게 재유도 / 2=후퇴, **2문장 하드캡**, 폴백 조사오류 회피). **2회 상한**, 발화 감지 시 리셋, textOnly/turnLock/세션비활성 시 미발동.
+- **이해→구현→적대리뷰 워크플로**: 통합지점 매핑(4각) 후 구현, 적대적 리뷰(3각) 결함 검출 → 4건 보강:
+  - F1 reEngageCount 새 대화(useEffect)·세션 시작(onWake)·종료 리셋 — stale count 영구차단 방지(high)
+  - F2 idle 타이머 정리를 startRecording/speak/speakStream **진입부 일괄** — turnLock 폴링·재청취 누수/중복 근본 차단(critical)
+  - F3 re-engage TTS 중 `aiSpeaking=true` — 자기 TTS의 '마음' wake 재발동 방지(high)
+  - F4 validation `max(2)` 설계 일치
+  - (리뷰 과대주장 제외: 기존 turnLock 가드가 '사용자 발화 중 fetch' race에서 사용자 발화 보존 / no-barge-in은 기존 설계 / 서버카운터는 rate-limit으로 충분)
+- **검증**: tsc 0 · safety 104/104 · **서버 라이브 스모크 PASS**(attempt 1·2 짧은 nudge 생성). ⚠ **음성 idle 타이밍 실기기 검증은 후속**(headless 불가).
+
+### 남은 작업(별도 진행)
+- [ ] probe **빈도** 가변(등급별 간격) — 약점영역 우선은 완료.
+- [ ] 음성 idle 재참여 실기기 검증(20초 침묵 → nudge → 재청취 echo 무발동 육안 확인).
 - [ ] probe **빈도** 가변(등급별 probe 간격 조절) — 약점 영역 우선은 완료, 빈도 조절은 미착수(선택적).

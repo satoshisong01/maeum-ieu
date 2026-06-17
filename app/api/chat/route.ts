@@ -217,6 +217,27 @@ async function handleReturningGreeting(systemPrompt: string, userName: string, h
   return NextResponse.json({ text: cleaned, role: "assistant" });
 }
 
+/** 2.5) 능동 재참여 — 세션 중 사용자가 한동안 침묵하면 동반자가 먼저 부드럽게 한 문장. attempt 2는 후퇴(압박 0). */
+async function handleReEngageGreeting(
+  systemPrompt: string, honorific: string, companionName: string,
+  history: { role: string; content: string }[], conversationId?: string, attempt = 1,
+) {
+  const model = getTextModel(systemPrompt, false);
+  const lastAi = [...history].reverse().find((m) => m.role === "assistant")?.content?.slice(0, 60) || "";
+  // 폴백은 companionName+조사 회피(자음받침 이름의 조사 오류 방지) — 호칭만 사용
+  const fallback = attempt >= 2
+    ? `${honorific}, 천천히 하셔도 괜찮아요. 여기 같이 있을게요.`
+    : `${honorific}, 괜찮으세요? 천천히 말씀하셔도 돼요.`;
+  const prompt = attempt >= 2
+    ? `${honorific}이 한동안 말씀이 없으세요. 부담 드리지 말고, "천천히 하셔도 괜찮아요, 같이 있을게요"는 느낌으로 **아주 짧게 1~2문장**만. 질문하지 마세요.`
+    : `${honorific}이 한동안 말씀이 없으세요. ${lastAi ? `직전에 '${lastAi}' 이야기를 나눴어요. 그 주제를 가볍게 한 번 더 권하거나, ` : ""}편하게 다시 말 걸어 대화를 잇는 **아주 짧게 1~2문장**만(길게 늘어놓지 말 것). 절대 재촉·압박하지 말고, 답을 강요하지 마세요.`;
+  const { text } = await generateWithFallback(model, prompt, fallback);
+  // 재참여는 '짧은 nudge'가 핵심(과다발화 방지) — LLM이 길게 뱉어도 첫 2문장으로 하드 캡
+  const cleaned = normalizeImnida(text).split(/(?<=[.!?~])\s+/).slice(0, 2).join(" ").trim();
+  if (conversationId) await saveGreetingMessage(conversationId, cleaned);
+  return NextResponse.json({ text: cleaned, role: "assistant" });
+}
+
 /** 3) 날짜/시간 질문 직접 응답 — 음성 경로에서 오면 transcription을 payload에 실어 클라이언트가 사용자 발화를 표시 */
 async function handleDateTimeQuestion(userMessage: string, honorific: string, conversationId: string | undefined, userId: string, clientTimeIso?: string, transcription?: string) {
   const timeStr = getCurrentKstDateTimeString(clientTimeIso);
@@ -786,7 +807,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "잘못된 요청 형식입니다." }, { status: 400 });
     }
     const body = parsed.data as ChatRequestBody;
-    const { messages, conversationId, isInitialGreeting, isReturningGreeting, audio, context: ctx } = body;
+    const { messages, conversationId, isInitialGreeting, isReturningGreeting, isReEngage, reEngageAttempt, audio, context: ctx } = body;
     const userId = session.user.id;
     // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
     // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
@@ -818,7 +839,7 @@ export async function POST(req: Request) {
 
     // weather · RAG(임베딩 HTTP) · DB 이력은 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
     //   인사 턴은 RAG 불필요, 음성 턴은 STT 후 transcription 기준으로 핸들러가 직접 검색.
-    const skipMemories = isInitialGreeting || isReturningGreeting || isAudio || !lastUserMessage;
+    const skipMemories = isInitialGreeting || isReturningGreeting || isReEngage || isAudio || !lastUserMessage;
     let _m = performance.now();
     const [weatherCtx, memories, dbHistory] = await Promise.all([
       getWeatherContext(ctx?.latitude, ctx?.longitude),
@@ -836,6 +857,7 @@ export async function POST(req: Request) {
 
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId, mode);
+    if (isReEngage) return handleReEngageGreeting(systemPrompt, honorific, companionName, history, conversationId, reEngageAttempt ?? 1);
 
     const historyText = buildHistoryText(history);
 
