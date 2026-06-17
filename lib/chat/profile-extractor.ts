@@ -138,6 +138,50 @@ function isValidName(s: string): boolean {
   return true;
 }
 
+/** 반려동물 — 종(species) 확인 필수로 음식 '두부' 등 false positive 차단. */
+const PET_SPECIES_RE = /(고양이|야옹이|냐옹이|반려묘|강아지|멍멍이|반려견|앵무새|잉꼬|거북이|햄스터|토끼|금붕어)/;
+// 한글 음절 합성상 "키워"는 "키우"를 부분문자열로 포함 안 함 → 활용형 명시 필요
+const PET_OWN_VERB = /(키우|키워|키운|키웠|키울|키웁|기르|길러|기른|기를|입양|들였|들여|데려|분양|반려동물)/;
+const PET_NAME_PATTERNS: RegExp[] = [
+  /이름(?:은|이)\s*([가-힣]{2,4})/,
+  /([가-힣]{2,4})(?:라고|이라고|라는|이라는)\s*(?:불|지었|짓|이름|해)/,
+  new RegExp(`${PET_SPECIES_RE.source}\\s+([가-힣]{2,4})(?:를|을|이|가|는|랑|예요|이에요|라고|이라고|라는)`),
+];
+// pet 이름 전용 stoplist — person-name 블록리스트(음식·추상명사 포함)는 적용 안 함:
+// 반려동물 이름은 음식·사물에서 자주 따옴(두부·보리·감자·모찌) → 그것까지 막으면 핵심 사례를 놓침.
+const PET_NAME_STOP = new Set(["모르", "모름", "글쎄", "아직", "그냥", "비밀", "없어", "있어", "이름", "여러", "마리", "한마", "그대"]);
+const PET_SPECIES_NORM: Record<string, string> = {
+  "야옹이": "고양이", "냐옹이": "고양이", "반려묘": "고양이", "멍멍이": "강아지", "반려견": "강아지",
+};
+
+function isValidPetName(s: string): boolean {
+  if (!s || s.length < 2 || s.length > 4) return false;
+  if (PET_NAME_STOP.has(s)) return false;
+  if (/^(있|없|좋|싫|많|적|예쁜|착한)/.test(s)) return false;
+  if (/(?:였|었|았|났)(?:더|지|나|어|을|던)?$/.test(s)) return false;
+  if (/^(뭐|누|어디|어떻|언제|왜)/.test(s)) return false;
+  return true;
+}
+
+/** 반려동물 추출 (종 + 이름). 종·소유동사 둘 다 있어야 발동. export: 회귀 테스트용. */
+export function extractPetFromText(text: string): { species: string; name: string | null } | null {
+  const sp = text.match(PET_SPECIES_RE);
+  if (!sp) return null;
+  if (!PET_OWN_VERB.test(text)) return null;
+  const species = PET_SPECIES_NORM[sp[1]] ?? sp[1];
+  let name: string | null = null;
+  for (let i = 0; i < PET_NAME_PATTERNS.length; i++) {
+    const m = text.match(PET_NAME_PATTERNS[i]);
+    // species+name 패턴(마지막)은 종이 그룹1, 이름이 그룹2
+    const raw = i === PET_NAME_PATTERNS.length - 1 ? m?.[2] : m?.[1];
+    if (raw) {
+      const cand = cleanName(raw);
+      if (isValidPetName(cand)) { name = cand; break; }
+    }
+  }
+  return { species, name };
+}
+
 export async function extractAndSaveProfile(input: ExtractInput): Promise<ExtractResult> {
   const result: ExtractResult = { familyAdded: [], factsAdded: [], profileUpdated: [] };
   const text = input.userMessage.trim();
@@ -233,6 +277,16 @@ export async function extractAndSaveProfile(input: ExtractInput): Promise<Extrac
         result.profileUpdated.push(`favoriteFoods=${food}`);
       } catch { /* ignore */ }
     }
+  }
+
+  // 6) 반려동물 — 종 확인 필수. user_fact(key='반려동물')로 저장 → 컨텍스트 윈도 무관 프롬프트 상주(회상 견고성)
+  const pet = extractPetFromText(text);
+  if (pet) {
+    const petValue = pet.name ? `${pet.species} ${pet.name}` : pet.species;
+    try {
+      await upsertFact(input.userId, { key: "반려동물", value: petValue, confidence: 0.85, sourceMessageId: input.userMessageId ?? null });
+      result.factsAdded.push(`pet=${petValue}`);
+    } catch { /* ignore */ }
   }
 
   if (result.familyAdded.length + result.factsAdded.length + result.profileUpdated.length > 0) {

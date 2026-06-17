@@ -230,6 +230,35 @@ export async function getRecentSummaries(userId: string, limits = { weekly: 2, m
   return rows;
 }
 
+interface KeyFacts {
+  family?: { relation?: string; name?: string; note?: string }[];
+  hometown?: string; residence?: string;
+  hobbies?: string[]; health?: string[]; favorites?: string[];
+  events?: { when?: string; what?: string }[];
+}
+
+/**
+ * 요약기가 추출·저장한 keyFacts(구조화 사실)를 프롬프트용 한 줄로 렌더. export: 회귀 테스트용.
+ * 기존엔 summary 자연어만 주입하고 keyFacts를 버려, 개별 사물명·이벤트가 압축 과정에서 소실됐음(회상 견고성 갭).
+ */
+export function renderKeyFacts(json: string | null): string {
+  if (!json) return "";
+  let f: KeyFacts;
+  try { f = JSON.parse(json) as KeyFacts; } catch { return ""; }
+  if (!f || typeof f !== "object") return "";
+  const parts: string[] = [];
+  const fam = (f.family ?? []).map((m) => `${m.relation ?? ""} ${m.name ?? ""}`.trim()).filter(Boolean);
+  if (fam.length) parts.push(`가족 ${fam.join(", ")}`);
+  if (f.hometown) parts.push(`고향 ${f.hometown}`);
+  if (f.residence) parts.push(`거주 ${f.residence}`);
+  if (f.favorites?.length) parts.push(`좋아함 ${f.favorites.join(", ")}`);
+  if (f.hobbies?.length) parts.push(`취미 ${f.hobbies.join(", ")}`);
+  if (f.health?.length) parts.push(`건강 ${f.health.join(", ")}`);
+  const ev = (f.events ?? []).map((e) => `${e.when ? e.when + " " : ""}${e.what ?? ""}`.trim()).filter(Boolean);
+  if (ev.length) parts.push(`일 ${ev.join(", ")}`);
+  return parts.join(" · ");
+}
+
 export function renderSummariesForPrompt(summaries: SummaryRow[]): string {
   if (summaries.length === 0) return "";
   const now = Date.now();
@@ -239,7 +268,8 @@ export function renderSummariesForPrompt(summaries: SummaryRow[]): string {
   const lines = sorted.map((s) => {
     const days = Math.floor((now - new Date(s.periodEnd).getTime()) / (24 * 60 * 60 * 1000));
     const tag = days <= 7 ? "최근" : days <= 30 ? `${Math.floor(days/7)}주 전` : days <= 365 ? `${Math.floor(days/30)}달 전` : `${Math.floor(days/365)}년 전`;
-    return `[${LEVEL_KO[s.level]} 요약 / ${tag}] ${s.summary}`;
+    const kf = renderKeyFacts(s.keyFacts);
+    return `[${LEVEL_KO[s.level]} 요약 / ${tag}] ${s.summary}${kf ? `\n  · 핵심 사실: ${kf}` : ""}`;
   });
   return `[과거 대화 요약 — 사실 확인 보조]\n${lines.join("\n\n")}`;
 }
