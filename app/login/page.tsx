@@ -38,14 +38,14 @@ export default function LoginPage() {
       </div>
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg dark:bg-zinc-900 dark:shadow-black/40">
         <h1 className="text-center text-2xl font-semibold text-zinc-800 dark:text-zinc-100">마음이음</h1>
-        <p className="mt-2 text-center text-sm text-zinc-500 dark:text-zinc-400">로그인</p>
+        <p className="mt-2 text-center text-base text-zinc-600 dark:text-zinc-300">로그인</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           <input
             type="email"
             placeholder="이메일"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="rounded-xl border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-900 outline-none focus:border-[#007bff] focus:ring-2 focus:ring-blue-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
           />
           <input
@@ -53,19 +53,19 @@ export default function LoginPage() {
             placeholder="비밀번호"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="rounded-xl border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-900 outline-none focus:border-[#007bff] focus:ring-2 focus:ring-blue-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
           />
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="rounded-xl bg-[#007bff] py-3 font-medium text-white transition hover:bg-[#0069d9] disabled:opacity-60"
+            className="rounded-xl bg-[#007bff] py-4 text-base font-medium text-white transition hover:bg-[#0069d9] focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:opacity-60"
           >
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
-        <p className="mt-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-6 text-center text-base text-zinc-600 dark:text-zinc-300">
           계정이 없으신가요?{" "}
           <Link href="/signup" className="font-medium text-[#007bff] dark:text-blue-400">
             회원가입
