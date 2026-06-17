@@ -87,6 +87,8 @@ function buildProGuideBlock(companionName: string, completedKo: string[], remain
 
 export interface PromptParts {
   systemPrompt: string;
+  stablePrompt: string;  // 캐시 대상 안정 프리픽스(base+user+profile+summary)
+  turnBlock: string;     // 턴별 동적부(protocol?+guide+adaptation+env+date) — 캐시 시 contents로
   envBlock: string;
   userName: string;
   honorific: string;
@@ -240,7 +242,11 @@ export async function buildSystemPrompt(params: {
   //   안정 블록을 앞에, 매 턴 바뀌는 블록(guide/env/date)을 뒤에 둬야 Gemini implicit prefix caching이 적용됨
   //   (이전엔 정적인 protocol이 맨 끝이라 매 턴 cached=0 — usage 로그로 확인된 비용 누수).
   //   protocol은 guide보다 앞 — 턴별 지시(guide)가 recency 우선권을 갖도록.
-  const systemPrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock, includeProtocol ? cognitiveProtocol : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
+  // 명시적 캐싱용 분리: 안정 프리픽스(세션 내 불변 — 캐시 대상) vs 턴별 동적부(매 턴 변동 — contents로).
+  //   암묵 캐시는 이 계정/모델에서 미작동 확정(2026-06-17 실측) → 명시적 캐시(prompt-cache.ts)에서 stablePrompt 사용.
+  const stablePrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock].filter(Boolean).join("\n\n");
+  const turnBlock = [includeProtocol ? cognitiveProtocol : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
+  const systemPrompt = [stablePrompt, turnBlock].filter(Boolean).join("\n\n");
 
-  return { systemPrompt, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation, profile };
+  return { systemPrompt, stablePrompt, turnBlock, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation, profile };
 }

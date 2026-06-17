@@ -63,7 +63,7 @@ export function logUsage(label: string, res: any): void {
 }
 
 /** 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수) */
-export function getTextModel(systemInstruction: string, enableSearch: boolean = true) {
+export function getTextModel(systemInstruction: string, enableSearch: boolean = true, cachedContent?: string) {
   // googleSearch는 실시간 정보(info_request: 뉴스·날씨·사실조회)에만 필요.
   // 일상 대화·공감·인지 응답엔 불필요하므로 그 턴엔 비활성해 지연·검색 비용 절감.
   const tools = enableSearch ? [{ googleSearch: {} }] : undefined;
@@ -75,14 +75,24 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
   const ai = getGenAI();
   // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
   const model = "gemini-2.5-flash";
-  const config = {
-    systemInstruction,
-    temperature: 0.7,
-    maxOutputTokens: 2048,
-    thinkingConfig: { thinkingBudget: THINKING_BUDGET },
-    safetySettings: COMPANION_SAFETY_SETTINGS,
-    tools,
-  };
+  // 명시적 캐시 사용 시 systemInstruction은 캐시에 포함됨 → 호출 config엔 cachedContent만(둘 다 지정 불가).
+  const config = cachedContent
+    ? {
+        cachedContent,
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+        safetySettings: COMPANION_SAFETY_SETTINGS,
+        tools,
+      }
+    : {
+        systemInstruction,
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+        safetySettings: COMPANION_SAFETY_SETTINGS,
+        tools,
+      };
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generateContent: (p: any) => ai.models.generateContent({ model, contents: normalizeContents(p), config }),
