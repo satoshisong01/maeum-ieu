@@ -171,7 +171,8 @@ function parseResult(raw: string): CognitiveAnalysisResult {
         }));
     }
     return result;
-  } catch {
+  } catch (e) {
+    console.warn("[cognitive] 분석 JSON 파싱 실패 — 이 턴 평가 손실:", (e as Error).message);
     return empty;
   }
 }

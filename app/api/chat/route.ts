@@ -447,7 +447,7 @@ async function handleAudioMessage(params: {
   const lastAi = extractLastAiMessage(historyText);
   const correction = correctTranscriptionByContext(transcription, lastAi);
   if (correction.changes.length > 0) {
-    if (process.env.DEBUG_INPUT === "1") {
+    if ((process.env.DEBUG_INPUT === "1" && process.env.NODE_ENV !== "production")) {
       // PII(발화 원문) 포함 — DEBUG_INPUT일 때만 출력
       console.log("[stt-context-correction]", JSON.stringify({
         original: transcription,
@@ -743,7 +743,7 @@ async function handleTextMessage(params: {
 
   // DEBUG: 환경변수 DEBUG_INPUT=1 설정 시 입력 dump (사용자 간 데이터 누수 진단용).
   //   2026-05-26 abc→rudtjrch 누수 root cause 추적에 사용됨. 평소엔 off.
-  if (process.env.DEBUG_INPUT === "1") {
+  if ((process.env.DEBUG_INPUT === "1" && process.env.NODE_ENV !== "production")) {
     console.log("[DEBUG-INPUT]", JSON.stringify({
       userId: userId.slice(0, 12),
       conversationId: conversationId?.slice(0, 12),
@@ -823,6 +823,14 @@ export async function POST(req: Request) {
         { error: "잠시 후 다시 시도해주세요." },
         { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
       );
+    }
+
+    // conversationId 소유권 검증 — 타 사용자 대화 ID로 이력 열람·메시지 주입 차단(명시적 authz)
+    if (conversationId) {
+      const owned = await prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { id: true } });
+      if (!owned) {
+        return NextResponse.json({ error: "잘못된 대화입니다." }, { status: 403 });
+      }
     }
 
     const _t: Record<string, number> = { start: performance.now() };

@@ -680,3 +680,16 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - [ ] probe **빈도** 가변(등급별 간격) — 약점영역 우선은 완료.
 - [ ] 음성 idle 재참여 실기기 검증(20초 침묵 → nudge → 재청취 echo 무발동 육안 확인).
 - [ ] probe **빈도** 가변(등급별 probe 간격 조절) — 약점 영역 우선은 완료, 빈도 조절은 미착수(선택적).
+
+## 2026-06-17 — 서비스레디 캠페인 (6축 종합 감사 → 배치 수정, IoT/119/알림 제외)
+
+워크플로 6축 감사(보안·신뢰성·보호자화면·UX·비용성능·핵심정확성, 약 50건)를 우선순위 5배치로 수정.
+
+### B1 보안·신뢰성 quick wins ✅
+- **인지채점 점수 손실** — `saveCognitiveAssessments` ON CONFLICT (id) DO NOTHING → **DO UPDATE**. 같은 메시지 재분석 시 정정 점수가 버려져 등급 과소평가되던 문제.
+- **임베딩 실패 silent-catch** — `saveMessageEmbedding().catch(()=>{})` → `console.warn`. message↔vector 불일치 은폐 제거.
+- **인지분석 파싱 실패 silent** — `cognitive-analyzer` parseResult catch에 로깅 추가(평가 손실 가시화).
+- **DEBUG_INPUT PII 로깅** — 2곳 모두 `&& NODE_ENV !== "production"` 가드(프로덕션 PII stdout 노출 차단).
+- **conversationId 소유권 검증** — 타 사용자 대화 ID로 이력 열람·주입 차단(명시적 authz, findFirst {id,userId}).
+- (멘탈세션 만료 KST: 검증 결과 `now()` vs `now()` 비교라 타임존 무관 — **오탐, 미수정**)
+- 검증: tsc 0 · safety 104/104.
