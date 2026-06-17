@@ -19,6 +19,8 @@ export interface ChatRequestBody {
   conversationId?: string;
   isInitialGreeting?: boolean;
   isReturningGreeting?: boolean;
+  isReEngage?: boolean;        // 세션 중 침묵 시 동반자가 먼저 거는 재참여 발화
+  reEngageAttempt?: number;    // 1=부드러운 재유도, 2=후퇴(천천히 하셔도 돼요)
   audio?: AudioInput;
   context?: ClientContext;
   mode?: ScreeningMode;

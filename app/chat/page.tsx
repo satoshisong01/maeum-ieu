@@ -132,6 +132,9 @@ export default function ChatPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 능동 재참여: 사용자 침묵 idle 타이머
+  const reEngageCountRef = useRef(0); // 연속 재참여 횟수(2회 상한 — 발화 감지 시 리셋)
+  const reEngageRef = useRef<() => void>(() => {}); // triggerReEngage 보관(startRecording 순환 의존 방지)
   const analyserRef = useRef<AnalyserNode | null>(null);
   const vadFrameRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null); // VAD용 AudioContext — stopRecording/언마운트에서 명시적 close (누수 방지)
@@ -159,6 +162,7 @@ export default function ChatPage() {
       try { if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); } catch { /* ignore */ }
       if (vadFrameRef.current) cancelAnimationFrame(vadFrameRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       audioCtxRef.current?.close().catch(() => {});
@@ -215,6 +219,8 @@ export default function ChatPage() {
     if (!ttsText) { onReady?.(); return; }
     // 글씨로 대화(textOnly) 모드: 음성 출력 생략 — 메시지는 onReady로 렌더, TTS/턴락 없음(비용·429 절감)
     if (textOnlyRef.current) { onReady?.(); return; }
+    // 새 발화 시작 — 재참여 idle 타이머 정리(중복 트리거 방지)
+    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
 
     // 직전 재생 정리
     if (audioElRef.current) {
@@ -304,6 +310,7 @@ export default function ChatPage() {
   const speakStream = useCallback((): { push: (s: string) => void; finish: () => void } => {
     // 글씨로 대화(textOnly) 모드: 음성 생략 — 메시지 렌더는 streamAndSpeak의 upsert가 담당(오디오와 분리)
     if (textOnlyRef.current) return { push: () => {}, finish: () => {} };
+    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
     if (audioElRef.current) { try { audioElRef.current.pause(); } catch { /* ignore */ } audioElRef.current = null; }
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     turnLockRef.current = true;
@@ -423,6 +430,31 @@ export default function ChatPage() {
     if (fullText) upsert(fullText);
     return { text: fullText, transcription };
   }, [speakStream]);
+
+  /**
+   * 능동 재참여 — 음성 세션에서 사용자가 한동안 침묵하면 동반자가 먼저 한 문장 건다.
+   * speak() 경로를 그대로 타서 turnLock·echo지연·재청취(→다음 idle 타이머)를 모두 상속.
+   * 가드: 음성 ON + 세션 활성 + AI 응답중 아님 + 텍스트모드 아님 + 2회 미만일 때만.
+   */
+  const triggerReEngage = useCallback(async () => {
+    if (!alwaysOnRef.current || !sessionActiveRef.current || turnLockRef.current || textOnlyRef.current) return;
+    if (reEngageCountRef.current >= 2 || !conversationId) return;
+    const attempt = reEngageCountRef.current + 1;
+    reEngageCountRef.current = attempt;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId, isReEngage: true, reEngageAttempt: attempt, context: getContext() }),
+      });
+      if (!res.ok) return;
+      const { text } = (await res.json()) as { text?: string };
+      if (!text || turnLockRef.current) return; // 그 사이 사용자가 말해 AI 턴 시작 → 재참여 취소
+      setMessages((prev) => [...prev, { id: createId(), role: "assistant", content: text }]);
+      setAiSpeaking(true); // re-engage TTS 동안 wake-word 일시정지(자기 TTS의 '마음' 재발동 방지)
+      try { await speak(text); } finally { setAiSpeaking(false); } // turnLock·echo지연·재청취 일괄 처리
+    } catch { /* 재참여 실패는 무해화 */ }
+  }, [conversationId, getContext, speak]);
+  reEngageRef.current = triggerReEngage;
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -677,6 +709,7 @@ export default function ChatPage() {
   const [micDenied, setMicDenied] = useState(false);
   const [textOnly, setTextOnly] = useState(false); // 텍스트 전용 모드
   useEffect(() => { textOnlyRef.current = textOnly; }, [textOnly]); // speak/speakStream 콜백이 최신 모드 참조
+  useEffect(() => { reEngageCountRef.current = 0; }, [conversationId]); // 새 대화 → 재참여 카운트 리셋(stale 차단)
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
 
   /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
@@ -768,6 +801,7 @@ export default function ChatPage() {
         if (transcriptionText && SESSION_END_PATTERN.current.test(transcriptionText)) {
           sessionActiveRef.current = false;
           setSessionActive(false);
+          reEngageCountRef.current = 0; // 세션 종료 → 재참여 카운트 리셋
         }
         return;
       } catch (e) {
@@ -791,6 +825,8 @@ export default function ChatPage() {
   );
 
   const startRecording = useCallback(async () => {
+    // 재참여 idle 타이머는 진입부에서 항상 정리(turnLock 폴링·early-return 누수 방지). 실제 녹음 시작 시 재설정.
+    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
     if (loading || !conversationId) return;
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
@@ -864,6 +900,10 @@ export default function ChatPage() {
     try {
       recorder.start();
 
+      // 능동 재참여: 발화 없이 20초 침묵하면 동반자가 먼저 말 검(재참여). 발화 감지 시 즉시 취소.
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => { reEngageRef.current(); }, 20000);
+
       // VAD: 음량 모니터링 → 2초 침묵 시 자동 전송
       // 기존 컨텍스트가 남아 있으면 닫고 새로 생성 — ref에 보관해 stopRecording/언마운트에서 정리.
       if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); }
@@ -904,6 +944,9 @@ export default function ChatPage() {
 
         if (avg > SILENCE_THRESHOLD) {
           speechDetected = true;
+          // 사용자가 말하기 시작 — 재참여 idle 타이머 취소 + 연속 카운트 리셋
+          reEngageCountRef.current = 0;
+          if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
           if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = null;
@@ -931,6 +974,7 @@ export default function ChatPage() {
   const stopRecording = useCallback((opts?: { discard?: boolean }) => {
     // VAD 정리 — RAF·타이머를 멈추면 그 안의 audioCtx.close()가 안 불리므로 여기서 직접 닫는다(누수 방지).
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
     if (vadFrameRef.current) { cancelAnimationFrame(vadFrameRef.current); vadFrameRef.current = 0; }
     if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
 
@@ -962,6 +1006,7 @@ export default function ChatPage() {
       // 첫 wake = 세션 시작
       sessionActiveRef.current = true;
       setSessionActive(true);
+      reEngageCountRef.current = 0; // 새 세션 시작 → 재참여 카운트 리셋
       wakeArmedRef.current = true;
       setWakeArmed(true);
       // 살짝 딜레이 두고 녹음 시작 (recognition stop이 마이크 해제하는 데 시간이 필요)
