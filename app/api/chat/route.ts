@@ -466,7 +466,7 @@ async function handleAudioMessage(params: {
     : null;
   if (mentalVoice) {
     if (conversationId) {
-      await saveMessages({ conversationId, userId, userContent: transcription || "(음성 메시지)", assistantContent: mentalVoice.reply, skipAssistantEmbedding: true });
+      await saveMessages({ conversationId, userId, userContent: transcription || "(음성 메시지)", assistantContent: mentalVoice.reply, skipAssistantEmbedding: true, skipUserEmbedding: true });
     }
     return NextResponse.json({ text: mentalVoice.reply, role: "assistant", transcription, mental: mentalVoice.status });
   }
@@ -702,7 +702,7 @@ async function handleTextMessage(params: {
     : null;
   if (mental) {
     if (conversationId) {
-      await saveMessages({ conversationId, userId, userContent, assistantContent: mental.reply, skipAssistantEmbedding: true });
+      await saveMessages({ conversationId, userId, userContent, assistantContent: mental.reply, skipAssistantEmbedding: true, skipUserEmbedding: true });
     }
     return NextResponse.json({ text: mental.reply, role: "assistant", mental: mental.status });
   }

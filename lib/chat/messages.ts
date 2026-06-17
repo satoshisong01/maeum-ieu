@@ -39,8 +39,10 @@ export async function saveMessages(params: {
   speakerLabel?: string | null;
   /** 폴백 멘트 등 정형 응답은 RAG 임베딩에서 제외(검색 오염 방지) */
   skipAssistantEmbedding?: boolean;
+  /** 정신건강 검진 정형 답변("그런 편이에요" 등)은 사용자 발화도 임베딩 제외 — 인지 RAG 오염 방지 */
+  skipUserEmbedding?: boolean;
 }): Promise<{ userMsgId: string; assistantMsgId: string }> {
-  const { conversationId, userId, userContent, assistantContent, emergencyLevel, emergencyEvidence, speakerLabel, skipAssistantEmbedding } = params;
+  const { conversationId, userId, userContent, assistantContent, emergencyLevel, emergencyEvidence, speakerLabel, skipAssistantEmbedding, skipUserEmbedding } = params;
   const userTime = getNowKst();
   // assistant 메시지는 1초 뒤로 설정 → createdAt ASC 정렬 시 항상 user → assistant 순서 보장
   const assistantTime = new Date(userTime.getTime() + 1000);
@@ -68,7 +70,9 @@ export async function saveMessages(params: {
   });
 
   // RAG 임베딩 (응답 흐름은 막지 않되, 실패는 로깅 — 조용한 삼킴은 message↔vector 불일치를 은폐)
-  saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
+  if (!skipUserEmbedding) {
+    saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
+  }
   if (!skipAssistantEmbedding) {
     saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch((e) => console.warn("[rag] assistant embed 실패:", (e as Error).message));
   }
