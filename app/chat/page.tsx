@@ -1081,12 +1081,24 @@ export default function ChatPage() {
           >
             🎙 라이브<br />베타
           </Link>
-          <Link
-            href="/dashboard"
-            className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
-          >
-            건강<br />기록
-          </Link>
+          {/* 결과 열람 링크 — 모드별. 사용자(어르신) 본인은 결과 비공개라 링크 없음(A안). */}
+          {screeningMode === "pro" ? (
+            <Link
+              href="/expert"
+              title="연결된 어르신(환자) 검진 결과"
+              className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
+            >
+              환자<br />기록
+            </Link>
+          ) : screeningMode === "general" ? (
+            <Link
+              href="/mental"
+              title="내 마음 건강 결과"
+              className="rounded-lg bg-orange-50 px-2 py-1 text-[10px] font-medium leading-tight text-orange-600 hover:bg-orange-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-orange-900/30 dark:text-orange-300 dark:hover:bg-orange-900/50"
+            >
+              마음<br />기록
+            </Link>
+          ) : null}
           <Link
             href="/mypage"
             className="max-w-[60px] truncate text-[10px] text-zinc-500 hover:text-[#007bff] hover:underline sm:max-w-none sm:text-xs dark:text-zinc-400 dark:hover:text-blue-400"

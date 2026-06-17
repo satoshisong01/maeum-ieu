@@ -290,11 +290,11 @@ export default function MyPage() {
 
             {/* 전문가 연결 — 인지 선별(사용자) 계정 전용. 환자 본인이 전문가 코드를 입력해 연결(=본인 동의). 채점·요약만 공유, 대화 원문 비공개 */}
             <div className={screeningMode === "user" ? "" : "hidden"}>
-              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">전문가 연결 (담당 의사·관리사 코드)</label>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">보호자·전문가 연결 (가족·담당자 코드)</label>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="전문가 코드 8자리"
+                  placeholder="보호자·전문가 코드 8자리"
                   value={expertCodeInput}
                   onChange={(e) => setExpertCodeInput(e.target.value.toUpperCase())}
                   maxLength={12}
@@ -310,7 +310,7 @@ export default function MyPage() {
                 </button>
               </div>
               {expertLinkMsg && <p className="mt-1 text-xs text-teal-700 dark:text-teal-300">{expertLinkMsg}</p>}
-              <p className="mt-1 text-[11px] text-zinc-400">연결하면 담당 전문가가 인지 등급·추세 요약만 볼 수 있어요 (대화 내용은 공개되지 않아요).</p>
+              <p className="mt-1 text-[11px] text-zinc-400">연결하면 보호자·전문가가 인지 등급·추세 요약만 볼 수 있어요. 어르신 본인에게는 결과가 보이지 않고, 대화 내용도 공개되지 않아요.</p>
               {linkedExperts.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {linkedExperts.map((e) => (

@@ -33,6 +33,11 @@ export async function GET() {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+  // 사용자(어르신) 본인은 자기 인지/건강 결과 비공개 — 검사 무효화·불안 방지(A안).
+  //   결과는 연결된 보호자·전문가가 /api/expert/patients/[id]로만 열람.
+  if (session.user.screeningMode === "user") {
+    return NextResponse.json({ error: "본인은 열람할 수 없습니다. 보호자·전문가에게 문의하세요." }, { status: 403 });
+  }
 
   const userId = session.user.id;
 
