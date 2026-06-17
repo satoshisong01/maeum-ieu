@@ -19,8 +19,8 @@ export async function saveCognitiveAssessments(
     prisma.$executeRawUnsafe(
       `INSERT INTO cognitive_assessments (id, user_id, message_id, conversation_id, domain, score, confidence, evidence, note, session_date, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, NOW())
-       ON CONFLICT (id) DO NOTHING`,
-      // 결정적 id(메시지+도메인+인덱스) — 같은 메시지 재분석 시 중복 INSERT 차단(count 왜곡·등급 오류 방지)
+       ON CONFLICT (id) DO UPDATE SET score = EXCLUDED.score, confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence, note = EXCLUDED.note`,
+      // 결정적 id(메시지+도메인+인덱스) — 같은 메시지 재분석 시 최신 점수로 덮어씀(이전 DO NOTHING은 정정 점수를 버려 등급 과소평가)
       `ca_${messageId}_${check.domain}_${i}`,
       userId, messageId, conversationId,
       check.domain, check.score, check.confidence, check.evidence, check.note, sessionDate,
@@ -67,10 +67,10 @@ export async function saveMessages(params: {
     data: { updatedAt: assistantTime },
   });
 
-  // RAG 임베딩 (실패해도 무관)
-  saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch(() => {});
+  // RAG 임베딩 (응답 흐름은 막지 않되, 실패는 로깅 — 조용한 삼킴은 message↔vector 불일치를 은폐)
+  saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
   if (!skipAssistantEmbedding) {
-    saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch(() => {});
+    saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch((e) => console.warn("[rag] assistant embed 실패:", (e as Error).message));
   }
 
   return { userMsgId: userMsg.id, assistantMsgId: assistantMsg.id };
