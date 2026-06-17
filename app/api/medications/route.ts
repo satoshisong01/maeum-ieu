@@ -7,18 +7,37 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeTimes } from "@/lib/chat/medication";
+import { toKstDateString } from "@/lib/chat/time";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+  const userId = session.user.id;
 
   const items = await prisma.medicationSchedule.findMany({
-    where: { userId: session.user.id },
+    where: { userId },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json({ items });
+
+  // 복약 준수 — 오늘 확인된 복용(스케줄|시각 키) + 최근 7일 이행률
+  let todayConfirmed: string[] = [];
+  let weekCompliance = { confirmed: 0, expected: 0 };
+  try {
+    const today = toKstDateString(new Date());
+    const todayRows = await prisma.$queryRawUnsafe<{ schedule_id: string; dose_time: string }[]>(
+      `SELECT schedule_id, dose_time FROM medication_log WHERE user_id = $1 AND taken_date = $2::date AND status = 'confirmed'`,
+      userId, today);
+    todayConfirmed = todayRows.map((r) => `${r.schedule_id}|${r.dose_time}`);
+    const weekRows = await prisma.$queryRawUnsafe<{ c: number }[]>(
+      `SELECT COUNT(*)::int AS c FROM medication_log WHERE user_id = $1 AND status = 'confirmed' AND taken_date >= CURRENT_DATE - INTERVAL '6 days'`,
+      userId);
+    const dailyDoses = items.filter((i) => i.enabled).reduce((s, i) => s + (Array.isArray(i.times) ? i.times.length : 0), 0);
+    weekCompliance = { confirmed: weekRows[0]?.c ?? 0, expected: dailyDoses * 7 };
+  } catch { /* medication_log 미생성 환경 방어 */ }
+
+  return NextResponse.json({ items, todayConfirmed, weekCompliance });
 }
 
 export async function POST(req: Request) {
