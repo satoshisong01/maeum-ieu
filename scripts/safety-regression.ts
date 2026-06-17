@@ -333,5 +333,30 @@ console.log("\n[mental-result] 검진 결과 요청 감지(환각 방지)");
   check("'오늘 날씨 좋네' → 결과요청 아님", isMentalResultRequest("오늘 날씨 좋네") === false);
 }
 
+// ── #23: fact-checker 바깥조사 패턴 일반명사 FP — "인생이야/배역이는" 정상문장 삭제 방지 (2026-06-17) ──
+console.log("\n[fact-check] 바깥조사 일반명사 FP 방지 + 호칭 환각이름 제거 유지");
+{
+  const emptyProfile = { profile: null, family: [], facts: [] };
+  // 일반명사(인생/배역)가 이가/이는/이야로 끝나도 문장 삭제 안 됨
+  const r1 = factCheckResponse({ aiText: "네, 그렇습니다. 인생이야 늘 도전이지요. 배역이는 참 중요하답니다. 응원할게요.", profile: emptyProfile, recentUserText: "", memories: "", honorific: "할머니" });
+  check("'인생이야' 일반명사 문장 보존", r1.cleaned.includes("인생이야"));
+  check("'배역이는' 일반명사 문장 보존", r1.cleaned.includes("배역이는"));
+  // 호칭 컨텍스트의 환각 이름(재미)은 여전히 제거(보호 유지)
+  const r2 = factCheckResponse({ aiText: "큰아드님 이름은 재미예요. 정말 훌륭한 분이세요. 자랑스러우시겠어요.", profile: emptyProfile, recentUserText: "", memories: "", honorific: "할머니" });
+  check("호칭 환각 이름 '재미' 제거 유지", !r2.cleaned.includes("재미"));
+}
+
+// ── #24: 음력 날짜 시간지남력 과탐 보정 (음력 명시 시만, 2026-06-17) ──
+console.log("\n[lunar] 음력 명시 시 시간지남력 과탐 보정");
+{
+  const { overrideLunarTimeOrientation } = require("../lib/chat/cognitive-analyzer");
+  const base = (msgScore) => ({ isAnomaly: true, analysisNote: "", cognitiveChecks: [{ domain: "orientation_time", score: msgScore, confidence: 0.8, evidence: "", note: "" }] });
+  const r1 = overrideLunarTimeOrientation(base(2), "음력 6월 15일이 생일이라 잔치했어");
+  const t1 = r1.cognitiveChecks.find((c) => c.domain === "orientation_time");
+  check("음력 명시 → 시간지남력 0 보정 + isAnomaly 해제", t1.score === 0 && r1.isAnomaly === false);
+  const r2 = overrideLunarTimeOrientation(base(2), "오늘이 3월인가 8월인가 헷갈리네");
+  check("음력 미언급 → 보정 안 함(실제 오류 보존)", r2.cognitiveChecks.find((c) => c.domain === "orientation_time").score === 2);
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);

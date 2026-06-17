@@ -16,7 +16,7 @@
 
 import type { FullProfile } from "./profile";
 import { nameSubj } from "./korean-particle";
-import { NAME_STOPWORDS_BASE } from "./name-vocab";
+import { NAME_STOPWORDS_BASE, ABSTRACT_NOUN_BLOCKLIST } from "./name-vocab";
 
 const HONORIFIC_TAG = /(?:아드님|따님|손자|손녀|아들|딸|장남|차남|장녀|차녀|첫째|둘째|셋째|넷째|막내)/;
 
@@ -25,9 +25,13 @@ const NAME_CONTEXT_PATTERNS: RegExp[] = [
   new RegExp(`([가-힣]{2,4})\\s*${HONORIFIC_TAG.source}`, "g"),
   // "아드님 X", "큰아드님 X 등 — 호칭 뒤 이름
   new RegExp(`${HONORIFIC_TAG.source}\\s*(?:은|는|이|가|이름은?|성함은?)?\\s*([가-힣]{2,4})(?:이고|이며|이지|이고요|이에요|예요|이|이세요|세요|이시|시)`, "g"),
-  // "X이가/X이는/X이도" — 친근 종조사
-  /([가-힣]{2,4})(?:이가|이는|이도|이야)/g,
+  // "X이가/X이는/X이도" — 친근 종조사. 한글 경계로 합성어 부분매칭 차단(死 정규식 클래스).
+  /(?<![가-힣])([가-힣]{2,4})(?:이가|이는|이도|이야)(?![가-힣])/g,
 ];
+
+// 바깥조사 패턴(위 3번)은 일반·추상명사 FP가 많음("인생이야"·"배역이는") → 그 패턴 후보만 이 목록으로 제외.
+// ⚠ 호칭 패턴(1,2)에는 적용 금지 — "큰아드님 이름은 재미" 같은 환각 이름(재미)을 잡아야 하므로(2026-05-26 사고).
+const BARE_JOSA_COMMON_NOUNS = new Set<string>(ABSTRACT_NOUN_BLOCKLIST);
 
 // 공통 코어는 name-vocab.ts 단일 소스. ⚠ ABSTRACT_NOUN_BLOCKLIST는 여기 합치면 안 됨:
 // 이 파일에서 stopword = "grounding 검증 면제"라 "재미" 같은 환각 이름이 검증을 빠져나감 (의미 반대).
@@ -121,7 +125,9 @@ function calculateGrounding(text: string, profile: FullProfile, recentUserText: 
 /** 응답에서 이름 후보 추출 (가족 관계 컨텍스트 있는 명사만) */
 function extractNameCandidates(text: string): Set<string> {
   const out = new Set<string>();
-  for (const re of NAME_CONTEXT_PATTERNS) {
+  for (let pi = 0; pi < NAME_CONTEXT_PATTERNS.length; pi++) {
+    const re = NAME_CONTEXT_PATTERNS[pi];
+    const isBareJosa = pi === NAME_CONTEXT_PATTERNS.length - 1; // 마지막 = 바깥조사(이가/이는/이도/이야)
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
@@ -133,6 +139,8 @@ function extractNameCandidates(text: string): Set<string> {
       // '담가서'가 이름 후보로 잡혀 정상 문장을 삭제하던 FP(2026-06-11 김치 사이클).
       // 주의: '은$'은 실명 어미(지은/하은)라 필터 금지.
       if (/(?:아서|어서|가서|와서|해서|면서|하게|있게|없게|럽게|롭게|껏|도록|는|던|할|실)$/.test(cand)) continue;
+      // 바깥조사 패턴만 일반·추상명사 제외("인생이야"·"배역이는" 정상문장 삭제 FP, 2026-06-17). 호칭 패턴엔 미적용(환각 이름 보호).
+      if (isBareJosa && BARE_JOSA_COMMON_NOUNS.has(cand)) continue;
       out.add(cand);
     }
   }

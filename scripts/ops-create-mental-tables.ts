@@ -25,6 +25,8 @@ async function main() {
         updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ms_user_status ON mental_session(user_id, status, updated_at DESC)`);
+    // 한 사용자당 active 세션 최대 1개 — 중단 직후 재시작 경합 시 중복 active 생성 차단(2026-06-17)
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ms_user_active ON mental_session(user_id) WHERE status = 'active'`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS mental_assessments (
         id         TEXT PRIMARY KEY,

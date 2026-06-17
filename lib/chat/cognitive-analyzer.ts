@@ -461,7 +461,8 @@ const RESPONSE_SCHEMA: Schema = {
           evidence: { type: SchemaType.STRING },
           note: { type: SchemaType.STRING },
         },
-        required: ["domain", "score"],
+        // confidence 필수 — 누락 시 0.5 디폴트로 hasHighScore 안전망이 죽어 중증(score=2) 신호를 놓치던 버그(2026-06-17)
+        required: ["domain", "score", "confidence"],
       },
     },
   },
@@ -511,6 +512,22 @@ async function generateWithRetry(
       throw err;
     }
   }
+}
+
+/**
+ * 음력 날짜 명시 시 시간 지남력(orientation_time) 과탐 보정 — "음력 6월"은 양력 환경과 달라도 정상.
+ * 음력 처리가 프롬프트 지시에만 있어 LLM이 무시하면 시간 오류로 오채점되던 버그(2026-06-17).
+ * **명시적 '음력'일 때만** 보정(고정밀) — 실제 시간 오류 마스킹 방지. export: 회귀 테스트용.
+ */
+export function overrideLunarTimeOrientation(result: CognitiveAnalysisResult, userMessage: string): CognitiveAnalysisResult {
+  if (!/음력/.test(userMessage || "")) return result;
+  if (!result.cognitiveChecks.some((c) => c.domain === "orientation_time" && c.score > 0)) return result;
+  const adjusted = result.cognitiveChecks.map((c) =>
+    c.domain === "orientation_time" && c.score > 0
+      ? { ...c, score: 0, confidence: 0.9, note: "음력 날짜 명시 — 양력 환경과 다름은 정상" }
+      : c,
+  );
+  return { ...result, cognitiveChecks: adjusted, isAnomaly: adjusted.some((c) => c.score >= 2) };
 }
 
 export async function analyzeCognitive(params: {
@@ -584,7 +601,8 @@ export async function analyzeCognitive(params: {
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
     const safetyNetted = injectJudgmentSafetyNet(calcReclassified, userForAnalysis);
     const persevChecked = injectPerseverationCheck(safetyNetted, userForAnalysis, recentHistory);
-    return ensureCognitiveDomainLogged(persevChecked, params.assistantResponse);
+    const lunarChecked = overrideLunarTimeOrientation(persevChecked, userForAnalysis);
+    return ensureCognitiveDomainLogged(lunarChecked, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
     return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
