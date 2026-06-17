@@ -917,7 +917,7 @@ export default function ChatPage() {
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const SILENCE_THRESHOLD = 15; // 음량 기준 (0~255)
-      const SILENCE_DURATION = 1000; // 침묵 지속 시간 (ms) — 응답 속도 위해 2000→1500→1000 단축(어르신이 문장 중간 길게 쉬면 끊길 수 있어 그때 상향)
+      const SILENCE_DURATION = 1500; // 침묵 지속 시간 (ms) — 어르신이 문장 중간 길게 쉬는 특성 반영해 1000→1500 상향(끊김↓, 지연 +0.5s는 허용)
       let speechDetected = false;
 
       const checkSilence = () => {
