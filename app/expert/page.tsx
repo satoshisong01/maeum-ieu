@@ -26,7 +26,15 @@ interface PatientRow {
   trendText: string;
   anomaly7d: number;
   lastActiveAt: string | null;
+  examLatest?: { band: string; label: string; score: number | null; max: number | null; sufficient: boolean; at: string } | null;
 }
+
+const BAND_STYLE: Record<string, string> = {
+  "정상범위": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  "경계": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  "저하의심": "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  "자료부족": "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300",
+};
 
 const TIER_STYLE: Record<string, string> = {
   "정상": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
@@ -124,10 +132,12 @@ export default function ExpertPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.name}</span>
                       <span className="text-xs text-zinc-500">{p.age ? `${p.age}세` : ""} {p.gender === "male" ? "남" : p.gender === "female" ? "여" : ""}</span>
-                      {p.showLevel === false
-                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE["평가전"]}`}>평가중</span>
-                        : <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE[p.tier] ?? TIER_STYLE["평가전"]}`}>{p.tier}{p.provisional ? " (잠정)" : ""}</span>}
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">{TREND_LABEL[p.trend] ?? p.trend}</span>
+                      {/* 검진(1차 신호) */}
+                      {p.examLatest
+                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${BAND_STYLE[p.examLatest.band] ?? BAND_STYLE["자료부족"]}`}>검진 {p.examLatest.label}{p.examLatest.score != null && p.examLatest.sufficient ? ` ${p.examLatest.score}/${p.examLatest.max}` : ""}</span>
+                        : <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE["평가전"]}`}>검진 전</span>}
+                      {/* 일상 모니터링(보조) */}
+                      <span className="text-[11px] text-zinc-400">일상 {p.showLevel === false ? "수집중" : `${p.tier}${p.provisional ? "(잠정)" : ""}`} · {TREND_LABEL[p.trend] ?? p.trend}</span>
                     </div>
                     <div className="text-xs text-zinc-500">
                       최근 활동 {fmtDate(p.lastActiveAt)} · 7일 이상징후 {p.anomaly7d}건{p.overallAvg !== null ? ` · 평균 ${p.overallAvg}` : ""}

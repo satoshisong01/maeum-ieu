@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, type DomainStat } from "@/lib/health/severity";
+import { classifyProvisional, classifyFormal, compareSessions, EXAM_DISCLAIMER } from "@/lib/screening/exam-eval";
 import { toKstDateString } from "@/lib/chat/time";
 
 interface DomainRow extends DomainStat { domain: string }
@@ -139,13 +140,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     };
   });
 
-  // 검진 세션 — 문답(Q&A) + 의사 코멘트. 문답 원문은 검진 구간[started_at, ended_at] 안의 메시지만 노출(일상대화와 분리).
-  let examSessions: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; qa: { role: string; content: string; at: string }[] }[] = [];
+  // 검진 세션 — 문답(Q&A) + 의사 코멘트 + 평가(잠정/학력보정) + 회차 추세. 문답 원문은 검진 구간 메시지만 노출(일상대화와 분리).
+  interface ExamSessionView {
+    id: string; startedAt: string; endedAt: string | null; doctorComment: string;
+    totalScore: number | null; maxScore: number | null;
+    coverage: { answered: number; total: number; sufficient: boolean };
+    evalBand: string | null; evalLabel: string | null; evalAdvice: string | null;
+    educationYears: number | null; visuospatialScore: number | null;
+    formalBand: string | null; formalLabel: string | null; formalAdvice: string | null; formalScore: number | null; formalMax: number | null;
+    items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
+    qa: { role: string; content: string; at: string }[];
+    trend: null | { direction: string; deltaPct: number };
+  }
+  let examSessions: ExamSessionView[] = [];
   try {
-    const rows = await prisma.$queryRawUnsafe<{ id: string; started_at: Date; ended_at: Date | null; doctor_comment: string | null; total_score: number | null; max_score: number | null }[]>(
-      `SELECT id, started_at, ended_at, doctor_comment, total_score, max_score FROM exam_session WHERE patient_user_id = $1 AND expert_user_id = $2 ORDER BY started_at DESC LIMIT 10`,
+    const rows = await prisma.$queryRawUnsafe<{ id: string; started_at: Date; ended_at: Date | null; doctor_comment: string | null; total_score: number | null; max_score: number | null; eval_band: string | null; coverage_status: string | null; answered_domains: number | null; total_domains: number | null; education_years: number | null; visuospatial_score: number | null }[]>(
+      `SELECT id, started_at, ended_at, doctor_comment, total_score, max_score, eval_band, coverage_status, answered_domains, total_domains, education_years, visuospatial_score FROM exam_session WHERE patient_user_id = $1 AND expert_user_id = $2 ORDER BY started_at DESC LIMIT 10`,
       patientId, session.user.id);
-    examSessions = await Promise.all(rows.map(async (r) => {
+    const built = await Promise.all(rows.map(async (r) => {
       const start = new Date(r.started_at);
       const end = r.ended_at ? new Date(r.ended_at) : new Date(start.getTime() + 25 * 60 * 1000);
       const [msgs, itemRows] = await Promise.all([
@@ -156,16 +168,35 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         prisma.$queryRawUnsafe<{ item_id: string; domain: string; prompt: string | null; answer: string | null; score: number; max_points: number; reason: string | null }[]>(
           `SELECT item_id, domain, prompt, answer, score, max_points, reason FROM exam_item_score WHERE session_id = $1 ORDER BY created_at`, r.id),
       ]);
+      const sufficient = r.coverage_status !== "insufficient";
+      const provisional = r.total_score != null ? classifyProvisional(r.total_score, r.max_score ?? undefined, sufficient) : null;
+      // 의사가 학력·시공간을 입력했으면 학력보정 잠정 등급 계산
+      const formal = (r.total_score != null && (r.education_years != null || r.visuospatial_score != null))
+        ? classifyFormal({ voiceScore: r.total_score, visuospatial: r.visuospatial_score, educationYears: r.education_years, sufficient })
+        : null;
       return {
         id: r.id,
         startedAt: start.toISOString(),
         endedAt: r.ended_at ? new Date(r.ended_at).toISOString() : null,
         doctorComment: r.doctor_comment ?? "",
         totalScore: r.total_score, maxScore: r.max_score,
+        coverage: { answered: r.answered_domains ?? 0, total: r.total_domains ?? 0, sufficient },
+        evalBand: provisional?.band ?? null, evalLabel: provisional?.label ?? null, evalAdvice: provisional?.advice ?? null,
+        educationYears: r.education_years, visuospatialScore: r.visuospatial_score,
+        formalBand: formal?.band ?? null, formalLabel: formal?.label ?? null, formalAdvice: formal?.advice ?? null, formalScore: formal?.fullScore ?? null, formalMax: formal?.fullMax ?? null,
         items: itemRows.map((it) => ({ itemId: it.item_id, domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
         qa: msgs.map((m) => ({ role: m.role, content: m.content, at: m.createdAt.toISOString() })),
+        trend: null as null | { direction: string; deltaPct: number },
       };
     }));
+    // 회차 추세 — 각 회차를 바로 이전(더 오래된) 회차와 비교(DESC 정렬이므로 i+1이 이전 회차)
+    for (let i = 0; i < built.length - 1; i++) {
+      const cur = built[i], prev = built[i + 1];
+      if (cur.totalScore != null && cur.maxScore && prev.totalScore != null && prev.maxScore && cur.coverage.sufficient && prev.coverage.sufficient) {
+        cur.trend = compareSessions(prev.totalScore, prev.maxScore, cur.totalScore, cur.maxScore);
+      }
+    }
+    examSessions = built;
   } catch { /* exam_session 미생성 환경 방어 */ }
 
   // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
@@ -185,5 +216,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     sessions,
     cistEstimate,
     examSessions,
+    examDisclaimer: EXAM_DISCLAIMER,
   });
 }

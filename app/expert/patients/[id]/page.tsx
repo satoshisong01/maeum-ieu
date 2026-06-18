@@ -23,8 +23,32 @@ interface Detail {
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
   cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
-  examSessions?: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; totalScore: number | null; maxScore: number | null; items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[]; qa: { role: string; content: string; at: string }[] }[];
+  examDisclaimer?: string;
+  examSessions?: ExamSession[];
 }
+interface ExamSession {
+  id: string; startedAt: string; endedAt: string | null; doctorComment: string;
+  totalScore: number | null; maxScore: number | null;
+  coverage: { answered: number; total: number; sufficient: boolean };
+  evalBand: string | null; evalLabel: string | null; evalAdvice: string | null;
+  educationYears: number | null; visuospatialScore: number | null;
+  formalBand: string | null; formalLabel: string | null; formalAdvice: string | null; formalScore: number | null; formalMax: number | null;
+  items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
+  qa: { role: string; content: string; at: string }[];
+  trend: null | { direction: string; deltaPct: number };
+}
+
+const BAND_STYLE: Record<string, string> = {
+  "정상범위": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  "경계": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  "저하의심": "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  "자료부족": "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300",
+};
+const TREND_STYLE: Record<string, string> = {
+  "개선": "text-emerald-600 dark:text-emerald-400",
+  "악화": "text-red-600 dark:text-red-400",
+  "유지": "text-zinc-500 dark:text-zinc-400",
+};
 
 const TIER_STYLE: Record<string, string> = {
   "정상": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
@@ -43,11 +67,25 @@ export default function PatientDetailPage() {
   const [error, setError] = useState("");
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [savedComment, setSavedComment] = useState<string | null>(null);
+  const [tab, setTab] = useState<"exam" | "daily">("exam");
+  const [evalDrafts, setEvalDrafts] = useState<Record<string, { edu: string; vs: string }>>({});
+
+  async function reload() {
+    if (!params?.id) return;
+    try { const r = await fetch(`/api/expert/patients/${params.id}`); const d = await r.json(); if (r.ok) setData(d); } catch { /* noop */ }
+  }
 
   async function saveComment(sessionId: string, comment: string) {
     try {
       const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "comment", sessionId, comment }) });
       if (r.ok) { setSavedComment(sessionId); setTimeout(() => setSavedComment(null), 2000); }
+    } catch { /* noop */ }
+  }
+
+  async function saveEvalInput(sessionId: string, edu: string, vs: string) {
+    try {
+      const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "evalInput", sessionId, educationYears: edu === "" ? null : Number(edu), visuospatialScore: vs === "" ? null : Number(vs) }) });
+      if (r.ok) await reload();
     } catch { /* noop */ }
   }
 
@@ -92,28 +130,117 @@ export default function PatientDetailPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.patient.name}</span>
                 <span className="text-sm text-zinc-500">{data.patient.age ? `${data.patient.age}세` : ""} {data.patient.gender === "male" ? "남" : data.patient.gender === "female" ? "여" : ""}</span>
-                {data.reliability && !data.reliability.showLevel
-                  ? <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE["평가전"]}`}>평가중 · 자료 부족</span>
-                  : <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE[data.tier] ?? TIER_STYLE["평가전"]}`}>{data.tier}{data.reliability?.provisional ? " (잠정)" : ""}</span>}
-                {data.overallAvg !== null && <span className="text-sm text-zinc-600 dark:text-zinc-300">7일 평균 {data.overallAvg}</span>}
+                {(() => {
+                  const latest = data.examSessions?.find((e) => e.totalScore != null);
+                  const label = latest?.formalLabel ?? latest?.evalLabel;
+                  return label
+                    ? <span className={`rounded-full px-3 py-1 text-sm font-bold ${BAND_STYLE[(latest!.formalLabel ? latest!.formalBand : latest!.evalBand) ?? "자료부족"] ?? BAND_STYLE["자료부족"]}`}>검진: {label}{latest!.totalScore != null && latest!.coverage.sufficient ? ` · ${latest!.totalScore}/${latest!.maxScore}점` : ""}</span>
+                    : <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE["평가전"]}`}>검진 기록 없음</span>;
+                })()}
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  일상 모니터링: {data.reliability && !data.reliability.showLevel ? "자료 수집중" : `${data.tier}${data.reliability?.provisional ? "(잠정)" : ""}`}
+                </span>
               </div>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{data.trendText || data.tierText}</p>
-              {data.reliability && !data.reliability.reliable && (
-                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                  {data.reliability.showLevel ? "※ 참고용 잠정 결과 — 대화·검진이 더 쌓이면 정확해집니다." : "※ 자료 부족 — 신뢰할 등급 산출 전입니다(최소 5회·2영역 필요)."}
-                </p>
-              )}
-              {data.cistEstimate && (
-                <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
-                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-                    MMSE-K 환산 추정 <span className="text-base">{data.cistEstimate.earned}</span><span className="text-zinc-500">/{data.cistEstimate.max}점</span>
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                    음성 시행 {data.cistEstimate.assessedDomains}개 영역의 정성 평가(0정상~2저하) 기반 추정치 — <strong>시공간(그리기)은 음성 미시행</strong>이라 만점에서 제외. 정식 MMSE-K/CIST 점수가 아니라 참고용이에요.
-                  </p>
-                </div>
-              )}
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">정식 검진(전문가 문진)이 1차 평가이고, 일상 대화 분석은 참고용 보조 신호입니다.</p>
             </section>
+
+            {/* 탭 — 정식 검진(1차 신호) / 일상대화 참고(보조) */}
+            <div className="mb-5 flex gap-2 border-b border-zinc-200 dark:border-zinc-800">
+              {([["exam", "정식 검진"], ["daily", "일상대화 참고"]] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setTab(k)}
+                  className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-teal-500 text-teal-600 dark:text-teal-400" : "border-transparent text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"}`}>{l}</button>
+              ))}
+            </div>
+
+            {tab === "exam" && (
+              <section className="mb-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">정식 검진 결과 (회차별)</h2>
+                  <span className="text-[11px] text-zinc-400">최근 {data.examSessions?.length ?? 0}회</span>
+                </div>
+                {(!data.examSessions || data.examSessions.length === 0) && (
+                  <p className="rounded-xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400 dark:bg-zinc-800/40">아직 검진 기록이 없습니다. 전문가 모드에서 ‘검진 시작’으로 시행하세요.</p>
+                )}
+                {data.examSessions?.map((ex, i) => {
+                  const round = (data.examSessions!.length) - i;
+                  const draft = evalDrafts[ex.id] ?? { edu: ex.educationYears != null ? String(ex.educationYears) : "", vs: ex.visuospatialScore != null ? String(ex.visuospatialScore) : "" };
+                  return (
+                    <div key={ex.id} className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 pb-2 dark:border-zinc-800">
+                        <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-bold text-teal-700 dark:bg-teal-900/40 dark:text-teal-200">{round}회차</span>
+                        <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{new Date(ex.startedAt).toLocaleString("ko-KR")}</span>
+                        {ex.evalLabel && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${BAND_STYLE[ex.evalBand ?? "자료부족"] ?? BAND_STYLE["자료부족"]}`}>{ex.evalLabel}</span>}
+                        {ex.totalScore != null && ex.coverage.sufficient && <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">{ex.totalScore}/{ex.maxScore}점</span>}
+                        {ex.trend && <span className={`text-xs font-semibold ${TREND_STYLE[ex.trend.direction] ?? ""}`}>이전 대비 {ex.trend.direction}{ex.trend.deltaPct ? ` (${ex.trend.deltaPct > 0 ? "+" : ""}${ex.trend.deltaPct}%p)` : ""}</span>}
+                        {!ex.endedAt && <span className="text-[11px] text-amber-600">진행 중</span>}
+                      </div>
+                      {ex.evalAdvice && <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">{ex.evalAdvice}</p>}
+                      {!ex.coverage.sufficient && ex.endedAt && (
+                        <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">무응답이 많아 평가가 어렵습니다(응답 {ex.coverage.answered}/{ex.coverage.total}영역). 추가 문진을 권장합니다.</p>
+                      )}
+                      <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/50">
+                        <p className="mb-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">의사 보정 — 학력·시공간(시계)을 입력하면 학력보정 잠정 평가로 승급</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">학력(년)
+                            <input type="number" min={0} max={30} value={draft.edu} onChange={(e) => setEvalDrafts((p) => ({ ...p, [ex.id]: { ...draft, edu: e.target.value } }))} className="ml-1 w-16 rounded border border-zinc-200 px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800" />
+                          </label>
+                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">시공간(시계)
+                            <select value={draft.vs} onChange={(e) => setEvalDrafts((p) => ({ ...p, [ex.id]: { ...draft, vs: e.target.value } }))} className="ml-1 rounded border border-zinc-200 px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                              <option value="">미입력</option><option value="0">0점</option><option value="1">1점</option><option value="2">2점</option>
+                            </select>
+                          </label>
+                          <button onClick={() => saveEvalInput(ex.id, draft.edu, draft.vs)} className="rounded bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-teal-700">저장</button>
+                          {ex.formalLabel && <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${BAND_STYLE[ex.formalBand ?? ex.evalBand ?? "자료부족"] ?? BAND_STYLE["자료부족"]}`}>{ex.formalLabel}{ex.formalScore != null ? ` · ${ex.formalScore}/${ex.formalMax}점` : ""}</span>}
+                        </div>
+                      </div>
+                      {ex.items.length > 0 && (
+                        <div className="mt-3">
+                          <p className="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점</p>
+                          <div className="flex flex-wrap gap-1">
+                            {ex.items.map((it) => (
+                              <span key={it.itemId} title={`${it.prompt} → ${it.answer} (${it.reason})`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.reason === "무응답" ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>{it.itemId} {it.score}/{it.max}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">문답 기록 ({ex.qa.length})</summary>
+                        <div className="mt-1.5 max-h-60 space-y-1.5 overflow-y-auto">
+                          {ex.qa.length === 0 && <p className="text-xs text-zinc-400">기록된 문답이 없습니다.</p>}
+                          {ex.qa.map((m, j) => (
+                            <div key={j} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                              <div className={`max-w-[85%] rounded-xl px-3 py-1.5 text-xs ${m.role === "user" ? "bg-blue-50 text-blue-900 dark:bg-blue-900/30 dark:text-blue-100" : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"}`}>
+                                <span className="mr-1 text-[10px] font-semibold opacity-60">{m.role === "user" ? "환자" : "AI"}</span>{m.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                      <div className="mt-3 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                        <textarea value={commentDrafts[ex.id] ?? ex.doctorComment} onChange={(e) => setCommentDrafts((p) => ({ ...p, [ex.id]: e.target.value }))} placeholder="의사 소견·코멘트 (환자 일지)" rows={2} className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800" />
+                        <div className="mt-1 flex items-center justify-end gap-2">
+                          {savedComment === ex.id && <span className="text-[11px] text-emerald-600">저장됨</span>}
+                          <button onClick={() => saveComment(ex.id, commentDrafts[ex.id] ?? ex.doctorComment)} className="rounded bg-zinc-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-600">코멘트 저장</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {data.examDisclaimer && <p className="text-[11px] leading-relaxed text-zinc-400">{data.examDisclaimer}</p>}
+              </section>
+            )}
+
+            {tab === "daily" && (<>
+            {data.cistEstimate && (
+              <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                  MMSE-K 환산 추정 <span className="text-base">{data.cistEstimate.earned}</span><span className="text-zinc-500">/{data.cistEstimate.max}점</span>
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                  음성 시행 {data.cistEstimate.assessedDomains}개 영역의 정성 평가(0정상~2저하) 기반 추정치 — <strong>시공간(그리기)은 음성 미시행</strong>이라 만점에서 제외. 정식 MMSE-K/CIST 점수가 아니라 참고용이에요.
+                </p>
+              </section>
+            )}
 
             {data.medication && data.medication.items.length > 0 && (
               <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -224,60 +351,6 @@ export default function PatientDetailPage() {
               </section>
             )}
 
-            {data.examSessions && data.examSessions.length > 0 && (
-              <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-                <h2 className="mb-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">검진 문답 기록 · 의사 코멘트</h2>
-                <p className="mb-3 text-[11px] text-zinc-400">검진 중 실제 질문과 환자 응답입니다. 직접 보시고 소견을 남기실 수 있어요(환자 일지).</p>
-                <div className="space-y-4">
-                  {data.examSessions.map((ex) => (
-                    <div key={ex.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800">
-                      <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                        <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{new Date(ex.startedAt).toLocaleString("ko-KR")}</span>
-                        {ex.totalScore !== null && ex.maxScore
-                          ? <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-800 dark:bg-teal-900/40 dark:text-teal-200">정식 채점 {ex.totalScore}/{ex.maxScore}점</span>
-                          : <span className="text-[11px] text-amber-600">{ex.endedAt ? "" : "진행 중"}</span>}
-                      </div>
-                      {ex.items.length > 0 && (
-                        <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                          <p className="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점 (시공간 음성 미시행 제외)</p>
-                          <div className="flex flex-wrap gap-1">
-                            {ex.items.map((it) => (
-                              <span key={it.itemId} title={`${it.prompt} → ${it.answer} (${it.reason})`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>
-                                {it.itemId} {it.score}/{it.max}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div className="max-h-72 space-y-1.5 overflow-y-auto px-3 py-2">
-                        {ex.qa.length === 0 && <p className="text-xs text-zinc-400">기록된 문답이 없습니다.</p>}
-                        {ex.qa.map((m, i) => (
-                          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[85%] rounded-xl px-3 py-1.5 text-xs ${m.role === "user" ? "bg-blue-50 text-blue-900 dark:bg-blue-900/30 dark:text-blue-100" : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"}`}>
-                              <span className="mr-1 text-[10px] font-semibold opacity-60">{m.role === "user" ? "환자" : "AI"}</span>{m.content}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                        <textarea
-                          value={commentDrafts[ex.id] ?? ex.doctorComment}
-                          onChange={(e) => setCommentDrafts((p) => ({ ...p, [ex.id]: e.target.value }))}
-                          placeholder="의사 소견·코멘트 (환자 일지)"
-                          rows={2}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-teal-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                        <div className="mt-1 flex items-center justify-end gap-2">
-                          {savedComment === ex.id && <span className="text-[11px] font-medium text-teal-600">저장됨 ✓</span>}
-                          <button type="button" onClick={() => saveComment(ex.id, commentDrafts[ex.id] ?? ex.doctorComment)} className="rounded-lg bg-teal-600 px-3 py-1 text-xs font-semibold text-white hover:bg-teal-700">코멘트 저장</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">최근 이상 이벤트 (분석기 기록 · 최대 20건)</h2>
               <p className="mb-3 text-[11px] text-zinc-400">분석 근거 요약만 표시됩니다 — 대화 원문은 환자 프라이버시 보호를 위해 공개되지 않습니다.</p>
@@ -295,6 +368,7 @@ export default function PatientDetailPage() {
                 ))}
               </div>
             </section>
+            </>)}
           </>
         )}
       </main>
