@@ -166,7 +166,7 @@ export default function MyPage() {
         companionName: companionName || null,
         companionRelation: companionRelation || null,
         userHonorific: userHonorific || null,
-        screeningMode,
+        // screeningMode는 전송하지 않음 — 가입 시 고정, 서버도 무시(악용 방지)
       };
       if (newPassword) {
         body.currentPassword = currentPassword;
@@ -245,35 +245,18 @@ export default function MyPage() {
               />
             </div>
 
-            {/* 계정 유형(모드) — 가입 시 잘못 골랐을 때 변경 */}
+            {/* 계정 유형(모드) — 가입 시 고정, 변경 불가(권한 상승·검사 모드 스푸핑 악용 차단) */}
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">계정 유형</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setScreeningMode("user")}
-                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "user" ? "border-[#007bff] bg-blue-50 dark:bg-blue-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
-                >
-                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👵 사용자</span>
-                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">일상 대화형 선별</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScreeningMode("pro")}
-                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
-                >
-                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가</span>
-                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">표준 검사 시행</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScreeningMode("general")}
-                  className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
-                >
-                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🧠 일반인</span>
-                  <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">마음 건강 자가점검</span>
-                </button>
+              <div className={`rounded-xl border px-3 py-2.5 ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-[#007bff] bg-blue-50 dark:bg-blue-900/30"}`}>
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                  {screeningMode === "pro" ? "🩺 전문가·보호자" : screeningMode === "general" ? "🧠 일반인" : "👵 사용자"}
+                </span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {screeningMode === "pro" ? "검진 시행·가족 모니터링" : screeningMode === "general" ? "마음 건강 자가점검" : "일상 대화형 선별"}
+                </span>
               </div>
+              <p className="mt-1 text-[11px] text-zinc-400">계정 유형은 가입 시 정해지며 변경할 수 없어요. 바꾸려면 새 계정으로 가입해 주세요.</p>
               {screeningMode === "pro" && (
                 <Link href="/expert" className="mt-2 block rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-center text-sm font-semibold text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-200">
                   🩺 환자 관리 페이지 열기 →
