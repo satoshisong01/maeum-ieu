@@ -99,7 +99,6 @@ export default function ExpertPage() {
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <Link href="/mypage" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">마이페이지</Link>
-            <Link href="/chat" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">대화</Link>
           </div>
         </div>
       </header>

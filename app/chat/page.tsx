@@ -498,9 +498,18 @@ export default function ChatPage() {
     }
   }, []);
 
+  // 전문가·보호자(pro)는 본인이 AI와 대화하지 않음 — 환자 미선택 self-chat 진입 시 환자 목록으로.
+  //   대리 검사(/chat?patient=ID)는 proxyPatientId가 있어 허용.
+  useEffect(() => {
+    if (status === "authenticated" && paramsReady && screeningMode === "pro" && !proxyPatientId) {
+      window.location.replace("/expert");
+    }
+  }, [status, paramsReady, screeningMode, proxyPatientId]);
+
   // 진입 시: 최근 대화 불러오기 + 시간 경과에 따라 AI 인사
   useEffect(() => {
     if (status !== "authenticated" || conversationId !== null || !paramsReady) return;
+    if (screeningMode === "pro" && !proxyPatientId) return; // pro self-chat은 위에서 /expert로 리다이렉트
 
     const RETURNING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간
 
@@ -604,7 +613,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, conversationId, getContext, paramsReady, proxyPatientId]);
+  }, [status, conversationId, getContext, paramsReady, proxyPatientId, screeningMode]);
 
   // ─── 복약/일과 알림 폴링 ────────────────────────────────────────────────
   //   1분마다 /api/medications/check 호출 → due 발견 시 /trigger 로 멘트 받아 AI 메시지로 표시·재생.
