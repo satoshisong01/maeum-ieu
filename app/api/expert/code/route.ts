@@ -27,14 +27,17 @@ export async function GET() {
   const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { expertCode: true } });
   if (me?.expertCode) return NextResponse.json({ code: me.expertCode });
 
-  // 생성 — unique 충돌 시 재시도 (31^8 공간이라 사실상 무충돌)
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // 멱등 발급 — expertCode가 NULL일 때만 갱신(조건부). 동시 두 요청이 와도 한쪽만 count===1로 성공,
+  //   진 쪽은 기존 코드를 재조회해 반환(코드 덮어쓰기·무효화 방지). unique 충돌 시 재시도.
+  for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateCode();
     try {
-      await prisma.user.update({ where: { id: session.user.id }, data: { expertCode: code } });
-      return NextResponse.json({ code });
+      const res = await prisma.user.updateMany({ where: { id: session.user.id, expertCode: null }, data: { expertCode: code } });
+      if (res.count === 1) return NextResponse.json({ code });
+      const cur = await prisma.user.findUnique({ where: { id: session.user.id }, select: { expertCode: true } });
+      if (cur?.expertCode) return NextResponse.json({ code: cur.expertCode });
     } catch {
-      // unique 충돌 — 재시도
+      // unique 충돌 — 다른 코드로 재시도
     }
   }
   return NextResponse.json({ error: "코드 생성에 실패했습니다. 다시 시도해주세요." }, { status: 500 });

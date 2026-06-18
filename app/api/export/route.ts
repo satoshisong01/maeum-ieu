@@ -13,11 +13,22 @@ const DOMAIN_LABELS: Record<string, string> = {
   attention_calculation: "주의력/계산",
 };
 
+/** CSV 셀 — 수식 인젝션(=,+,-,@,탭,CR로 시작) 무력화 + 따옴표 이스케이프(Excel 보호). */
+function csvCell(v: string | null | undefined): string {
+  let s = (v ?? "").replace(/\r?\n/g, " ");
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 /** GET /api/export?type=chat|assessment */
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+  // 어르신(user) 본인은 자기 인지결과·분석노트 비공개(A안) — 결과는 보호자·전문가만 열람.
+  if (session.user.screeningMode === "user") {
+    return NextResponse.json({ error: "본인은 열람할 수 없습니다." }, { status: 403 });
   }
 
   const userId = session.user.id;
@@ -53,10 +64,8 @@ async function exportChat(userId: string) {
     const date = dt.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
     const time = dt.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
     const role = m.role === "user" ? "사용자" : "AI";
-    const content = `"${m.content.replace(/"/g, '""').replace(/\n/g, " ")}"`;
     const anomaly = m.isAnomaly ? "O" : "";
-    const note = m.analysisNote ? `"${m.analysisNote.replace(/"/g, '""')}"` : "";
-    return `${date},${time},${role},${content},${anomaly},${note}`;
+    return `${date},${time},${role},${csvCell(m.content)},${anomaly},${csvCell(m.analysisNote)}`;
   });
 
   const csv = BOM + header + "\n" + rows.join("\n");
@@ -87,9 +96,7 @@ async function exportAssessments(userId: string) {
   const header = "날짜,영역,영역명,점수,신뢰도,근거,분석노트";
   const csvRows = rows.map((r) => {
     const domainLabel = DOMAIN_LABELS[r.domain] || r.domain;
-    const evidence = r.evidence ? `"${r.evidence.replace(/"/g, '""')}"` : "";
-    const note = r.note ? `"${r.note.replace(/"/g, '""')}"` : "";
-    return `${r.session_date},${r.domain},${domainLabel},${r.score},${r.confidence},${evidence},${note}`;
+    return `${r.session_date},${r.domain},${domainLabel},${r.score},${r.confidence},${csvCell(r.evidence)},${csvCell(r.note)}`;
   });
 
   const csv = BOM + header + "\n" + csvRows.join("\n");

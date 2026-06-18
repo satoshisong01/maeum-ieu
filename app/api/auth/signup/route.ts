@@ -40,9 +40,17 @@ export async function POST(req: Request) {
       );
     }
 
-    if (password.length < 8) {
+    if (password.length < 8 || password.length > 128) {
       return NextResponse.json(
-        { error: "비밀번호는 8자 이상이어야 합니다." },
+        { error: "비밀번호는 8~128자여야 합니다." },
+        { status: 400 }
+      );
+    }
+
+    // 이메일 형식·길이 검증 — 잘못된/무제한 값 저장 방지
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json(
+        { error: "올바른 이메일 형식이 아닙니다." },
         { status: 400 }
       );
     }
@@ -67,15 +75,15 @@ export async function POST(req: Request) {
       data: {
         email,
         password: hashed,
-        name: name ?? null,
+        name: name?.trim().slice(0, 40) || null,
         age: age != null && Number.isInteger(age) && age >= 0 ? age : null,
         gender: gender === "male" || gender === "female" || gender === "other" ? gender : null,
-        guardianName: guardianName?.trim() || null,
-        guardianPhone: guardianPhone?.trim() || null,
-        guardianRelation: guardianRelation?.trim() || null,
-        companionName: companionName?.trim() || undefined,
-        companionRelation: companionRelation?.trim() || undefined,
-        userHonorific: userHonorific?.trim() || null,
+        guardianName: guardianName?.trim().slice(0, 40) || null,
+        guardianPhone: guardianPhone?.trim().slice(0, 30) || null,
+        guardianRelation: guardianRelation?.trim().slice(0, 20) || null,
+        companionName: companionName?.trim().slice(0, 20) || undefined,
+        companionRelation: companionRelation?.trim().slice(0, 20) || undefined,
+        userHonorific: userHonorific?.trim().slice(0, 20) || null,
         screeningMode: screeningMode === "pro" ? "pro" : screeningMode === "general" ? "general" : "user", // 계정 역할(가입 시 선택)
       },
     });

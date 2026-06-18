@@ -12,12 +12,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isValidSpeakerLabel } from "@/lib/chat/speaker";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+  if (!checkRateLimit(`speaker:${session.user.id}`, 60, 60_000).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({}));
   const { messageId, label } = body as { messageId?: string; label?: string | null };

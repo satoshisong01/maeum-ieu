@@ -30,27 +30,32 @@ export async function POST(req: Request) {
   if (!userText || !aiText || !conversationId) {
     return NextResponse.json({ error: "userText/aiText/conversationId 필수" }, { status: 400 });
   }
-  // 대화 소유권 검증 — 타인 대화에 끼워넣기 차단
-  const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { userId: true } });
-  if (!conv || conv.userId !== userId) return NextResponse.json({ error: "대화를 찾을 수 없습니다." }, { status: 404 });
+  try {
+    // 대화 소유권 검증 — 타인 대화에 끼워넣기 차단
+    const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { userId: true } });
+    if (!conv || conv.userId !== userId) return NextResponse.json({ error: "대화를 찾을 수 없습니다." }, { status: 404 });
 
-  const { userMsgId } = await saveMessages({ conversationId, userId, userContent: userText, assistantContent: aiText });
+    const { userMsgId } = await saveMessages({ conversationId, userId, userContent: userText, assistantContent: aiText });
 
-  // 인지 분석 — 일반인(general)은 목적 분리 원칙대로 미실행
-  const mode = session.user.screeningMode === "pro" ? "pro" : session.user.screeningMode === "general" ? "general" : "user";
-  if (mode !== "general" && userMsgId) {
-    const rows = await prisma.message.findMany({
-      where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
-      select: { role: true, content: true, createdAt: true },
-    });
-    const historyText = buildHistoryText(rows.reverse().map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt.toISOString() })));
-    const t = getTimeContext();
-    const envBlock = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]\n- 현재 한국 시각: ${t.dateStr}\n- 시간대: ${t.timeLabel}`;
-    runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userText, assistantResponse: aiText, historyText, envBlock })
-      .catch((e) => console.error("[live-turn:cognitive]", e));
+    // 인지 분석 — 일반인(general)은 목적 분리 원칙대로 미실행
+    const mode = session.user.screeningMode === "pro" ? "pro" : session.user.screeningMode === "general" ? "general" : "user";
+    if (mode !== "general" && userMsgId) {
+      const rows = await prisma.message.findMany({
+        where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
+        select: { role: true, content: true, createdAt: true },
+      });
+      const historyText = buildHistoryText(rows.reverse().map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt.toISOString() })));
+      const t = getTimeContext();
+      const envBlock = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]\n- 현재 한국 시각: ${t.dateStr}\n- 시간대: ${t.timeLabel}`;
+      runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userText, assistantResponse: aiText, historyText, envBlock })
+        .catch((e) => console.error("[live-turn:cognitive]", e));
+    }
+
+    // 응급 어휘 감지 — Live 경로는 서버 즉답 게이트가 없으므로 클라에 신호만 전달
+    const emergency = detectEmergency(userText);
+    return NextResponse.json({ ok: true, emergencyLevel: emergency.level });
+  } catch (e) {
+    console.error("[live-turn]", e);
+    return NextResponse.json({ error: "저장 중 오류가 발생했습니다." }, { status: 500 });
   }
-
-  // 응급 어휘 감지 — Live 경로는 서버 즉답 게이트가 없으므로 클라에 신호만 전달
-  const emergency = detectEmergency(userText);
-  return NextResponse.json({ ok: true, emergencyLevel: emergency.level });
 }

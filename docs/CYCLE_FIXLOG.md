@@ -771,6 +771,26 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - 마이페이지 연결 라벨 "전문가" → "보호자·전문가", 안내에 "어르신 본인에게는 결과 비공개" 명시.
 - **라이브 E2E PASS**: 어르신 health-logs 403·건강기록 링크 없음·/dashboard→/chat 리다이렉트 / 보호자(pro)는 /expert 상세+복약 열람. tsc 0 · safety 116.
 
+## 2026-06-18 (밤) — 품질·안정성 하드닝 (4축 적대적 감사 → 확정 16건 수정)
+
+하드닝 = 공격·외부장애·동시요청·잘못된 입력 등 악조건에서도 안 무너지게 굳히는 작업.
+4축(권한·입력검증·장애내성·동시성) 워크플로 감사 → 발견 21건 중 적대적 검증 통과 **확정 16건** 수정.
+
+**🔴 HIGH — 어르신 본인 결과 열람 우회(A안 프라이버시 계약 위반)**
+- `/api/summary`·`/api/export` GET에 `screeningMode==="user"` 403 가드 누락(health-logs엔 있었음) → 어르신이 쿠키로 직접 호출 시 자기 인지결과·CSV(점수·근거·분석노트) 열람 가능. **두 라우트에 403 추가**. 라이브: user 역할 summary/export/health-logs 전부 403 ✅.
+
+**🟠 MEDIUM(7)**
+- 대리검사 proxy/exam이 환자 역할 미검증 → general 계정에 인지데이터 기록 가능. proxy 분기 + exam start에 **환자 general 차단(400)**.
+- `live/turn`·`mental/results` 외부 try-catch 부재 → DB 장애 시 비정상 500. **try-catch + 폴백**.
+- 복약 트리거 중복 발송(check-then-act race) → **원자적 CAS**(읽은 lastTriggeredAt 값일 때만 갱신, 패배 시 skip).
+- rate-limit 누락: `expert/exam`(30/min)·`profile`(10/min·비번변경 CPU)·`medications` POST/PUT/DELETE(30/min)·`speaker`(60/min) **추가**.
+- 인메모리 rate-limit이 Vercel 다중 인스턴스 무력 → **인프라 항목(Upstash 도입 시 모듈 교체)으로 명확히 주석·기록** (코드 외, 미구현).
+
+**🟡 LOW(6)**
+- export CSV 수식 인젝션(=,+,-,@) → `csvCell` 헬퍼로 무력화. signup 이메일 형식·길이·전 필드 상한 검증. profile 문자열 필드 길이 상한(프롬프트 인젝션 증폭 방어). expert/code 동시 발급 경합 → **멱등 발급(expertCode NULL일 때만, 패배 시 기존 반환)**. exam_session 동시 시작 → **부분 unique 인덱스 `uq_es_open`(전문가·환자당 open 1개)** + start INSERT 경합 시 기존 세션 반환. health-logs의 message 쿼리 try-catch(부분 저하).
+
+검증: tsc 0·safety 116·vitest 196 · 라이브(어르신 403 차단 + 검진 핫패스 회귀 0) PASS.
+
 ## 2026-06-18 (저녁) — 검진 워크플로 완성: 회차 추세 심화 + 결과지 출력
 
 검진 평가(오후)에 이어, 전문가 임상 워크플로를 마무리.

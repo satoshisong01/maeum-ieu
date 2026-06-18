@@ -54,6 +54,15 @@ async function main() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_eis_session ON exam_item_score(session_id)`);
     // 멱등성 — 같은 세션·항목은 1행만(재채점은 UPSERT). 중복 INSERT로 인한 점수 이중집계 방지.
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_eis_session_item ON exam_item_score(session_id, item_id)`);
+    // 한 (전문가,환자)당 진행 중(open) 세션 최대 1개 — 동시 시작/고아 세션 방지(부분 unique).
+    //   기존 중복 open 세션은 최신만 남기고 정리한 뒤 인덱스 생성(인덱스 충돌 방지).
+    await client.query(`
+      UPDATE exam_session SET ended_at = now()
+      WHERE ended_at IS NULL AND id NOT IN (
+        SELECT DISTINCT ON (expert_user_id, patient_user_id) id FROM exam_session
+        WHERE ended_at IS NULL ORDER BY expert_user_id, patient_user_id, started_at DESC
+      )`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_es_open ON exam_session(expert_user_id, patient_user_id) WHERE ended_at IS NULL`);
     console.log("✓ exam_session(+항목채점 컬럼) + exam_item_score 생성 완료");
   } finally {
     client.release(); await pool.end();
