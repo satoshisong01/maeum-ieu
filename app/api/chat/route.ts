@@ -22,6 +22,8 @@ import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnoma
 import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
+import { randomUUID } from "crypto";
+import { buildExamPlan, renderDomainBattery, scoreDomainAnswer } from "@/lib/screening/exam-runner";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
@@ -237,6 +239,74 @@ async function handleReEngageGreeting(
   const cleaned = normalizeImnida(text).split(/(?<=[.!?~])\s+/).slice(0, 2).join(" ").trim();
   if (conversationId) await saveGreetingMessage(conversationId, cleaned);
   return NextResponse.json({ text: cleaned, role: "assistant" });
+}
+
+// ─── 전문가 검진 상태머신 (Phase 2) ───────────────────────────────────────
+interface ExamSessionRow { id: string; item_order: string | null; current_item: number }
+
+/** 진행 중(미종료) 검진 세션 조회 — 전문가(actor)↔환자 기준. */
+async function lookupOpenExam(expertId: string, patientId: string): Promise<ExamSessionRow | null> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<ExamSessionRow[]>(
+      `SELECT id, item_order, current_item FROM exam_session WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`,
+      expertId, patientId);
+    return rows[0] ?? null;
+  } catch { return null; }
+}
+
+/** 채점용 환경(오늘 날짜·요일·계절) — 시간 지남력 정답 판정에 필요. */
+function examEnv(): string {
+  const kst = new Date(Date.now() + 9 * 3600 * 1000);
+  const wd = ["일", "월", "화", "수", "목", "금", "토"][kst.getUTCDay()];
+  const mo = kst.getUTCMonth() + 1;
+  const season = mo === 12 || mo <= 2 ? "겨울" : mo <= 5 ? "봄" : mo <= 8 ? "여름" : "가을";
+  return `오늘은 ${kst.getUTCFullYear()}년 ${mo}월 ${kst.getUTCDate()}일 ${wd}요일, 계절은 ${season}.`;
+}
+
+/** 검진 시작 — 영역 순서 확정 + 첫 영역 문항 제시(자동 인사 대체). */
+async function handleExamGreeting(examSession: ExamSessionRow, conversationId: string | undefined, dateSeed: string) {
+  const order = buildExamPlan(`${conversationId ?? "x"}:${dateSeed}`);
+  await prisma.$executeRawUnsafe(`UPDATE exam_session SET item_order = $2, current_item = 0 WHERE id = $1`, examSession.id, JSON.stringify(order));
+  const text = `안녕하세요. 지금부터 기억력과 사고력을 알아보는 간단한 검사를 시작하겠습니다. 편하게 답해 주시면 돼요. ${renderDomainBattery(order[0])}`;
+  if (conversationId) await saveGreetingMessage(conversationId, text);
+  return NextResponse.json({ text, role: "assistant" });
+}
+
+/** 검진 한 턴 — 현재 영역 답변을 항목별 채점 → 다음 영역 문항(또는 종료). */
+async function handleExamTurn(params: { examSession: ExamSessionRow; answer: string; conversationId?: string; userId: string; transcription?: string }) {
+  const { examSession, answer, conversationId, userId, transcription } = params;
+  const order: string[] = (() => { try { return JSON.parse(examSession.item_order || "[]"); } catch { return []; } })();
+  const idx = examSession.current_item;
+  const ans = (answer || "").trim();
+
+  if (!order.length || idx >= order.length) {
+    const text = "오늘 검사는 모두 끝났습니다. 수고 많으셨어요.";
+    if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
+    return NextResponse.json({ text, role: "assistant", transcription });
+  }
+
+  // 현재 영역 항목별 채점 + 저장
+  const scores = await scoreDomainAnswer(order[idx], ans, examEnv());
+  for (const s of scores) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      `eis_${randomUUID()}`, examSession.id, s.itemId, s.domain, s.prompt, s.answer, s.score, s.max, s.reason).catch(() => {});
+  }
+
+  const nextIdx = idx + 1;
+  let text: string;
+  if (nextIdx >= order.length) {
+    const rows = await prisma.$queryRawUnsafe<{ t: number; m: number }[]>(
+      `SELECT COALESCE(SUM(score),0)::int t, COALESCE(SUM(max_points),0)::int m FROM exam_item_score WHERE session_id = $1`, examSession.id);
+    await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2, total_score = $3, max_score = $4, ended_at = now() WHERE id = $1`,
+      examSession.id, nextIdx, rows[0]?.t ?? 0, rows[0]?.m ?? 0);
+    text = "이제 검사가 모두 끝났습니다. 끝까지 잘 해주셔서 감사합니다. 수고 많으셨어요."; // 점수는 환자에게 비노출(검사자만 열람)
+  } else {
+    await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2 WHERE id = $1`, examSession.id, nextIdx);
+    text = `네, 답변 감사합니다. 다음 질문이에요. ${renderDomainBattery(order[nextIdx])}`;
+  }
+  if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
+  return NextResponse.json({ text, role: "assistant", transcription });
 }
 
 /** 3) 날짜/시간 질문 직접 응답 — 음성 경로에서 오면 transcription을 payload에 실어 클라이언트가 사용자 발화를 표시 */
@@ -844,6 +914,9 @@ export async function POST(req: Request) {
       userId = proxyPatientId;
     }
 
+    // 전문가 검진 상태머신 — 대리 검사 중 진행 세션이 있으면 항목단위 검진으로 라우팅
+    const examSession = (proxyPatientId && mode === "pro") ? await lookupOpenExam(actorId, proxyPatientId) : null;
+
     // 고비용 엔드포인트 폭주 방어 — 행위 주체(전문가/본인) 기준 분당 40회 (대리 검사 다환자 남용도 차단)
     const rl = checkRateLimit(`chat:${actorId}`, 40, 60_000);
     if (!rl.ok) {
@@ -891,9 +964,22 @@ export async function POST(req: Request) {
     });
     _t.promptMs = Math.round(performance.now() - _m);
 
+    // 검진 시작(대리 검사) — 자동 인사 대신 표준 문항 시행 시작
+    if (isInitialGreeting && examSession) {
+      return handleExamGreeting(examSession, conversationId, new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10));
+    }
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId, mode);
     if (isReEngage) return handleReEngageGreeting(systemPrompt, honorific, companionName, history, conversationId, reEngageAttempt ?? 1);
+
+    // 검진 진행 턴 — 진행 중 검진 세션이 있으면 항목단위 채점 경로로(일상 대화·인지분석 우회)
+    if (examSession && examSession.item_order) {
+      if (isAudio && sttPromise) {
+        const tr = (await sttPromise.catch(() => "")) || "";
+        return handleExamTurn({ examSession, answer: tr, conversationId, userId, transcription: tr || "(음성 응답)" });
+      }
+      if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId });
+    }
 
     const historyText = buildHistoryText(history);
 

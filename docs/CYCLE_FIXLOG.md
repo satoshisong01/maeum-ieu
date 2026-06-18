@@ -778,6 +778,12 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **Phase 2 — 전문가 검진 항목단위 상태머신 + 정식 채점** (2026-06-18)
+  - 검진을 LLM 즉흥 진행 → **확정적 상태머신**으로: exam_session.item_order(영역 순서)·current_item으로 영역을 하나씩 진행. 루프·점프·일상대화 오염 해소(A-Z에서 본 "무슨 시 반복"·"방금 말씀하신 것" 문제 근본 해결).
+  - **항목별 0~배점 채점 → 정식 점수**: 각 영역 답변을 exam-runner.scoreDomainAnswer로 항목별 채점(시간 지남력은 env 오늘날짜로 정답 판정, 장소는 검사자 확인 보수채점). exam_item_score 저장 + exam_session.total_score/max_score.
+  - /api/chat: 검진 시작(isInitialGreeting+세션)→handleExamGreeting(순서 확정+첫 영역), 턴→handleExamTurn(채점+다음 영역/종료). 인지분석(0~2) 우회. 점수는 환자 비노출.
+  - 전문가 상세: **정식 채점 N/29점 + 항목별 채점(ot_year 1/1 등)** 표시(문답 기록·코멘트와 함께).
+  - **라이브 E2E PASS**: 7영역 셔플 진행·루프 없음·정상 종료·26/29점·19항목 정확 채점(유사성 부분점 1/2·유창성 0/2 등 기준대로)·UI 렌더. tsc 0·safety 116·vitest 178.
 - **소표본 과대판정 방지 — 전문가 뷰 잠정 등급(채점 신뢰성)** (2026-06-18)
   - A-Z 테스트에서 7턴에 "중증" 단정이 전문가 목록/상세에 그대로 노출됨(대시보드엔 잠정 가드 있었으나 전문가 뷰엔 없었음).
   - `severity.ts`에 공유 헬퍼 `assessReliability(checks, domains)` 추가(충분=10회+·3영역+ / 잠정=5회+·2영역+ / 그 외 판정보류 — 대시보드와 동일 기준). 전문가 목록·상세 API가 reliability 반환, UI는 **자료 부족 시 "평가중", 잠정 시 "(잠정)" 라벨**.

@@ -23,7 +23,7 @@ interface Detail {
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
   cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
-  examSessions?: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; qa: { role: string; content: string; at: string }[] }[];
+  examSessions?: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; totalScore: number | null; maxScore: number | null; items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[]; qa: { role: string; content: string; at: string }[] }[];
 }
 
 const TIER_STYLE: Record<string, string> = {
@@ -233,8 +233,22 @@ export default function PatientDetailPage() {
                     <div key={ex.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800">
                       <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
                         <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{new Date(ex.startedAt).toLocaleString("ko-KR")}</span>
-                        <span className="text-[11px] text-zinc-400">{ex.qa.length}개 대화</span>
+                        {ex.totalScore !== null && ex.maxScore
+                          ? <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-800 dark:bg-teal-900/40 dark:text-teal-200">정식 채점 {ex.totalScore}/{ex.maxScore}점</span>
+                          : <span className="text-[11px] text-amber-600">{ex.endedAt ? "" : "진행 중"}</span>}
                       </div>
+                      {ex.items.length > 0 && (
+                        <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                          <p className="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점 (시공간 음성 미시행 제외)</p>
+                          <div className="flex flex-wrap gap-1">
+                            {ex.items.map((it) => (
+                              <span key={it.itemId} title={`${it.prompt} → ${it.answer} (${it.reason})`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>
+                                {it.itemId} {it.score}/{it.max}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="max-h-72 space-y-1.5 overflow-y-auto px-3 py-2">
                         {ex.qa.length === 0 && <p className="text-xs text-zinc-400">기록된 문답이 없습니다.</p>}
                         {ex.qa.map((m, i) => (
