@@ -21,6 +21,7 @@ export const ChatRequestSchema = z.object({
   isReEngage: z.boolean().optional(),
   reEngageAttempt: z.number().int().min(1).max(2).optional(),
   mode: z.enum(["user", "pro", "general"]).optional(), // 선별 모드(전문가 검사 시행 / 사용자 대화 / 일반인 정신건강) — 서버는 세션 역할로 재결정(스푸핑 무시)
+  proxyPatientId: z.string().max(100).optional(), // 전문가 대리 검사 — 결과를 이 환자 계정에 귀속(서버가 ExpertPatient 연결 검증; pro 계정만)
 
   audio: z
     .object({

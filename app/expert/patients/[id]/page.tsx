@@ -57,6 +57,11 @@ export default function PatientDetailPage() {
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">🩺 환자 리포트</h1>
           <div className="flex items-center gap-3">
+            {params?.id && (
+              <Link href={`/chat?patient=${params.id}`} className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-700">
+                🩺 검사 시작
+              </Link>
+            )}
             <ThemeToggle />
             <Link href="/expert" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">← 환자 목록</Link>
           </div>

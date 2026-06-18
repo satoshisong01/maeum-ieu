@@ -818,8 +818,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "잘못된 요청 형식입니다." }, { status: 400 });
     }
     const body = parsed.data as ChatRequestBody;
-    const { messages, conversationId, isInitialGreeting, isReturningGreeting, isReEngage, reEngageAttempt, audio, context: ctx } = body;
-    const userId = session.user.id;
+    const { messages, conversationId, isInitialGreeting, isReturningGreeting, isReEngage, reEngageAttempt, audio, context: ctx, proxyPatientId } = body;
+    const actorId = session.user.id;
     // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
     // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
     const mode: "user" | "pro" | "general" =
@@ -827,8 +827,25 @@ export async function POST(req: Request) {
       : session.user.screeningMode === "general" ? "general"
       : "user";
 
-    // 고비용 엔드포인트 폭주 방어 — 단일 계정 분당 40회 (정상 대화는 충분, 자동화 남용 차단)
-    const rl = checkRateLimit(`chat:${userId}`, 40, 60_000);
+    // 전문가 대리 검사 — pro가 연결된 환자를 선택해 검사하면 이력·인지·저장을 환자 계정에 귀속.
+    //   보안: pro 계정만, ExpertPatient active 연결 검증. 그 외엔 본인(actor)에 귀속.
+    let userId = actorId;
+    if (proxyPatientId && proxyPatientId !== actorId) {
+      if (mode !== "pro") {
+        return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+      }
+      const link = await prisma.expertPatient.findUnique({
+        where: { expertUserId_patientUserId: { expertUserId: actorId, patientUserId: proxyPatientId } },
+        select: { status: true },
+      });
+      if (!link || link.status !== "active") {
+        return NextResponse.json({ error: "연결되지 않은 환자입니다." }, { status: 403 });
+      }
+      userId = proxyPatientId;
+    }
+
+    // 고비용 엔드포인트 폭주 방어 — 행위 주체(전문가/본인) 기준 분당 40회 (대리 검사 다환자 남용도 차단)
+    const rl = checkRateLimit(`chat:${actorId}`, 40, 60_000);
     if (!rl.ok) {
       return NextResponse.json(
         { error: "잠시 후 다시 시도해주세요." },
