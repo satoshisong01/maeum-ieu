@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn, getSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
@@ -35,9 +35,8 @@ export default function LoginPage() {
       // 아이디 저장 — 체크 시 이메일 보관, 해제 시 삭제
       if (remember) localStorage.setItem("savedEmail", email);
       else localStorage.removeItem("savedEmail");
-      // 전문가·보호자는 대화 화면이 아니라 연결된 환자 목록으로 — 본인은 검진 대상이 아님
-      const session = await getSession();
-      window.location.href = session?.user?.screeningMode === "pro" ? "/expert" : "/chat";
+      // 역할별 랜딩은 홈(/)이 서버에서 결정 — pro는 /expert, 그 외 /chat. /chat 깜빡임 방지.
+      window.location.href = "/";
     } finally {
       setLoading(false);
     }

@@ -9,6 +9,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../../../theme-toggle";
+import { LogoutButton } from "../../../LogoutButton";
 
 interface DomainRow { domain: string; label: string; recentAvg: number | null; recentCount: number; baselineAvg: number | null; baselineCount: number }
 interface WeekRow { weekStart: string; avg: number; count: number }
@@ -65,6 +66,7 @@ export default function PatientDetailPage() {
             )}
             <ThemeToggle />
             <Link href="/expert" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">← 환자 목록</Link>
+            <LogoutButton />
           </div>
         </div>
       </header>

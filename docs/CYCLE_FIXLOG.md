@@ -778,6 +778,8 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **pro 로그인 /chat 깜빡임 제거** — 홈(`/`) 서버 리다이렉트를 역할별(pro→/expert)로 + 로그인 성공 시 홈(`/`)으로 보내 서버가 랜딩 결정(getSession 타이밍 의존 제거). 라이브: 로그인 경로 /login→/expert 직행(/chat 무경유) PASS.
+- **로그아웃 버튼 전 화면 공통화** — `LogoutButton` 컴포넌트 신설 + /expert·/expert/patients/[id]·/mypage·/dashboard·/mental·/live 헤더에 추가(기존 /chat은 아이콘 로그아웃 유지). 라이브: 각 화면 로그아웃 표시 PASS.
 - **로그인 아이디 저장 체크박스** — localStorage("savedEmail")로 이메일 저장/자동채움. 라이브: 저장·재방문 자동채움·체크 유지 PASS.
 - **전문가·보호자 self-chat 차단** — pro는 본인이 AI와 대화 안 함. /chat 환자 미선택 진입 시 /expert로 리다이렉트(대리검사 /chat?patient=는 허용) + /expert 헤더 '대화' 링크 제거. 라이브: pro self-chat→/expert·대리검사 유지·user 정상 PASS.
 - **계정 유형 변경 차단(악용 방지)** — screeningMode는 가입 시에만 결정. /api/users/profile에서 screeningMode 업데이트 제거(서버가 무시) + 마이페이지 모드 버튼을 읽기전용 표시로 교체. user→pro 권한 상승/검사 모드 스푸핑 차단. 라이브: user PATCH{pro} → 모드 user 유지 PASS.

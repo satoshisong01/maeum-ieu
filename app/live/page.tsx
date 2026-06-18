@@ -11,6 +11,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { LiveVoiceEngine } from "../chat/live-voice";
+import { LogoutButton } from "../LogoutButton";
 
 interface Bubble { role: "user" | "assistant"; text: string; final?: boolean }
 
@@ -103,6 +104,7 @@ function LiveInner() {
         <div className="flex items-center gap-3 text-sm">
           <span className="text-teal-300">{stateLabel[state] ?? state}</span>
           <Link href="/chat" className="text-zinc-400 hover:text-zinc-200">기존 대화로</Link>
+          <LogoutButton className="text-zinc-400 hover:text-zinc-200" />
         </div>
       </header>
 
