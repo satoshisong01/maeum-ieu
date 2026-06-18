@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
@@ -25,7 +25,9 @@ export default function LoginPage() {
         setError("이메일 또는 비밀번호를 확인해 주세요.");
         return;
       }
-      window.location.href = "/chat";
+      // 전문가·보호자는 대화 화면이 아니라 연결된 환자 목록으로 — 본인은 검진 대상이 아님
+      const session = await getSession();
+      window.location.href = session?.user?.screeningMode === "pro" ? "/expert" : "/chat";
     } finally {
       setLoading(false);
     }

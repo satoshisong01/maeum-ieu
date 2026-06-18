@@ -148,6 +148,8 @@ export default function SignupPage() {
             required
             minLength={8}
           />
+          {/* 환자(어르신) 전용 정보 — 전문가·보호자 계정은 본인이 검진 대상이 아니므로 입력 불필요 */}
+          {screeningMode !== "pro" && (<>
           <div className="flex gap-2">
             <input
               type="number"
@@ -252,6 +254,7 @@ export default function SignupPage() {
               <MedicationEditor persist={false} onChange={setMedicationDrafts} />
             </div>
           </details>
+          </>)}
 
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
