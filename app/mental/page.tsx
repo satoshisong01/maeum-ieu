@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import { LogoutButton } from "../LogoutButton";
 
 interface ResultRow { id: string; scale: string; scaleName?: string; maxTotal?: number; date: string; total: number; severity: string; crisis?: boolean; text: string; recommend: boolean; profile?: boolean }
 
@@ -52,6 +53,7 @@ export default function MentalPage() {
             <ThemeToggle />
             <Link href="/chat" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">대화</Link>
             <Link href="/mypage" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">마이페이지</Link>
+            <LogoutButton />
           </div>
         </div>
       </header>

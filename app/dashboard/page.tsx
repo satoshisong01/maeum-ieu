@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { computeOverallAvg, TIER_BOUNDS } from "@/lib/health/severity";
+import { LogoutButton } from "../LogoutButton";
 
 interface CognitiveAssessment {
   domain: string; score: number; confidence: number;
@@ -190,6 +191,7 @@ export default function DashboardPage() {
             )}
           </div>
           <Link href="/chat" className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100">대화로 돌아가기</Link>
+          <LogoutButton className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100" />
         </div>
       </header>
 

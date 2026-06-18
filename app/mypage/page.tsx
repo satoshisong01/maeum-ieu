@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import { LogoutButton } from "../LogoutButton";
 import MedicationEditor from "../components/MedicationEditor";
 
 interface Profile {
@@ -229,6 +230,7 @@ export default function MyPage() {
             <Link href="/chat" className="text-sm text-[#007bff] hover:underline dark:text-blue-400">
               ← 대화
             </Link>
+            <LogoutButton />
           </div>
         </div>
 
