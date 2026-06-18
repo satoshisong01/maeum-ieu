@@ -8,7 +8,7 @@ import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./prof
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
 import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
 import { getCognitiveTierForPrompt, buildCognitiveAdaptationHint, getWeakDomainsForPrompt, type CognitiveTierResult } from "@/lib/health/cognitive-level";
-import { renderProtocolForGuide } from "@/lib/screening/cist-bank";
+import { renderProtocolForGuide, buildExamOrder } from "@/lib/screening/cist-bank";
 
 /**
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
@@ -68,10 +68,10 @@ function buildProGuideBlock(companionName: string, completedKo: string[], remain
 
 **시행 원칙(엄수)**
 1. 공감·잡담은 한 문장 이내로 최소화. **한 응답에 딱 한 문항만** 또렷하고 정확하게 질문한다.
-2. 아래 표준 문항을 **그대로** 읽는다. 임의로 쉽게 바꾸거나, 보기를 주거나, 힌트를 주지 않는다.
+2. 아래 표준 문항의 **과제(측정 내용)는 그대로 유지**하되, 표현은 매 검진 **자연스럽게 조금씩 다르게** 한다(매번 똑같은 문장 반복 금지 — 반복 검진 시 환자 부담↓). 단, ❌ 보기·힌트 제공, ❌ 더 쉽게 바꾸기, ❌ 단어·숫자·정답 변경은 금지(타당성 유지). 예: "올해가 몇 년도입니까?" ↔ "올해는 몇 년도인지 말씀해 주시겠어요?"는 허용, 단어 세 개(나무·자동차·모자)나 100−7 같은 핵심 자극은 변경 금지.
 3. 사용자가 답하면 정답 여부를 평가하거나 알려주지 않는다(채점은 시스템이 함). "네", "다음 질문 드리겠습니다" 정도로 중립적으로 받고 바로 다음 문항으로.
 4. 회상 문항에서 사용자가 못 맞혀도 **정답을 알려주지 않는다**(검사 무효화 방지).
-5. 정해진 순서대로 진행한다.
+5. **아래 "다음 시행할 영역" 순서대로** 진행한다(이 순서는 검진마다 조금씩 달라짐 — 같은 검진 안에서는 그대로).
 
 **오늘 이미 시행한 영역(다시 묻지 말 것)**: ${completedKo.length ? completedKo.join(", ") : "없음"}
 **다음 시행할 영역(이 순서대로 하나씩)**: ${remainingKo.join(" → ")}
@@ -166,7 +166,12 @@ export async function buildSystemPrompt(params: {
     attention_calculation: "주의력/계산 (암산, 숫자 게임)",
   };
 
-  const remaining = allDomains.filter((d) => !assessed.includes(d));
+  let remaining = allDomains.filter((d) => !assessed.includes(d));
+  // 전문가 검진: 매 검진(대화ID+날짜 시드)마다 영역 순서를 조금씩 다르게(타당성 제약 유지). 같은 검진 내 안정.
+  if (mode === "pro") {
+    const examOrder = buildExamOrder(`${conversationId ?? "x"}:${todayKstEarly}`);
+    remaining = [...remaining].sort((a, b) => examOrder.indexOf(a) - examOrder.indexOf(b));
+  }
   const completedKo = assessed.map((d) => DOMAIN_KO[d] || d);
   const remainingKo = remaining.map((d) => DOMAIN_KO[d] || d);
 
