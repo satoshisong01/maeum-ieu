@@ -21,6 +21,7 @@ interface Detail {
   domains: DomainRow[]; weekly: WeekRow[]; events: EventRow[];
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
+  cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
 }
 
 const TIER_STYLE: Record<string, string> = {
@@ -84,6 +85,16 @@ export default function PatientDetailPage() {
                 {data.overallAvg !== null && <span className="text-sm text-zinc-600 dark:text-zinc-300">7일 평균 {data.overallAvg}</span>}
               </div>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{data.trendText || data.tierText}</p>
+              {data.cistEstimate && (
+                <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                    MMSE-K 환산 추정 <span className="text-base">{data.cistEstimate.earned}</span><span className="text-zinc-500">/{data.cistEstimate.max}점</span>
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                    음성 시행 {data.cistEstimate.assessedDomains}개 영역의 정성 평가(0정상~2저하) 기반 추정치 — <strong>시공간(그리기)은 음성 미시행</strong>이라 만점에서 제외. 정식 MMSE-K/CIST 점수가 아니라 참고용이에요.
+                  </p>
+                </div>
+              )}
             </section>
 
             {data.medication && data.medication.items.length > 0 && (

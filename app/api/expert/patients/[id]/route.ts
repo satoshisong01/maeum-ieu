@@ -84,6 +84,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     };
   });
 
+  // MMSE-K 환산 추정(참고용) — 음성 시행 7영역의 정성 점수(0정상~2저하)를 영역 가중치로 환산.
+  //   시공간(구성)은 음성 미시행이라 만점에서 제외. 정식 검사 점수가 아닌 추정치.
+  const CIST_WEIGHT: Record<string, number> = {
+    orientation_time: 5, orientation_place: 5, memory_immediate: 3,
+    attention_calculation: 5, memory_delayed: 3, language: 5, judgment: 3,
+  };
+  let cistEarned = 0, cistMax = 0;
+  for (const d of domains) {
+    const w = CIST_WEIGHT[d.domain] ?? 0;
+    if (d.recentAvg === null || w === 0) continue;
+    cistMax += w;
+    cistEarned += w * (1 - Math.min(2, Math.max(0, d.recentAvg)) / 2);
+  }
+  const cistEstimate = cistMax > 0 ? { earned: Math.round(cistEarned), max: cistMax, assessedDomains: domains.filter((d) => d.recentAvg !== null && CIST_WEIGHT[d.domain]).length } : null;
+
   // 복약 — 일정 + 오늘 복용 + 주간 이행률(보호자·전문가 열람용, 읽기전용)
   let medications: { id: string; label: string; times: string[]; enabled: boolean }[] = [];
   let medToday: string[] = [];
@@ -137,5 +152,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     events: events.map((e) => ({ date: e.session_date, domain: DOMAIN_KO[e.domain] ?? e.domain, score: e.score, note: e.note, evidence: e.evidence })),
     medication: { items: medications, todayConfirmed: medToday, weekCompliance: medWeek },
     sessions,
+    cistEstimate,
   });
 }
