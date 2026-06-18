@@ -778,6 +778,11 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **검진 문답 기록 + 의사 코멘트(환자 일지) — Phase 2 Stage 2b** (2026-06-18)
+  - `exam_session` 테이블 신설(ops-create, db push 금지): id·patient·expert·conversation·started_at·ended_at·**doctor_comment**. 문답 원문은 이 세션 구간 메시지만 노출(보호자가 보는 일상대화 프라이버시와 분리).
+  - `/api/expert/exam`(start/end/comment, pro+연결 검증) + startExam/endExam에서 세션 시작·종료 기록.
+  - 전문가 상세에 **검진 문답 기록**(질문↔환자 응답 전사) + **의사 코멘트 작성·저장(DB 영속)**. 자체 채점(영역 0~2 + MMSE-K 환산)은 이미 표시 → 의사가 문답 직접 보고 별도 소견 작성 가능.
+  - 라이브 E2E PASS: 세션 시작·검진 턴·문답에 환자응답 포함·코멘트 저장 영속·페이지 렌더. tsc 0·safety 116·vitest 173.
 - **검진 표현·순서 변형(Phase 2 Stage 2a)** (2026-06-18)
   - `buildExamOrder(seed)`: 검진 영역 순서를 시드(대화ID+날짜)로 매 검진 다르게 — 첫 문항도 매번 달라짐. **타당성 제약: 즉시기억→지연회상 +2 이상**(지연 효과). 같은 검진 내 안정.
   - proGuide: "표준 문항 그대로 읽기" → **"과제는 동일하게 유지하되 표현은 매 검진 자연스럽게 다르게"**(보기·힌트·핵심 자극(단어/숫자) 변경은 금지 = 타당성 유지). 시행 순서는 buildExamOrder로 셔플.

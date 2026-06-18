@@ -22,6 +22,7 @@ interface Detail {
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
   cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
+  examSessions?: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; qa: { role: string; content: string; at: string }[] }[];
 }
 
 const TIER_STYLE: Record<string, string> = {
@@ -39,6 +40,15 @@ export default function PatientDetailPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState("");
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [savedComment, setSavedComment] = useState<string | null>(null);
+
+  async function saveComment(sessionId: string, comment: string) {
+    try {
+      const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "comment", sessionId, comment }) });
+      if (r.ok) { setSavedComment(sessionId); setTimeout(() => setSavedComment(null), 2000); }
+    } catch { /* noop */ }
+  }
 
   useEffect(() => {
     if (status === "unauthenticated") { router.replace("/login"); return; }
@@ -202,6 +212,46 @@ export default function PatientDetailPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              </section>
+            )}
+
+            {data.examSessions && data.examSessions.length > 0 && (
+              <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <h2 className="mb-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">검진 문답 기록 · 의사 코멘트</h2>
+                <p className="mb-3 text-[11px] text-zinc-400">검진 중 실제 질문과 환자 응답입니다. 직접 보시고 소견을 남기실 수 있어요(환자 일지).</p>
+                <div className="space-y-4">
+                  {data.examSessions.map((ex) => (
+                    <div key={ex.id} className="rounded-xl border border-zinc-100 dark:border-zinc-800">
+                      <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                        <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{new Date(ex.startedAt).toLocaleString("ko-KR")}</span>
+                        <span className="text-[11px] text-zinc-400">{ex.qa.length}개 대화</span>
+                      </div>
+                      <div className="max-h-72 space-y-1.5 overflow-y-auto px-3 py-2">
+                        {ex.qa.length === 0 && <p className="text-xs text-zinc-400">기록된 문답이 없습니다.</p>}
+                        {ex.qa.map((m, i) => (
+                          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[85%] rounded-xl px-3 py-1.5 text-xs ${m.role === "user" ? "bg-blue-50 text-blue-900 dark:bg-blue-900/30 dark:text-blue-100" : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"}`}>
+                              <span className="mr-1 text-[10px] font-semibold opacity-60">{m.role === "user" ? "환자" : "AI"}</span>{m.content}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                        <textarea
+                          value={commentDrafts[ex.id] ?? ex.doctorComment}
+                          onChange={(e) => setCommentDrafts((p) => ({ ...p, [ex.id]: e.target.value }))}
+                          placeholder="의사 소견·코멘트 (환자 일지)"
+                          rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-teal-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                        />
+                        <div className="mt-1 flex items-center justify-end gap-2">
+                          {savedComment === ex.id && <span className="text-[11px] font-medium text-teal-600">저장됨 ✓</span>}
+                          <button type="button" onClick={() => saveComment(ex.id, commentDrafts[ex.id] ?? ex.doctorComment)} className="rounded-lg bg-teal-600 px-3 py-1 text-xs font-semibold text-white hover:bg-teal-700">코멘트 저장</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
             )}

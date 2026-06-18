@@ -774,6 +774,7 @@ export default function ChatPage() {
   const [examRemaining, setExamRemaining] = useState<string>("");          // 검진 남은 시간(mm:ss)
   const examEndAtRef = useRef<number | null>(null);
   const examTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const examSessionIdRef = useRef<string | null>(null); // 검진 세션 기록 id(의사 문답열람·코멘트)
 
   /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
   const startConversation = useCallback(async () => {
@@ -828,6 +829,9 @@ export default function ChatPage() {
     alwaysOnRef.current = false; setAlwaysOn(false);
     wakeArmedRef.current = false; setWakeArmed(false);
     stopRecordingRef.current?.({ discard: true });
+    if (examSessionIdRef.current) {
+      fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "end", sessionId: examSessionIdRef.current }) }).catch(() => {});
+    }
     setMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "검진 시간이 다 되었어요. 오늘 검진은 여기까지 할게요. 수고 많으셨습니다." }]);
   }, []);
 
@@ -864,6 +868,11 @@ export default function ChatPage() {
       const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
       setExamRemaining(`${m}:${String(s).padStart(2, "0")}`);
     }, 1000);
+    // 검진 세션 기록 시작 — 이 구간의 문답을 의사가 열람·코멘트
+    try {
+      const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", patientId: proxyPatientId, conversationId }) });
+      if (r.ok) { examSessionIdRef.current = (await r.json()).sessionId ?? null; }
+    } catch { /* 무해화 */ }
     if (!conversationId) return;
     setLoading(true);
     try {
