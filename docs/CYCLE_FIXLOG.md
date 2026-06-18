@@ -778,6 +778,7 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **대리 검진 UX — 카운트다운·음성전용·환자 귀속 재확인** — (A) 배너 문구 "결과가 어르신께 기록됩니다"→"결과가 기록됩니다". (B) 인사는 환자 프로필 기준(buildSystemPrompt가 userId=환자로 조회 — 의사 누출 아님). (C) 검진 모드는 음성 전용("글씨로 대화하기" 숨김). (D) /chat?patient= 진입 시 자동인사 안 함 + 과거 이력 화면 미표시(깔끔) → "🩺 검진 시작" 버튼 → **5..4..3..2..1..시작 카운트다운 오버레이** → 그 뒤 AI 음성 인사로 검진 시작. 대화내역·인지결과는 **환자 계정 db에 저장(의사 db 누출 0)** — DB/API 검증 PASS(대화내역 환자귀속·의사 미저장·카운트다운·인사 proxyPatientId 포함).
 - **pro 로그인 /chat 깜빡임 제거** — 홈(`/`) 서버 리다이렉트를 역할별(pro→/expert)로 + 로그인 성공 시 홈(`/`)으로 보내 서버가 랜딩 결정(getSession 타이밍 의존 제거). 라이브: 로그인 경로 /login→/expert 직행(/chat 무경유) PASS.
 - **로그아웃 버튼 전 화면 공통화** — `LogoutButton` 컴포넌트 신설 + /expert·/expert/patients/[id]·/mypage·/dashboard·/mental·/live 헤더에 추가(기존 /chat은 아이콘 로그아웃 유지). 라이브: 각 화면 로그아웃 표시 PASS.
 - **로그인 아이디 저장 체크박스** — localStorage("savedEmail")로 이메일 저장/자동채움. 라이브: 저장·재방문 자동채움·체크 유지 PASS.

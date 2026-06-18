@@ -108,6 +108,7 @@ export default function ChatPage() {
   const [proxyPatientId, setProxyPatientId] = useState<string | null>(null); // 전문가 대리 검사 대상(?patient=) — 결과를 이 환자에 귀속
   const [proxyPatientName, setProxyPatientName] = useState<string>("");
   const [paramsReady, setParamsReady] = useState(false); // URL 파라미터 읽기 완료 — 대화 로드 레이스 방지
+  const examMode = !!proxyPatientId; // 전문가 대리 검진 모드 — 음성 전용 + '검진 시작' 버튼으로 시작
   // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 선별 / pro=표준검사 시행 / general=마음 건강 자가점검)
   const screeningMode: "user" | "pro" | "general" =
     session?.user?.screeningMode === "pro" ? "pro"
@@ -530,19 +531,22 @@ export default function ChatPage() {
       // 기존 대화가 있는 경우
       if (conv?.id && existingMessages.length > 0) {
         setConversationId(conv.id);
-        setMessages(
-          existingMessages.map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          }))
-        );
+        // 검진 모드는 화면을 깔끔하게 시작 — 과거 일상 대화 이력은 표시하지 않음(DB 이력은 AI 맥락·회차분석용으로 유지)
+        if (!examMode) {
+          setMessages(
+            existingMessages.map((m) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            }))
+          );
+        }
 
-        // 마지막 메시지로부터 2시간 이상 경과 → AI 재인사
+        // 마지막 메시지로부터 2시간 이상 경과 → AI 재인사 (단, 검진 모드는 '검진 시작' 버튼으로만 시작)
         const lastAt = data.lastMessageAt ? new Date(data.lastMessageAt).getTime() : 0;
         const elapsed = Date.now() - lastAt;
 
-        if (elapsed >= RETURNING_THRESHOLD_MS) {
+        if (!examMode && elapsed >= RETURNING_THRESHOLD_MS) {
           const chatRes = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -585,6 +589,9 @@ export default function ChatPage() {
         setConversationId(id);
       }
 
+      // 검진 모드는 자동 인사하지 않음 — '검진 시작' 버튼 → 카운트다운 후 음성 인사로 시작(startExam)
+      if (examMode) return;
+
       const chatRes = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -613,7 +620,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, conversationId, getContext, paramsReady, proxyPatientId, screeningMode]);
+  }, [status, conversationId, getContext, paramsReady, proxyPatientId, screeningMode, examMode]);
 
   // ─── 복약/일과 알림 폴링 ────────────────────────────────────────────────
   //   1분마다 /api/medications/check 호출 → due 발견 시 /trigger 로 멘트 받아 AI 메시지로 표시·재생.
@@ -760,6 +767,7 @@ export default function ChatPage() {
   useEffect(() => { textOnlyRef.current = textOnly; }, [textOnly]); // speak/speakStream 콜백이 최신 모드 참조
   useEffect(() => { reEngageCountRef.current = 0; }, [conversationId]); // 새 대화 → 재참여 카운트 리셋(stale 차단)
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
+  const [examCountdown, setExamCountdown] = useState<string | null>(null); // 대리 검진 시작 카운트다운(5..1..시작)
 
   /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
   const startConversation = useCallback(async () => {
@@ -804,6 +812,46 @@ export default function ChatPage() {
     setTextOnly(true);
     setModeSelected(true);
   }, []);
+
+  // 대리 검진 시작 — 마이크 권한 → 5..1..시작 카운트다운 → AI 음성 인사로 검진 시작(음성 전용)
+  const startExam = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setMicAllowed(true);
+      setMicDenied(false);
+    } catch {
+      setMicDenied(true);
+      return;
+    }
+    for (const n of ["5", "4", "3", "2", "1", "시작"]) {
+      setExamCountdown(n);
+      await new Promise((r) => setTimeout(r, n === "시작" ? 700 : 850));
+    }
+    setExamCountdown(null);
+    setTextOnly(false);
+    setModeSelected(true);
+    if (!conversationId) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId, isInitialGreeting: true, context: getContext(), proxyPatientId }),
+      });
+      if (!res.ok) { setLoading(false); return; }
+      const { text } = (await res.json()) as { text: string };
+      await speak(text, () => {
+        setMessages((prev) => [...prev, { id: createId(), role: "assistant", content: text }]);
+        setLoading(false);
+      });
+      setAiSpeaking(true);
+      setTimeout(() => setAiSpeaking(false), 3000);
+    } catch {
+      setLoading(false);
+    }
+  }, [conversationId, getContext, speak, proxyPatientId]);
 
   const sendAudioMessage = useCallback(
     async (audioBase64: string, mimeType: string) => {
@@ -1154,11 +1202,19 @@ export default function ChatPage() {
       {proxyPatientId && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
           <span className="text-xs font-semibold sm:text-sm">
-            🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 이 어르신께 기록됩니다
+            🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 기록됩니다
           </span>
           <Link href="/expert" className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 sm:text-xs">
             검사 종료
           </Link>
+        </div>
+      )}
+
+      {/* 검진 시작 카운트다운 오버레이 (5..1..시작) */}
+      {examCountdown !== null && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/75">
+          <span className="text-8xl font-extrabold text-white drop-shadow-lg">{examCountdown}</span>
+          <span className="text-base text-zinc-300">{examCountdown === "시작" ? "검진을 시작합니다" : "곧 검진을 시작합니다"}</span>
         </div>
       )}
 
@@ -1198,7 +1254,7 @@ export default function ChatPage() {
                 aiSpeaking={false}
               />
               <p className="text-center text-zinc-600 dark:text-zinc-300">
-                아래에서 대화 방식을 선택해주세요.
+                {examMode ? "준비되면 아래 '검진 시작'을 눌러주세요." : "아래에서 대화 방식을 선택해주세요."}
               </p>
             </div>
           )}
@@ -1232,6 +1288,26 @@ export default function ChatPage() {
 
         <div className="shrink-0 border-t border-zinc-200 px-3 py-3 dark:border-zinc-700">
           {!modeSelected ? (
+            examMode ? (
+              /* 대리 검진 시작 — 음성 전용, 카운트다운 후 시작 */
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={startExam}
+                  disabled={examCountdown !== null}
+                  className="w-full rounded-full bg-teal-600 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-teal-700 disabled:opacity-60"
+                >
+                  {examCountdown !== null ? "검진 준비 중…" : "🩺 검진 시작"}
+                </button>
+                <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">검진은 음성으로 진행됩니다.</p>
+                {micDenied && (
+                  <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
+                    <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
+                    <p className="text-xs text-red-600">마이크가 없거나 권한이 차단되어 있습니다. 주소창 🔒 → 마이크 → 허용 → 새로고침 후 다시 시도해 주세요.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
             /* 모드 선택 화면 */
             <div className="space-y-2">
               <button
@@ -1260,6 +1336,7 @@ export default function ChatPage() {
                 </div>
               )}
             </div>
+            )
           ) : textOnly ? (
             /* 텍스트 전용 모드 */
             <div className="space-y-2">
