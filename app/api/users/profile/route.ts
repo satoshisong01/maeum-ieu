@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
+
+/** 문자열 길이 상한 — 무제한 입력(프롬프트 인젝션 증폭·비용·DB 남용) 방어. */
+const cap = (s: string | null | undefined, n: number): string | null | undefined => (s == null ? s : String(s).slice(0, n));
 
 /** GET: 현재 사용자 프로필 조회 */
 export async function GET() {
@@ -28,6 +32,10 @@ export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+  // 프로필 수정 폭주 방어 + bcrypt(비밀번호 변경) 반복 호출 CPU 점유 차단
+  if (!checkRateLimit(`profile:${session.user.id}`, 10, 60_000).ok) {
+    return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
   }
 
   const body = await req.json();
@@ -86,12 +94,12 @@ export async function PATCH(req: Request) {
 
   // 업데이트 데이터 구성
   const updateData: Record<string, unknown> = {};
-  if (name !== undefined) updateData.name = name || null;
+  if (name !== undefined) updateData.name = cap(name, 40) || null;
   if (age !== undefined) updateData.age = age;
   if (gender !== undefined) updateData.gender = gender;
-  if (guardianName !== undefined) updateData.guardianName = guardianName || null;
-  if (guardianPhone !== undefined) updateData.guardianPhone = guardianPhone || null;
-  if (guardianRelation !== undefined) updateData.guardianRelation = guardianRelation || null;
+  if (guardianName !== undefined) updateData.guardianName = cap(guardianName, 40) || null;
+  if (guardianPhone !== undefined) updateData.guardianPhone = cap(guardianPhone, 30) || null;
+  if (guardianRelation !== undefined) updateData.guardianRelation = cap(guardianRelation, 20) || null;
   if (guardianEmail !== undefined) updateData.guardianEmail = guardianEmail || null;
   if (guardianWebhookUrl !== undefined) {
     const url = (guardianWebhookUrl ?? "").trim();
@@ -112,9 +120,9 @@ export async function PATCH(req: Request) {
     }
     updateData.guardianWebhookUrl = url || null;
   }
-  if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
-  if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
-  if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
+  if (companionName !== undefined) updateData.companionName = cap((companionName && companionName.trim()) || "민지", 20);
+  if (companionRelation !== undefined) updateData.companionRelation = cap((companionRelation && companionRelation.trim()) || "손녀", 20);
+  if (userHonorific !== undefined) updateData.userHonorific = cap((userHonorific && userHonorific.trim()) || null, 20);
   // screeningMode는 의도적으로 업데이트하지 않음 — 가입 시 고정(악용 방지)
   if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
 

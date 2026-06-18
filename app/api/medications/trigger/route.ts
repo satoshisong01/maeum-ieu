@@ -37,6 +37,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ skipped: true, reason: "not due or already triggered" });
   }
 
+  // 슬롯 선점(원자적 CAS) — 동시 폴링/재시도가 같은 슬롯을 중복 발화하지 않도록,
+  // 우리가 읽은 lastTriggeredAt 값일 때만 갱신. 패배하면 메시지 저장 없이 skip.
+  const claim = await prisma.medicationSchedule.updateMany({
+    where: { id: scheduleId, lastTriggeredAt: schedule.lastTriggeredAt ?? null },
+    data: { lastTriggeredAt: new Date() },
+  });
+  if (claim.count === 0) {
+    return NextResponse.json({ skipped: true, reason: "already triggered (race)" });
+  }
+
   // 사용자 호칭/동반자 조회
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -56,11 +66,6 @@ export async function POST(req: Request) {
     }
   }
 
-  // 트리거 시각 마킹
-  await prisma.medicationSchedule.update({
-    where: { id: scheduleId },
-    data: { lastTriggeredAt: new Date() },
-  });
-
+  // (트리거 시각은 위 CAS에서 이미 마킹됨)
   return NextResponse.json({ text, slotTime: due.slotTime, label: due.label });
 }

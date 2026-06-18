@@ -41,16 +41,15 @@ export async function GET() {
 
   const userId = session.user.id;
 
-  // Message 테이블에서 isAnomaly 건수
-  const anomalyCount = await prisma.message.count({
-    where: { conversation: { userId }, isAnomaly: true },
-  });
-
+  // Message 테이블에서 isAnomaly 건수 — DB 장애 시에도 가용 항목만 반환(부분 저하)
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const recentAnomaly = await prisma.message.count({
-    where: { conversation: { userId }, isAnomaly: true, createdAt: { gte: sevenDaysAgo } },
-  });
+  let anomalyCount = 0;
+  let recentAnomaly = 0;
+  try {
+    anomalyCount = await prisma.message.count({ where: { conversation: { userId }, isAnomaly: true } });
+    recentAnomaly = await prisma.message.count({ where: { conversation: { userId }, isAnomaly: true, createdAt: { gte: sevenDaysAgo } } });
+  } catch { /* DB 일시 장애 — 0으로 폴백 */ }
 
   // cognitive_assessments 데이터
   let assessments: CognitiveRow[] = [];
@@ -79,15 +78,15 @@ export async function GET() {
   } catch { /* cognitive_assessments 테이블 없을 수 있음 */ }
 
   // 응급 신호 (최근 50건 + 일별 카운트)
-  const recentEmergencies: EmergencyRow[] = await prisma.message.findMany({
-    where: {
-      conversation: { userId },
-      emergencyLevel: { gte: 1 },
-    },
-    select: { id: true, content: true, emergencyLevel: true, emergencyEvidence: true, speakerLabel: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  let recentEmergencies: EmergencyRow[] = [];
+  try {
+    recentEmergencies = await prisma.message.findMany({
+      where: { conversation: { userId }, emergencyLevel: { gte: 1 } },
+      select: { id: true, content: true, emergencyLevel: true, emergencyEvidence: true, speakerLabel: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+  } catch { /* DB 일시 장애 — 빈 배열로 폴백 */ }
 
   let emergencyDaily: EmergencyDaily[] = [];
   try {

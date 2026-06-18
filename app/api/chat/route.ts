@@ -955,6 +955,11 @@ export async function POST(req: Request) {
       if (!link || link.status !== "active") {
         return NextResponse.json({ error: "연결되지 않은 환자입니다." }, { status: 403 });
       }
+      // 일반인(general) 환자는 인지선별 비대상 — 대리 경로로 인지 데이터가 기록되지 않도록 차단(목적 분리)
+      const pat = await prisma.user.findUnique({ where: { id: proxyPatientId }, select: { screeningMode: true } });
+      if (pat?.screeningMode === "general") {
+        return NextResponse.json({ error: "일반인 계정은 대리 검사 대상이 아닙니다." }, { status: 400 });
+      }
       userId = proxyPatientId;
     }
 

@@ -7,12 +7,15 @@ import { randomUUID } from "crypto";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   if (session.user.screeningMode !== "pro") return NextResponse.json({ error: "전문가 전용 기능입니다." }, { status: 403 });
   const expertId = session.user.id;
+  // 검진 세션 생성·갱신 폭주(고아 세션·쓰기 DoS) 방지
+  if (!checkRateLimit(`exam:${expertId}`, 30, 60_000).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const action = typeof body.action === "string" ? body.action : "";
@@ -25,16 +28,28 @@ export async function POST(req: Request) {
       select: { status: true },
     });
     if (!link || link.status !== "active") return NextResponse.json({ error: "연결되지 않은 환자입니다." }, { status: 403 });
+    // 일반인(general) 계정은 인지검진 비대상 — 인지 데이터가 잘못된 계정에 기록되지 않도록 차단(목적 분리)
+    const patient = await prisma.user.findUnique({ where: { id: patientId }, select: { screeningMode: true } });
+    if (patient?.screeningMode === "general") return NextResponse.json({ error: "일반인 계정은 인지검진 대상이 아닙니다." }, { status: 400 });
     // 진행 중이던 기존 세션 자동 종료 — 고아 세션 누적 방지(다중 클릭·중간 재시작)
     await prisma.$executeRawUnsafe(
       `UPDATE exam_session SET ended_at = now() WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL`,
       expertId, patientId).catch(() => {});
     const id = randomUUID();
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO exam_session (id, patient_user_id, expert_user_id, conversation_id) VALUES ($1, $2, $3, $4)`,
-      id, patientId, expertId, conversationId,
-    );
-    return NextResponse.json({ sessionId: id });
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO exam_session (id, patient_user_id, expert_user_id, conversation_id) VALUES ($1, $2, $3, $4)`,
+        id, patientId, expertId, conversationId,
+      );
+      return NextResponse.json({ sessionId: id });
+    } catch {
+      // 동시 시작 경합(부분 unique uq_es_open 위반) — 이미 열린 세션을 반환(고아·중복 방지)
+      const open = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM exam_session WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`,
+        expertId, patientId);
+      if (open[0]) return NextResponse.json({ sessionId: open[0].id });
+      return NextResponse.json({ error: "검진 시작에 실패했습니다." }, { status: 500 });
+    }
   }
 
   if (action === "end" || action === "comment" || action === "evalInput") {

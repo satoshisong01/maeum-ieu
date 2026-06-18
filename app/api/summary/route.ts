@@ -31,6 +31,10 @@ export async function GET(req: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+  // 어르신(user) 본인은 자기 인지결과 비공개(A안: 검사 무효화·불안 방지) — 결과는 보호자·전문가만 열람.
+  if (session.user.screeningMode === "user") {
+    return NextResponse.json({ error: "본인은 열람할 수 없습니다." }, { status: 403 });
+  }
 
   const userId = session.user.id;
   const { searchParams } = new URL(req.url);

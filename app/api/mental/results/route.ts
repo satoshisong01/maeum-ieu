@@ -13,6 +13,7 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
+  try {
   const rows = await prisma.$queryRawUnsafe<SessionRow[]>(
     `SELECT id, scale, total, severity, crisis, to_char(created_at, 'YYYY-MM-DD') AS created_at
        FROM mental_session
@@ -45,4 +46,9 @@ export async function GET() {
     };
   });
   return NextResponse.json({ results });
+  } catch (e) {
+    // mental_session/mental_assessments는 raw SQL 테이블 — 부재·DB 장애 시 빈 결과로 폴백
+    console.error("[mental/results]", e);
+    return NextResponse.json({ results: [] });
+  }
 }
