@@ -778,6 +778,7 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **#5 회차별 분석** — 환자 상세에 검사일(session_date)별 회차 비교 표 추가. cognitive_assessments를 날짜로 그룹 → 회차별 종합점수·등급·직전 회차 대비 변화(악화/개선). 주기적 검사(월 1회 등)에 적합. 라이브: 11회 회차 표시·렌더 PASS.
 
 ## 캠페인 종합 (2026-06-17)
 재참여 + B1~B5 + C1~C5 = **18커밋, 전부 tsc 0 + 라이브 검증 + 양 repo 푸시**. rate-limit은 코드에 한계 명시됨(실구현=Redis 인프라). 잔여 후속(선택): 음성 idle 실기기 검증 · 챗 복약 자동캡처 · 전용 guardian role 라벨 · 광범위 폰트/대비 시각 패스 · 분산 rate-limit(인프라).

@@ -18,6 +18,7 @@ interface Detail {
   overallAvg: number | null; tier: string; tierText: string;
   trend: string; trendText: string; trendDelta: number;
   domains: DomainRow[]; weekly: WeekRow[]; events: EventRow[];
+  sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
 }
 
@@ -151,6 +152,46 @@ export default function PatientDetailPage() {
                 ))}
               </div>
             </section>
+
+            {data.sessions && data.sessions.length > 0 && (
+              <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                <h2 className="mb-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">회차별 분석 (검사일 기준 · 최근 12회)</h2>
+                <p className="mb-3 text-[11px] text-zinc-400">검사일마다 한 회차로 묶어 종합 점수(0 정상 ~ 2 주의)와 직전 회차 대비 변화를 봅니다.</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-200 text-zinc-500 dark:border-zinc-700">
+                        <th className="py-1.5 pr-3 font-medium">검사일</th>
+                        <th className="py-1.5 pr-3 font-medium">회차</th>
+                        <th className="py-1.5 pr-3 font-medium">종합</th>
+                        <th className="py-1.5 pr-3 font-medium">등급</th>
+                        <th className="py-1.5 pr-3 font-medium">직전 대비</th>
+                        <th className="py-1.5 font-medium">문항수</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.sessions.map((s, i) => {
+                        const round = data.sessions!.length - i; // 오래된 것이 1회차
+                        const prev = data.sessions![i + 1]; // 더 오래된(직전) 회차
+                        const delta = s.overallAvg !== null && prev?.overallAvg != null ? Number((s.overallAvg - prev.overallAvg).toFixed(2)) : null;
+                        const deltaTxt = delta === null ? "—" : delta > 0.05 ? `▲ +${delta} 악화` : delta < -0.05 ? `▼ ${delta} 개선` : "= 비슷";
+                        const deltaTone = delta === null ? "text-zinc-400" : delta > 0.05 ? "text-red-600 dark:text-red-300" : delta < -0.05 ? "text-green-600 dark:text-green-300" : "text-zinc-500";
+                        return (
+                          <tr key={s.date} className="border-b border-zinc-100 dark:border-zinc-800">
+                            <td className="py-1.5 pr-3 text-zinc-700 dark:text-zinc-200">{s.date}</td>
+                            <td className="py-1.5 pr-3 text-zinc-500">{round}회차</td>
+                            <td className="py-1.5 pr-3 font-semibold text-zinc-800 dark:text-zinc-100">{s.overallAvg ?? "—"}</td>
+                            <td className="py-1.5 pr-3"><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${TIER_STYLE[s.tier] ?? TIER_STYLE["평가전"]}`}>{s.tier}</span></td>
+                            <td className={`py-1.5 pr-3 font-medium ${deltaTone}`}>{deltaTxt}</td>
+                            <td className="py-1.5 text-zinc-400">{s.count}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
 
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">최근 이상 이벤트 (분석기 기록 · 최대 20건)</h2>
