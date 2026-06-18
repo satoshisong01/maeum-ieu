@@ -137,6 +137,29 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     };
   });
 
+  // 검진 세션 — 문답(Q&A) + 의사 코멘트. 문답 원문은 검진 구간[started_at, ended_at] 안의 메시지만 노출(일상대화와 분리).
+  let examSessions: { id: string; startedAt: string; endedAt: string | null; doctorComment: string; qa: { role: string; content: string; at: string }[] }[] = [];
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ id: string; started_at: Date; ended_at: Date | null; doctor_comment: string | null }[]>(
+      `SELECT id, started_at, ended_at, doctor_comment FROM exam_session WHERE patient_user_id = $1 AND expert_user_id = $2 ORDER BY started_at DESC LIMIT 10`,
+      patientId, session.user.id);
+    examSessions = await Promise.all(rows.map(async (r) => {
+      const start = new Date(r.started_at);
+      const end = r.ended_at ? new Date(r.ended_at) : new Date(start.getTime() + 25 * 60 * 1000);
+      const msgs = await prisma.message.findMany({
+        where: { conversation: { userId: patientId }, createdAt: { gte: start, lte: end } },
+        orderBy: { createdAt: "asc" }, select: { role: true, content: true, createdAt: true },
+      });
+      return {
+        id: r.id,
+        startedAt: start.toISOString(),
+        endedAt: r.ended_at ? new Date(r.ended_at).toISOString() : null,
+        doctorComment: r.doctor_comment ?? "",
+        qa: msgs.map((m) => ({ role: m.role, content: m.content, at: m.createdAt.toISOString() })),
+      };
+    }));
+  } catch { /* exam_session 미생성 환경 방어 */ }
+
   // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
   prisma.$executeRawUnsafe(
     `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, 'detail')`,
@@ -153,5 +176,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     medication: { items: medications, todayConfirmed: medToday, weekCompliance: medWeek },
     sessions,
     cistEstimate,
+    examSessions,
   });
 }
