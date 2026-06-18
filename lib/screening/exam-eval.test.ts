@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyProvisional, classifyFormal, assessCoverage, compareSessions, educationBonus, EXAM_VOICE_MAX } from "./exam-eval";
+import { classifyProvisional, classifyFormal, assessCoverage, compareSessions, summarizeExamTrend, educationBonus, EXAM_VOICE_MAX } from "./exam-eval";
 
 describe("exam-eval 잠정 등급", () => {
   it("음성 만점은 정상범위", () => {
@@ -66,5 +66,29 @@ describe("회차 추세 비교", () => {
   });
   it("비슷하면 유지", () => {
     expect(compareSessions(22, 29, 23, 29).direction).toBe("유지");
+  });
+});
+
+describe("다회차 추세 요약", () => {
+  const S = (n: number) => ({ score: n, max: 29 });
+  it("2회 미만은 부족", () => {
+    expect(summarizeExamTrend([S(25)]).direction).toBe("부족");
+    expect(summarizeExamTrend([]).direction).toBe("부족");
+  });
+  it("꾸준히 하락하면 점진적 악화", () => {
+    const t = summarizeExamTrend([S(26), S(22), S(18), S(14)]);
+    expect(t.direction).toBe("악화");
+    expect(t.label).toBe("점진적 악화");
+  });
+  it("꾸준히 상승하면 개선 추세", () => {
+    const t = summarizeExamTrend([S(14), S(19), S(24)]);
+    expect(t.direction).toBe("개선");
+    expect(t.label).toBe("개선 추세");
+  });
+  it("큰 변화 없으면 안정 유지", () => {
+    expect(summarizeExamTrend([S(24), S(25), S(24)]).direction).toBe("유지");
+  });
+  it("등락 폭이 크면 변동", () => {
+    expect(summarizeExamTrend([S(26), S(14), S(25)]).direction).toBe("변동");
   });
 });

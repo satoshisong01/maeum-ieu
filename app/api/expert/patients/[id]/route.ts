@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, type DomainStat } from "@/lib/health/severity";
-import { classifyProvisional, classifyFormal, compareSessions, EXAM_DISCLAIMER } from "@/lib/screening/exam-eval";
+import { classifyProvisional, classifyFormal, compareSessions, summarizeExamTrend, EXAM_DISCLAIMER, type ExamTrend } from "@/lib/screening/exam-eval";
 import { toKstDateString } from "@/lib/chat/time";
 
 interface DomainRow extends DomainStat { domain: string }
@@ -153,6 +153,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     trend: null | { direction: string; deltaPct: number };
   }
   let examSessions: ExamSessionView[] = [];
+  let examTrend: ExamTrend | null = null;
+  let examTrendPoints: { round: number; date: string; score: number; max: number; band: string | null }[] = [];
   try {
     const rows = await prisma.$queryRawUnsafe<{ id: string; started_at: Date; ended_at: Date | null; doctor_comment: string | null; total_score: number | null; max_score: number | null; eval_band: string | null; coverage_status: string | null; answered_domains: number | null; total_domains: number | null; education_years: number | null; visuospatial_score: number | null }[]>(
       `SELECT id, started_at, ended_at, doctor_comment, total_score, max_score, eval_band, coverage_status, answered_domains, total_domains, education_years, visuospatial_score FROM exam_session WHERE patient_user_id = $1 AND expert_user_id = $2 ORDER BY started_at DESC LIMIT 10`,
@@ -197,6 +199,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       }
     }
     examSessions = built;
+    // 회차 추세 — 평가가능(자료충분·점수있음) 회차를 시간순(오래된→최신)으로 분석
+    const chrono = [...built].reverse().filter((e) => e.totalScore != null && e.maxScore && e.coverage.sufficient);
+    examTrendPoints = chrono.map((e, i) => ({ round: i + 1, date: e.startedAt.slice(0, 10), score: e.totalScore as number, max: e.maxScore as number, band: e.evalBand }));
+    examTrend = summarizeExamTrend(chrono.map((e) => ({ score: e.totalScore as number, max: e.maxScore as number })));
   } catch { /* exam_session 미생성 환경 방어 */ }
 
   // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
@@ -216,6 +222,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     sessions,
     cistEstimate,
     examSessions,
+    examTrend,
+    examTrendPoints,
     examDisclaimer: EXAM_DISCLAIMER,
   });
 }
