@@ -778,6 +778,12 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **검진 표현·순서 변형(Phase 2 Stage 2a)** (2026-06-18)
+  - `buildExamOrder(seed)`: 검진 영역 순서를 시드(대화ID+날짜)로 매 검진 다르게 — 첫 문항도 매번 달라짐. **타당성 제약: 즉시기억→지연회상 +2 이상**(지연 효과). 같은 검진 내 안정.
+  - proGuide: "표준 문항 그대로 읽기" → **"과제는 동일하게 유지하되 표현은 매 검진 자연스럽게 다르게"**(보기·힌트·핵심 자극(단어/숫자) 변경은 금지 = 타당성 유지). 시행 순서는 buildExamOrder로 셔플.
+  - ⚠ 버그 잡음: mi가 뒤쪽 배치 시 md 인접(gap=1) 제약 위반 → mi 앞쪽 고정 후 md +2 삽입으로 수정. vitest 200시드 전수 + 9 케이스 통과.
+  - 라이브: 날짜별 순서 상이·gap≥2·표현변형 허용 프롬프트 확인. tsc 0·safety 116·vitest 173.
+  - ▶ Stage 2b(남음): 항목별 0/1 채점 엔진 + exam_session 저장 + 정식 30점 결과지.
 - **CIST 문항 뱅크(단일 출처) + 전문가 질문지 뷰 — Phase 2 기반** (2026-06-18)
   - `lib/screening/cist-bank.ts` 신설: CIST·MMSE-K/MoCA-K 항목을 구조화(id·domain·source·prompt·points·scoring·voice). 음성 시행 만점 29점(시공간 voice=false 제외). **검진 가이드(proGuideBlock)도 이 뱅크에서 렌더** → 전문가가 보는 문항 = AI가 실제 시행 문항(드리프트 방지).
   - `/expert/protocol` 신설: 전문가가 **어떤 문항을 어떤 근거(MMSE-K/MoCA-K/CIST)로 시행하는지·배점·채점기준** 미리 확인. /expert 헤더에 "검진 문항지" 링크.

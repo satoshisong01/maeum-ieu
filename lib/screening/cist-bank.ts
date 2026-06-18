@@ -61,6 +61,41 @@ export const CIST_DOMAIN_ORDER: { domain: string; label: string }[] = [
 /** 음성 시행 가능 항목의 총 배점(시공간 제외) — 환산 만점 기준. */
 export const VOICE_MAX_POINTS = CIST_ITEMS.filter((i) => i.voice).reduce((s, i) => s + i.points, 0);
 
+// ── 검진 순서 변형 — 매 검진(월/분기)마다 순서를 조금씩 다르게(시드 기반). ──
+//   타당성 제약: 즉시기억(등록)은 지연회상보다 먼저 + 그 사이 최소 2개 영역(지연 효과 확보).
+//   시공간은 음성 미시행이라 순서에서 제외.
+// 메모리 외 영역 — 자유 셔플. memory_immediate/memory_delayed는 제약에 맞춰 따로 삽입.
+const EXAM_FREE_DOMAINS = ["orientation_time", "orientation_place", "attention_calculation", "language", "judgment"];
+
+function hashSeed(str: string): number {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return h >>> 0;
+}
+function mulberry32(a: number): () => number {
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * 검진 영역 시행 순서 — 시드(예: 대화ID+날짜)로 매 검진 다르게. 같은 검진 내에선 동일(안정).
+ * 타당성 제약: memory_immediate(등록)는 앞쪽에, memory_delayed(지연회상)는 그 뒤 +2 이상(지연 효과 유지).
+ */
+export function buildExamOrder(seed: string): string[] {
+  const rnd = mulberry32(hashSeed(seed));
+  const others = [...EXAM_FREE_DOMAINS]; // 5개
+  for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+  // 즉시기억은 앞쪽(0~2)에 삽입 → 뒤에 지연회상을 +2 이상 둘 공간 확보
+  const miPos = Math.floor(rnd() * 3); // 0,1,2
+  const withMi = [...others];
+  withMi.splice(miPos, 0, "memory_immediate"); // 길이 6
+  // 지연회상은 miPos+2 ~ 끝 사이
+  const minMd = miPos + 2;
+  const mdPos = minMd + Math.floor(rnd() * (withMi.length + 1 - minMd));
+  const order = [...withMi];
+  order.splice(mdPos, 0, "memory_delayed"); // 길이 7
+  return order;
+}
+
 /** 검진 가이드(proGuideBlock)용 — 음성 시행 영역의 문항을 영역별로 묶어 텍스트로 렌더(단일 출처). */
 export function renderProtocolForGuide(): string {
   const lines: string[] = [];

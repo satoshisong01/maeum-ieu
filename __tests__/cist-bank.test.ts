@@ -1,6 +1,6 @@
 /** CIST 문항 뱅크 무결성 — 배점·음성 시행 플래그·가이드 렌더 단일 출처 검증 */
 import { describe, it, expect } from "vitest";
-import { CIST_ITEMS, VOICE_MAX_POINTS, renderProtocolForGuide, CIST_DOMAIN_ORDER } from "@/lib/screening/cist-bank";
+import { CIST_ITEMS, VOICE_MAX_POINTS, renderProtocolForGuide, CIST_DOMAIN_ORDER, buildExamOrder } from "@/lib/screening/cist-bank";
 
 describe("CIST 문항 뱅크", () => {
   it("음성 시행 만점 = 29점 (시공간 제외)", () => {
@@ -23,5 +23,29 @@ describe("CIST 문항 뱅크", () => {
     expect(g).toContain("시간 지남력");
     expect(g).toContain("동물 이름");
     expect(g).not.toContain("시계를 그리고"); // 시공간 음성 미시행은 가이드에서 제외
+  });
+});
+
+describe("검진 순서 변형(buildExamOrder)", () => {
+  it("7개 영역 모두 포함, 시공간 제외, 중복 없음", () => {
+    const o = buildExamOrder("seed-a");
+    expect(o.length).toBe(7);
+    expect(new Set(o).size).toBe(7);
+    expect(o).not.toContain("visuospatial");
+  });
+  it("지연회상은 즉시기억 +2 이상 뒤(지연 효과 유지) — 200개 시드 전수", () => {
+    for (let i = 0; i < 200; i++) {
+      const o = buildExamOrder(`conv:2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}#${i}`);
+      expect(o.length).toBe(7);
+      expect(new Set(o).size).toBe(7);
+      expect(o.indexOf("memory_delayed") - o.indexOf("memory_immediate")).toBeGreaterThanOrEqual(2);
+    }
+  });
+  it("시드가 다르면 첫 영역이 항상 같지는 않음(순서 변형)", () => {
+    const firsts = new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((s) => buildExamOrder(s)[0]));
+    expect(firsts.size).toBeGreaterThan(1);
+  });
+  it("같은 시드는 같은 순서(검진 내 안정)", () => {
+    expect(buildExamOrder("same-seed")).toEqual(buildExamOrder("same-seed"));
   });
 });
