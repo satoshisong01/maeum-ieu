@@ -17,6 +17,7 @@ interface EventRow { date: string; domain: string; score: number; note: string |
 interface Detail {
   patient: { name: string; age: number | null; gender: string | null };
   overallAvg: number | null; tier: string; tierText: string;
+  reliability?: { reliable: boolean; provisional: boolean; showLevel: boolean };
   trend: string; trendText: string; trendDelta: number;
   domains: DomainRow[]; weekly: WeekRow[]; events: EventRow[];
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
@@ -91,10 +92,17 @@ export default function PatientDetailPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{data.patient.name}</span>
                 <span className="text-sm text-zinc-500">{data.patient.age ? `${data.patient.age}세` : ""} {data.patient.gender === "male" ? "남" : data.patient.gender === "female" ? "여" : ""}</span>
-                <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE[data.tier] ?? TIER_STYLE["평가전"]}`}>{data.tier}</span>
+                {data.reliability && !data.reliability.showLevel
+                  ? <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE["평가전"]}`}>평가중 · 자료 부족</span>
+                  : <span className={`rounded-full px-3 py-1 text-sm font-bold ${TIER_STYLE[data.tier] ?? TIER_STYLE["평가전"]}`}>{data.tier}{data.reliability?.provisional ? " (잠정)" : ""}</span>}
                 {data.overallAvg !== null && <span className="text-sm text-zinc-600 dark:text-zinc-300">7일 평균 {data.overallAvg}</span>}
               </div>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{data.trendText || data.tierText}</p>
+              {data.reliability && !data.reliability.reliable && (
+                <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                  {data.reliability.showLevel ? "※ 참고용 잠정 결과 — 대화·검진이 더 쌓이면 정확해집니다." : "※ 자료 부족 — 신뢰할 등급 산출 전입니다(최소 5회·2영역 필요)."}
+                </p>
+              )}
               {data.cistEstimate && (
                 <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
                   <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">

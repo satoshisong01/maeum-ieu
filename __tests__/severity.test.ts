@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  computeOverallAvg, classifySeverity, detectAcuteChange,
+  computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability,
   TIER_BOUNDS, PER_DOMAIN_WEIGHT_CAP, RISK_DOMAIN_THRESHOLD,
 } from "@/lib/health/severity";
 
@@ -72,5 +72,26 @@ describe("detectAcuteChange — 최근 vs 베이스라인 추세", () => {
   });
   it("RISK_DOMAIN_THRESHOLD 상수 노출(주의영역 표기 기준)", () => {
     expect(RISK_DOMAIN_THRESHOLD).toBe(1.0);
+  });
+});
+
+describe("assessReliability — 소표본 과대판정 방지", () => {
+  it("충분(10회+·3영역+) → reliable", () => {
+    const r = assessReliability(11, 5);
+    expect(r.reliable).toBe(true); expect(r.provisional).toBe(false); expect(r.showLevel).toBe(true);
+  });
+  it("경계 10회·3영역 → reliable", () => {
+    expect(assessReliability(10, 3).reliable).toBe(true);
+  });
+  it("잠정(5회+·2영역+, 충분 미달) → provisional·showLevel", () => {
+    const r = assessReliability(7, 2);
+    expect(r.reliable).toBe(false); expect(r.provisional).toBe(true); expect(r.showLevel).toBe(true);
+  });
+  it("소표본(7회·1영역만) → 판정보류(showLevel false)", () => {
+    const r = assessReliability(7, 1);
+    expect(r.showLevel).toBe(false); expect(r.provisional).toBe(false);
+  });
+  it("극소표본(3회) → 판정보류", () => {
+    expect(assessReliability(3, 1).showLevel).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchDomainStats } from "@/lib/health/cognitive-alert";
-import { computeOverallAvg, classifySeverity, detectAcuteChange } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability } from "@/lib/health/severity";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -41,6 +41,7 @@ export async function GET() {
     ]);
     const recentAvg = computeOverallAvg(recent);
     const tier = classifySeverity(recentAvg);
+    const reliability = assessReliability(recent.reduce((s, d) => s + d.count, 0), recent.filter((d) => d.count >= 2).length);
     const trend = detectAcuteChange({
       recentAvg,
       recentCount: recent.reduce((s, d) => s + d.count, 0),
@@ -55,6 +56,8 @@ export async function GET() {
       linkedAt: link.createdAt,
       overallAvg: recentAvg < 0 ? null : Number(recentAvg.toFixed(2)),
       tier: tier.tier,
+      provisional: reliability.provisional,
+      showLevel: reliability.showLevel,
       trend: trend.status,
       trendText: trend.text,
       anomaly7d,
