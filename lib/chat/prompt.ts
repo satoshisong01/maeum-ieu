@@ -124,7 +124,12 @@ export async function buildSystemPrompt(params: {
     mode === "user" ? getCognitiveTierForPrompt(userId) : Promise.resolve({ tier: "평가전", avg: -1 } as CognitiveTierResult),
   ]);
   const userName = user?.name?.trim() || "사용자";
-  const honorific = user?.userHonorific?.trim() || getHonorific(user?.age ?? null, user?.gender ?? null);
+  // 호칭 결정: 명시 호칭 > 연령·성별 기반(할머니/할아버지 등). 둘 다 없어 일반 기본값("선생님")이 되는데
+  //   이름이 있으면 "OOO님"으로 부르는 게 자연스러움(특히 검진 — 환자를 일반 "선생님"으로 부르면 어색).
+  const explicitHonorific = user?.userHonorific?.trim();
+  const derivedHonorific = getHonorific(user?.age ?? null, user?.gender ?? null);
+  const honorific = explicitHonorific
+    || (derivedHonorific === "선생님" && user?.name?.trim() ? `${userName}님` : derivedHonorific);
   const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
   const companionRelation = user?.companionRelation?.trim() || COMPANION_DEFAULTS.relation;
 
