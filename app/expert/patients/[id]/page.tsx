@@ -25,6 +25,8 @@ interface Detail {
   cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
   examDisclaimer?: string;
   examSessions?: ExamSession[];
+  examTrend?: { direction: string; label: string; detail: string } | null;
+  examTrendPoints?: { round: number; date: string; score: number; max: number; band: string | null }[];
 }
 interface ExamSession {
   id: string; startedAt: string; endedAt: string | null; doctorComment: string;
@@ -156,8 +158,36 @@ export default function PatientDetailPage() {
               <section className="mb-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">정식 검진 결과 (회차별)</h2>
-                  <span className="text-[11px] text-zinc-400">최근 {data.examSessions?.length ?? 0}회</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-zinc-400">최근 {data.examSessions?.length ?? 0}회</span>
+                    {data.examSessions && data.examSessions.length > 0 && (
+                      <a href={`/expert/patients/${params.id}/report`} target="_blank" rel="noreferrer" className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">🖨 검진 결과지</a>
+                    )}
+                  </div>
                 </div>
+                {/* 회차 추세 — 다회차 그래프 + 해석 */}
+                {data.examTrend && data.examTrendPoints && data.examTrendPoints.length >= 2 && (
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">회차 추세</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${data.examTrend.direction === "개선" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" : data.examTrend.direction === "악화" ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" : data.examTrend.direction === "변동" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{data.examTrend.label}</span>
+                    </div>
+                    <div className="flex items-end gap-2 border-b border-zinc-100 pb-2 dark:border-zinc-800" style={{ height: 88 }}>
+                      {data.examTrendPoints.map((p) => {
+                        const h = Math.max(6, Math.round((p.score / (p.max || 29)) * 72));
+                        const col = p.band === "정상범위" ? "bg-emerald-400" : p.band === "경계" ? "bg-amber-400" : p.band === "저하의심" ? "bg-red-400" : "bg-zinc-300";
+                        return (
+                          <div key={p.round} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${p.round}회차 ${p.date} · ${p.score}/${p.max}`}>
+                            <span className="text-[10px] text-zinc-500">{p.score}</span>
+                            <div className={`w-full rounded-t ${col}`} style={{ height: h }} />
+                            <span className="text-[10px] text-zinc-400">{p.round}회</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">{data.examTrend.detail}</p>
+                  </div>
+                )}
                 {(!data.examSessions || data.examSessions.length === 0) && (
                   <p className="rounded-xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400 dark:bg-zinc-800/40">아직 검진 기록이 없습니다. 전문가 모드에서 ‘검진 시작’으로 시행하세요.</p>
                 )}

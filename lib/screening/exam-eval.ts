@@ -96,3 +96,38 @@ export function compareSessions(prevScore: number, prevMax: number, currScore: n
   if (d < -0.07) return { direction: "악화", deltaPct };
   return { direction: "유지", deltaPct };
 }
+
+export type TrendDirection = "개선" | "악화" | "유지" | "변동" | "부족";
+export interface ExamTrend { direction: TrendDirection; label: string; detail: string }
+const TREND_DELTA = 0.07; // 첫·끝 비율 차 임계(≈2점)
+const TREND_VOLATILE = 0.12; // 등락 폭이 크면 '변동'
+
+/**
+ * 다회차 추세 요약 — series는 평가가능(자료충분) 회차의 {score,max}를 시간순(오래된→최신)으로.
+ * 첫·끝 비율 차로 방향, 연속 단조성으로 '점진'·'변동'을 구분.
+ */
+export function summarizeExamTrend(series: { score: number; max: number }[]): ExamTrend {
+  const ratios = series.filter((s) => s.max > 0).map((s) => s.score / s.max);
+  const n = ratios.length;
+  if (n < 2) return { direction: "부족", label: "추세 분석 대기", detail: "평가 가능한 검진이 2회 이상 쌓이면 추세를 보여드려요." };
+  const first = ratios[0], last = ratios[n - 1];
+  const delta = last - first;
+  const diffs = ratios.slice(1).map((r, i) => r - ratios[i]);
+  const spread = Math.max(...ratios) - Math.min(...ratios);
+  const allDown = diffs.every((d) => d <= 0.02);
+  const allUp = diffs.every((d) => d >= -0.02);
+  const pct = Math.round(delta * 100);
+  const recent = `최근 ${n}회 ${Math.round(first * 100)}%→${Math.round(last * 100)}% (${pct >= 0 ? "+" : ""}${pct}%p)`;
+  if (delta < -TREND_DELTA) {
+    return allDown
+      ? { direction: "악화", label: "점진적 악화", detail: `${recent} · 회차마다 꾸준히 하락. 정밀검사·경과관찰 권유.` }
+      : { direction: "악화", label: "전반적 악화(등락 있음)", detail: `${recent} · 등락은 있으나 전반 하락.` };
+  }
+  if (delta > TREND_DELTA) {
+    return allUp
+      ? { direction: "개선", label: "개선 추세", detail: `${recent} · 회차마다 상승.` }
+      : { direction: "개선", label: "전반적 개선(등락 있음)", detail: `${recent} · 등락은 있으나 전반 상승.` };
+  }
+  if (spread > TREND_VOLATILE) return { direction: "변동", label: "변동 — 일관성 낮음", detail: `${recent} · 회차 간 등락 폭이 큼. 컨디션·검사환경 영향 가능, 반복 검사 권유.` };
+  return { direction: "유지", label: "안정적 유지", detail: `${recent} · 큰 변화 없이 유지.` };
+}
