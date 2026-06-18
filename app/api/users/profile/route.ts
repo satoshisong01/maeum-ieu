@@ -31,7 +31,8 @@ export async function PATCH(req: Request) {
   }
 
   const body = await req.json();
-  const { name, age, gender, guardianName, guardianPhone, guardianRelation, guardianEmail, guardianWebhookUrl, companionName, companionRelation, userHonorific, screeningMode, currentPassword, newPassword } = body as {
+  // 계정 유형(screeningMode)은 가입 시에만 결정 — 마이페이지에서 변경 불가(권한 상승·검사 모드 스푸핑 악용 차단)
+  const { name, age, gender, guardianName, guardianPhone, guardianRelation, guardianEmail, guardianWebhookUrl, companionName, companionRelation, userHonorific, currentPassword, newPassword } = body as {
     name?: string;
     age?: number | null;
     gender?: string | null;
@@ -43,7 +44,6 @@ export async function PATCH(req: Request) {
     companionName?: string | null;
     companionRelation?: string | null;
     userHonorific?: string | null;
-    screeningMode?: string;
     currentPassword?: string;
     newPassword?: string;
   };
@@ -115,7 +115,7 @@ export async function PATCH(req: Request) {
   if (companionName !== undefined) updateData.companionName = (companionName && companionName.trim()) || "민지";
   if (companionRelation !== undefined) updateData.companionRelation = (companionRelation && companionRelation.trim()) || "손녀";
   if (userHonorific !== undefined) updateData.userHonorific = (userHonorific && userHonorific.trim()) || null;
-  if (screeningMode !== undefined) updateData.screeningMode = screeningMode === "pro" ? "pro" : screeningMode === "general" ? "general" : "user";
+  // screeningMode는 의도적으로 업데이트하지 않음 — 가입 시 고정(악용 방지)
   if (newPassword) updateData.password = await bcrypt.hash(newPassword, 10);
 
   const updated = await prisma.user.update({

@@ -778,6 +778,8 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **계정 유형 변경 차단(악용 방지)** — screeningMode는 가입 시에만 결정. /api/users/profile에서 screeningMode 업데이트 제거(서버가 무시) + 마이페이지 모드 버튼을 읽기전용 표시로 교체. user→pro 권한 상승/검사 모드 스푸핑 차단. 라이브: user PATCH{pro} → 모드 user 유지 PASS.
+- **대리 검진 = pro 모드 확인(강화 불필요)** — 라우트 가드 `if(proxyPatientId && mode!=="pro") return 403`로 대리 검진은 항상 전문가(공신력 100%) 모드 보장. mode는 행위자(전문가) 세션으로 결정되어 환자의 user 모드로 떨어지지 않음. 라이브: 대리 인사 200(=pro 통과) 확인.
 - **#5 회차별 분석** — 환자 상세에 검사일(session_date)별 회차 비교 표 추가. cognitive_assessments를 날짜로 그룹 → 회차별 종합점수·등급·직전 회차 대비 변화(악화/개선). 주기적 검사(월 1회 등)에 적합. 라이브: 11회 회차 표시·렌더 PASS.
 
 ## 캠페인 종합 (2026-06-17)
