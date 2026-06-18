@@ -10,6 +10,8 @@ import { classifyMedReply } from "@/lib/chat/medication";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
+const EXAM_DURATION_MS = 25 * 60 * 1000; // 전문가 검진 자동 종료(약 25분)
+
 const blobToBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -187,6 +189,7 @@ export default function ChatPage() {
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   // startRecording을 ref로 보관 — speak/onstop 등 useCallback 의존성 순환 방지용
   const startRecordingRef = useRef<() => void>(() => {});
+  const stopRecordingRef = useRef<(opts?: { discard?: boolean }) => void>(() => {}); // 검진 시간종료 등에서 호출(정의 순서 우회)
 
   // 음성 세션 종료 명령 감지 패턴 — 사용자 발화 transcription에 매칭되면 세션 종료 → wake 대기로
   const SESSION_END_PATTERN = useRef(
@@ -768,6 +771,9 @@ export default function ChatPage() {
   useEffect(() => { reEngageCountRef.current = 0; }, [conversationId]); // 새 대화 → 재참여 카운트 리셋(stale 차단)
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
   const [examCountdown, setExamCountdown] = useState<string | null>(null); // 대리 검진 시작 카운트다운(5..1..시작)
+  const [examRemaining, setExamRemaining] = useState<string>("");          // 검진 남은 시간(mm:ss)
+  const examEndAtRef = useRef<number | null>(null);
+  const examTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /** 마이크 권한만 받고 즉시 release. 실제 stream은 wake 시점에 다시 잡음. */
   const startConversation = useCallback(async () => {
@@ -813,6 +819,18 @@ export default function ChatPage() {
     setModeSelected(true);
   }, []);
 
+  // 검진 종료(시간 만료) — 세션 정리 + 안내. 수동 종료는 배너 '검사 종료' 링크(/expert)로.
+  const endExam = useCallback(() => {
+    if (examTimerRef.current) { clearInterval(examTimerRef.current); examTimerRef.current = null; }
+    examEndAtRef.current = null;
+    setExamRemaining("");
+    sessionActiveRef.current = false; setSessionActive(false);
+    alwaysOnRef.current = false; setAlwaysOn(false);
+    wakeArmedRef.current = false; setWakeArmed(false);
+    stopRecordingRef.current?.({ discard: true });
+    setMessages((prev) => [...prev, { id: createId(), role: "assistant", content: "검진 시간이 다 되었어요. 오늘 검진은 여기까지 할게요. 수고 많으셨습니다." }]);
+  }, []);
+
   // 대리 검진 시작 — 마이크 권한 → 5..1..시작 카운트다운 → AI 음성 인사로 검진 시작(음성 전용)
   const startExam = useCallback(async () => {
     try {
@@ -837,6 +855,15 @@ export default function ChatPage() {
     setAlwaysOn(true); alwaysOnRef.current = true;
     setSessionActive(true); sessionActiveRef.current = true;
     setWakeArmed(true); wakeArmedRef.current = true;
+    // 검진 시간 제한(약 25분) — 남은 시간 표시 + 만료 시 자동 종료
+    examEndAtRef.current = Date.now() + EXAM_DURATION_MS;
+    if (examTimerRef.current) clearInterval(examTimerRef.current);
+    examTimerRef.current = setInterval(() => {
+      const left = (examEndAtRef.current ?? 0) - Date.now();
+      if (left <= 0) { endExam(); return; }
+      const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+      setExamRemaining(`${m}:${String(s).padStart(2, "0")}`);
+    }, 1000);
     if (!conversationId) return;
     setLoading(true);
     try {
@@ -856,7 +883,10 @@ export default function ChatPage() {
     } catch {
       setLoading(false);
     }
-  }, [conversationId, getContext, speak, proxyPatientId]);
+  }, [conversationId, getContext, speak, proxyPatientId, endExam]);
+
+  // 언마운트 시 검진 타이머 정리(누수 방지)
+  useEffect(() => () => { if (examTimerRef.current) clearInterval(examTimerRef.current); }, []);
 
   const sendAudioMessage = useCallback(
     async (audioBase64: string, mimeType: string) => {
@@ -1098,6 +1128,7 @@ export default function ChatPage() {
     }
     setListening(false);
   }, [releaseStream]);
+  stopRecordingRef.current = stopRecording;
 
   // wake-word 감지 ("마음", "마음아") — alwaysOn 활성 상태에서만 동작.
   //  - 듣고 있을 때(listening) / AI 응답 중(turnLock) / 이미 wake된 상태는 일시 정지
@@ -1207,7 +1238,7 @@ export default function ChatPage() {
       {proxyPatientId && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
           <span className="text-xs font-semibold sm:text-sm">
-            🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 기록됩니다
+            🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 기록됩니다{examRemaining && <span className="ml-1 font-bold">· 남은 시간 {examRemaining}</span>}
           </span>
           <Link href="/expert" className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 sm:text-xs">
             검사 종료
