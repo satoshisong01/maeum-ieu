@@ -11,8 +11,6 @@ import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
 import { LogoutButton } from "../LogoutButton";
 
-interface ReportDomain { domain: string; label: string; assessed: boolean; worst: number | null; items: { score: number; evidence: string | null; note: string | null; at: string }[] }
-interface SessionReport { days: { d: string; n: number }[]; domains: ReportDomain[]; summary: string; assessedCount: number }
 
 interface PatientRow {
   id: string;
@@ -47,21 +45,6 @@ export default function ExpertPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [copied, setCopied] = useState(false);
-  const [report, setReport] = useState<SessionReport | null>(null);
-  const [reportDate, setReportDate] = useState<string>("");
-  const [openDomain, setOpenDomain] = useState<string>("");
-
-  const loadReport = async (date?: string) => {
-    try {
-      const res = await fetch(`/api/expert/session-report${date ? `?date=${date}` : ""}`);
-      if (res.ok) {
-        const d: SessionReport = await res.json();
-        setReport(d);
-        if (date) setReportDate(date);
-        else setReportDate(d.days[0]?.d ?? "");
-      }
-    } catch { /* noop */ }
-  };
 
   useEffect(() => {
     if (status === "unauthenticated") { router.replace("/login"); return; }
@@ -78,7 +61,6 @@ export default function ExpertPage() {
         const listData = await listRes.json();
         setCode(codeData.code ?? "");
         setPatients(listData.patients ?? []);
-        loadReport();
       } catch {
         setError("정보를 불러오지 못했습니다. 새로고침해 주세요.");
       }
@@ -124,56 +106,6 @@ export default function ExpertPage() {
                   {copied ? "복사됨 ✓" : "복사"}
                 </button>
               </div>
-            </section>
-
-            {/* 검사 결과지 — 이 계정으로 시행한 표준검사의 일자별 영역 결과 */}
-            <section className="mb-8 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">📋 검사 결과지 (이 기기에서 시행)</h2>
-                {report && report.days.length > 0 && (
-                  <select
-                    value={reportDate}
-                    onChange={(e) => loadReport(e.target.value)}
-                    className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                  >
-                    {report.days.map((d) => <option key={d.d} value={d.d}>{d.d} ({d.n}건)</option>)}
-                  </select>
-                )}
-              </div>
-              {!report && <p className="text-xs text-zinc-500">불러오는 중…</p>}
-              {report && (
-                <>
-                  <p className={`mb-3 rounded-lg px-3 py-2 text-xs font-medium ${report.domains.some((d) => (d.worst ?? 0) >= 1) ? "bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200" : "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"}`}>{report.summary}</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                    {report.domains.map((d) => (
-                      <button
-                        key={d.domain}
-                        type="button"
-                        onClick={() => setOpenDomain(openDomain === d.domain ? "" : d.domain)}
-                        className={`rounded-xl border px-2 py-2 text-center text-xs transition ${!d.assessed ? "border-dashed border-zinc-200 text-zinc-400 dark:border-zinc-700" : (d.worst ?? 0) >= 2 ? "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200" : (d.worst ?? 0) === 1 ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200" : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200"}`}
-                      >
-                        <span className="block font-semibold">{d.label}</span>
-                        <span className="block text-[11px]">{d.assessed ? `${d.worst}점` : "미시행"}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {openDomain && (() => {
-                    const d = report.domains.find((x) => x.domain === openDomain);
-                    if (!d || !d.assessed) return null;
-                    return (
-                      <div className="mt-3 space-y-1 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800">
-                        <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">{d.label} — 평가 근거</p>
-                        {d.items.map((it, i) => (
-                          <p key={i} className="text-[11px] text-zinc-600 dark:text-zinc-300">
-                            <span className={`mr-1 font-bold ${it.score >= 2 ? "text-red-600" : it.score === 1 ? "text-amber-600" : "text-emerald-600"}`}>{it.score}점</span>
-                            [{it.at}] {it.evidence ?? "—"}{it.note ? ` · ${it.note}` : ""}
-                          </p>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
             </section>
 
             <h2 className="mb-3 text-sm font-semibold text-zinc-600 dark:text-zinc-300">연결된 환자 {patients.length}명</h2>

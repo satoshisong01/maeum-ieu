@@ -1230,7 +1230,7 @@ export default function ChatPage() {
           </Link>
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={async () => { await signOut({ redirect: false }); window.location.href = "/login"; }}
             title="로그아웃"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-8 sm:w-8 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
