@@ -2,7 +2,7 @@
 
 import { signIn, getSession } from "next-auth/react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
 
 export default function LoginPage() {
@@ -10,6 +10,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
+
+  // 저장된 아이디(이메일) 자동 채움
+  useEffect(() => {
+    const saved = localStorage.getItem("savedEmail");
+    if (saved) { setEmail(saved); setRemember(true); }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,6 +32,9 @@ export default function LoginPage() {
         setError("이메일 또는 비밀번호를 확인해 주세요.");
         return;
       }
+      // 아이디 저장 — 체크 시 이메일 보관, 해제 시 삭제
+      if (remember) localStorage.setItem("savedEmail", email);
+      else localStorage.removeItem("savedEmail");
       // 전문가·보호자는 대화 화면이 아니라 연결된 환자 목록으로 — 본인은 검진 대상이 아님
       const session = await getSession();
       window.location.href = session?.user?.screeningMode === "pro" ? "/expert" : "/chat";
@@ -58,6 +68,15 @@ export default function LoginPage() {
             className="rounded-xl border border-zinc-300 bg-white px-4 py-4 text-base text-zinc-900 outline-none focus:border-[#007bff] focus:ring-2 focus:ring-blue-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             required
           />
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="h-4 w-4 rounded border-zinc-300 text-[#007bff] focus:ring-2 focus:ring-blue-400 dark:border-zinc-600 dark:bg-zinc-800"
+            />
+            아이디 저장
+          </label>
           {error && <p className="text-sm text-red-500">{error}</p>}
           <button
             type="submit"
