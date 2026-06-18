@@ -778,6 +778,10 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **소표본 과대판정 방지 — 전문가 뷰 잠정 등급(채점 신뢰성)** (2026-06-18)
+  - A-Z 테스트에서 7턴에 "중증" 단정이 전문가 목록/상세에 그대로 노출됨(대시보드엔 잠정 가드 있었으나 전문가 뷰엔 없었음).
+  - `severity.ts`에 공유 헬퍼 `assessReliability(checks, domains)` 추가(충분=10회+·3영역+ / 잠정=5회+·2영역+ / 그 외 판정보류 — 대시보드와 동일 기준). 전문가 목록·상세 API가 reliability 반환, UI는 **자료 부족 시 "평가중", 잠정 시 "(잠정)" 라벨**.
+  - vitest +5(신뢰도 경계). tsc 0·safety 116·vitest 178.
 - **A-Z 라이브 테스트(Playwright 보이는 브라우저 직접 운전) 발견 이슈 수정** (2026-06-18)
   - 신규 3계정 가입→연결(코드)→대화→검진→코멘트 A-Z 드라이브 + DB 대조. PASS: 가입필드게이팅·아이디저장·역할랜딩·가족추출(영호/son)·인지분석 환자귀손(의사 누출 0행)·연결동의·검진 문답기록+코멘트 영속.
   - 🔴 **로그아웃 chrome-error 수정**: `signOut({callbackUrl:"/"})` 내부 리다이렉트가 깨짐 → `signOut({redirect:false})` 후 `window.location="/login"`(LogoutButton + chat 아이콘). 라이브: /login 정상 이동.

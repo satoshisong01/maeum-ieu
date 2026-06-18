@@ -20,6 +20,8 @@ interface PatientRow {
   linkedAt: string;
   overallAvg: number | null;
   tier: string;
+  provisional?: boolean;
+  showLevel?: boolean;
   trend: string;
   trendText: string;
   anomaly7d: number;
@@ -122,7 +124,9 @@ export default function ExpertPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.name}</span>
                       <span className="text-xs text-zinc-500">{p.age ? `${p.age}세` : ""} {p.gender === "male" ? "남" : p.gender === "female" ? "여" : ""}</span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE[p.tier] ?? TIER_STYLE["평가전"]}`}>{p.tier}</span>
+                      {p.showLevel === false
+                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE["평가전"]}`}>평가중</span>
+                        : <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE[p.tier] ?? TIER_STYLE["평가전"]}`}>{p.tier}{p.provisional ? " (잠정)" : ""}</span>}
                       <span className="text-xs text-zinc-600 dark:text-zinc-300">{TREND_LABEL[p.trend] ?? p.trend}</span>
                     </div>
                     <div className="text-xs text-zinc-500">

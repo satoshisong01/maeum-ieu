@@ -68,3 +68,15 @@ export function classifySeverity(overallAvg: number): { tier: SeverityTier; text
   if (overallAvg < TIER_BOUNDS.moderate) return { tier: "중증", text: "인지 저하 가능성이 있으므로 전문의 상담을 권장합니다." };
   return { tier: "고위험", text: "심각한 인지 저하가 의심되므로 즉시 전문의 상담이 필요합니다." };
 }
+
+/**
+ * 표본 신뢰도 — 소표본 과대판정(예: 7턴에 '중증') 방지. 대시보드·전문가 뷰 공통 단일 출처.
+ * reliable: 충분(10회+ & 3영역+). provisional: 잠정(5회+ & 2영역+). showLevel: 등급 표시 가능 여부.
+ * evaluatedDomains는 각 2회 이상 평가된 영역 수.
+ */
+export interface SampleReliability { reliable: boolean; provisional: boolean; showLevel: boolean }
+export function assessReliability(totalChecks: number, evaluatedDomains: number): SampleReliability {
+  const reliable = totalChecks >= 10 && evaluatedDomains >= 3;
+  const provisional = !reliable && totalChecks >= 5 && evaluatedDomains >= 2;
+  return { reliable, provisional, showLevel: reliable || provisional };
+}

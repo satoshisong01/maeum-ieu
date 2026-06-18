@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { computeOverallAvg, classifySeverity, detectAcuteChange, type DomainStat } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, type DomainStat } from "@/lib/health/severity";
 import { toKstDateString } from "@/lib/chat/time";
 
 interface DomainRow extends DomainStat { domain: string }
@@ -66,6 +66,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const recentAvg = computeOverallAvg(recent);
   const tier = classifySeverity(recentAvg);
+  // 표본 신뢰도 — 소표본(예: 7턴)에 '중증' 단정 방지. 충분/잠정/판정보류 구분.
+  const reliability = assessReliability(recent.reduce((s, d) => s + d.count, 0), recent.filter((d) => d.count >= 2).length);
   const trend = detectAcuteChange({
     recentAvg,
     recentCount: recent.reduce((s, d) => s + d.count, 0),
@@ -168,7 +170,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({
     patient: { name: patient.name ?? "이름 미설정", age: patient.age, gender: patient.gender, joinedAt: patient.createdAt },
     overallAvg: recentAvg < 0 ? null : Number(recentAvg.toFixed(2)),
-    tier: tier.tier, tierText: tier.text,
+    tier: tier.tier, tierText: tier.text, reliability,
     trend: trend.status, trendText: trend.text, trendDelta: trend.delta,
     domains,
     weekly: weekly.map((w) => ({ weekStart: w.week_start, avg: Number(w.avg_score.toFixed(2)), count: w.count })),
