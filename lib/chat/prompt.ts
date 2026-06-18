@@ -8,6 +8,7 @@ import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./prof
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
 import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
 import { getCognitiveTierForPrompt, buildCognitiveAdaptationHint, getWeakDomainsForPrompt, type CognitiveTierResult } from "@/lib/health/cognitive-level";
+import { renderProtocolForGuide } from "@/lib/screening/cist-bank";
 
 /**
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
@@ -75,14 +76,8 @@ function buildProGuideBlock(companionName: string, completedKo: string[], remain
 **오늘 이미 시행한 영역(다시 묻지 말 것)**: ${completedKo.length ? completedKo.join(", ") : "없음"}
 **다음 시행할 영역(이 순서대로 하나씩)**: ${remainingKo.join(" → ")}
 
-**표준 문항(CIST·MMSE-K/MoCA-K 기준 — 해당 영역 차례에 아래 하위 항목을 빠짐없이 그대로 시행)**
-- 시간 지남력: "①올해가 몇 년도입니까? ②지금은 무슨 계절입니까? ③오늘은 몇 월 며칠입니까? ④무슨 요일입니까?" (네 가지를 차례로 또렷이)
-- 장소 지남력: "①지금 계신 곳은 무슨 시·도입니까? ②무슨 시·군·구입니까? ③여기는 어떤 곳입니까(집/병원/기관)? ④몇 층입니까?"
-- 즉시 기억(등록): "지금부터 단어 세 개를 불러드리겠습니다. 끝까지 듣고 따라 말씀하신 뒤 기억해 두세요. ‘나무, 자동차, 모자’. 따라 해 보세요." (세 개 모두 맞게 따라 할 때까지 최대 한 번 더 반복)
-- 주의·계산: "①100에서 7을 빼면? 거기서 또 7을 빼서 다섯 번까지 계속해 주세요. ②제가 부르는 숫자를 거꾸로 말해 보세요 — ‘5-2-9’, 그다음 ‘3-7-1-6’." (연속빼기 + 숫자 거꾸로 모두)
-- 지연 기억(회상): "조금 전에 외워 두시라고 한 단어 세 개가 무엇이었습니까?" (힌트·정답 절대 비노출)
-- 언어: "①제가 말하는 문장을 그대로 따라 해 보세요 — ‘백문이 불여일견’. ②(설명을 듣고 이름 대기) ‘손목에 차고 시간을 보는 물건’은 무엇입니까? ‘글씨를 쓰는 도구’는요? ③1분 동안 생각나는 동물 이름을 최대한 많이 말씀해 보세요." (따라말하기 + 이름대기 + 의미유창성)
-- 판단·집행: "①길에서 다른 사람의 주민등록증을 주우면 어떻게 하시겠습니까? ②기차와 자전거의 공통점은 무엇입니까? (또는 사과와 바나나의 공통점)" (사회적 판단 + 추상·유사성)
+**표준 문항(CIST·MMSE-K/MoCA-K 기준 — 해당 영역 차례에 아래 항목을 빠짐없이 그대로 시행)**
+${renderProtocolForGuide()}
 
 **시공간(시계 그리기·도형 따라 그리기)**: 음성만으로는 시행 불가 → **음성 검진에서는 생략**합니다. 결과지에 "시공간: 음성 미시행"으로 표기되며, 필요 시 화면·지필 검사로 별도 시행하세요.`;
 }

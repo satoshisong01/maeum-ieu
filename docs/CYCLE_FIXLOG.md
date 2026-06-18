@@ -778,6 +778,11 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **CIST 문항 뱅크(단일 출처) + 전문가 질문지 뷰 — Phase 2 기반** (2026-06-18)
+  - `lib/screening/cist-bank.ts` 신설: CIST·MMSE-K/MoCA-K 항목을 구조화(id·domain·source·prompt·points·scoring·voice). 음성 시행 만점 29점(시공간 voice=false 제외). **검진 가이드(proGuideBlock)도 이 뱅크에서 렌더** → 전문가가 보는 문항 = AI가 실제 시행 문항(드리프트 방지).
+  - `/expert/protocol` 신설: 전문가가 **어떤 문항을 어떤 근거(MMSE-K/MoCA-K/CIST)로 시행하는지·배점·채점기준** 미리 확인. /expert 헤더에 "검진 문항지" 링크.
+  - vitest +5(뱅크 무결성: 29점·시공간 미시행·근거/채점 존재·가이드 렌더). 라이브: 질문지 뷰 전 항목 표시 PASS.
+  - ▶ **Phase 2(예정)**: 이 뱅크 기반 항목별 채점(0/1) 상태머신 검진 플로우 + exam_session/항목점수 테이블 + 정식 30점 결과지. (현재는 영역단위 0~2 + 환산 추정)
 - **검진 문항 CIST 수준 보강 + MMSE-K 환산(A안)** (2026-06-18)
   - buildProGuideBlock 표준 문항을 CIST·MMSE-K/MoCA-K 기준으로 영역별 충실화: 지남력(시간4·장소4 세부), 주의·계산(연속빼기+숫자 거꾸로), 언어(따라말하기+이름대기+의미유창성), 판단(사회판단+유사성/추상). **시공간(그리기)은 음성 미시행 명시**.
   - 전문가 리포트에 **MMSE-K 환산 추정**(음성 7영역 0~2 정성점수→가중 환산, 만점 29=시공간 제외) + "정식 점수 아님·시공간 음성 미시행" 고지. 라이브: 25/29점 표시 PASS.
