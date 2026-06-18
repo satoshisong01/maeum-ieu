@@ -99,6 +99,7 @@ export default function ExpertPage() {
           <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">🩺 환자 관리</h1>
           <div className="flex items-center gap-3">
             <ThemeToggle />
+            <Link href="/expert/protocol" className="text-sm text-teal-600 hover:text-teal-800 dark:text-teal-300 dark:hover:text-teal-200">검진 문항지</Link>
             <Link href="/mypage" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">마이페이지</Link>
             <LogoutButton />
           </div>
