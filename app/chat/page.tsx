@@ -105,6 +105,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [proxyPatientId, setProxyPatientId] = useState<string | null>(null); // 전문가 대리 검사 대상(?patient=) — 결과를 이 환자에 귀속
+  const [proxyPatientName, setProxyPatientName] = useState<string>("");
+  const [paramsReady, setParamsReady] = useState(false); // URL 파라미터 읽기 완료 — 대화 로드 레이스 방지
   // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 선별 / pro=표준검사 시행 / general=마음 건강 자가점검)
   const screeningMode: "user" | "pro" | "general" =
     session?.user?.screeningMode === "pro" ? "pro"
@@ -144,6 +147,8 @@ export default function ChatPage() {
   messagesRef.current = messages;
   const screeningModeRef = useRef(screeningMode); // 전송 콜백 stale 클로저 방지
   screeningModeRef.current = screeningMode;
+  const proxyPatientIdRef = useRef<string | null>(null); // 대리 검사 대상 — 전송 콜백 stale 방지
+  proxyPatientIdRef.current = proxyPatientId;
   const speakGenRef = useRef(0); // speak 세대 카운터 — 새 발화가 이전 TTS 파이프라인을 취소
   const locationRef = useRef<{ latitude?: number; longitude?: number }>({});
 
@@ -446,7 +451,7 @@ export default function ChatPage() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, isReEngage: true, reEngageAttempt: attempt, context: getContext() }),
+        body: JSON.stringify({ conversationId, isReEngage: true, reEngageAttempt: attempt, context: getContext(), ...(proxyPatientId ? { proxyPatientId } : {}) }),
       });
       if (!res.ok) return;
       const { text } = (await res.json()) as { text?: string };
@@ -455,7 +460,7 @@ export default function ChatPage() {
       setAiSpeaking(true); // re-engage TTS 동안 wake-word 일시정지(자기 TTS의 '마음' 재발동 방지)
       try { await speak(text); } finally { setAiSpeaking(false); } // turnLock·echo지연·재청취 일괄 처리
     } catch { /* 재참여 실패는 무해화 */ }
-  }, [conversationId, getContext, speak]);
+  }, [conversationId, getContext, speak, proxyPatientId]);
   reEngageRef.current = triggerReEngage;
 
   const scrollToBottom = useCallback(() => {
@@ -481,15 +486,27 @@ export default function ChatPage() {
     );
   }, []);
 
+  // URL ?patient= 읽기 — 전문가 대리 검사 대상. 있으면 모든 요청을 이 환자에 귀속(서버가 연결 재검증). 배너용 이름 조회.
+  useEffect(() => {
+    const pid = new URLSearchParams(window.location.search).get("patient");
+    setProxyPatientId(pid);
+    setParamsReady(true);
+    if (pid) {
+      fetch(`/api/expert/patients/${pid}`)
+        .then(async (r) => { if (r.ok) { const d = await r.json(); setProxyPatientName(d?.patient?.name ?? ""); } })
+        .catch(() => {});
+    }
+  }, []);
+
   // 진입 시: 최근 대화 불러오기 + 시간 경과에 따라 AI 인사
   useEffect(() => {
-    if (status !== "authenticated" || conversationId !== null) return;
+    if (status !== "authenticated" || conversationId !== null || !paramsReady) return;
 
     const RETURNING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간
 
     let cancelled = false;
     (async () => {
-      const getRes = await fetch("/api/conversations", { method: "GET" });
+      const getRes = await fetch(`/api/conversations${proxyPatientId ? `?patient=${encodeURIComponent(proxyPatientId)}` : ""}`, { method: "GET" });
       if (!getRes.ok || cancelled) return;
       const data = (await getRes.json()) as {
         conversation?: { id: string } | null;
@@ -524,6 +541,7 @@ export default function ChatPage() {
               conversationId: conv.id,
               isReturningGreeting: true,
               context: getContext(),
+              ...(proxyPatientId ? { proxyPatientId } : {}),
             }),
           });
           if (!chatRes.ok || cancelled) return;
@@ -550,7 +568,7 @@ export default function ChatPage() {
         conversationIdToUse = conv.id;
         setConversationId(conv.id);
       } else {
-        const postRes = await fetch("/api/conversations", { method: "POST" });
+        const postRes = await fetch("/api/conversations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(proxyPatientId ? { proxyPatientId } : {}) });
         if (!postRes.ok || cancelled) return;
         const { id } = (await postRes.json()) as { id: string };
         if (cancelled) return;
@@ -565,6 +583,7 @@ export default function ChatPage() {
           conversationId: conversationIdToUse,
           isInitialGreeting: true,
           context: getContext(),
+          ...(proxyPatientId ? { proxyPatientId } : {}),
         }),
       });
       if (!chatRes.ok || cancelled) return;
@@ -585,7 +604,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, conversationId, getContext]);
+  }, [status, conversationId, getContext, paramsReady, proxyPatientId]);
 
   // ─── 복약/일과 알림 폴링 ────────────────────────────────────────────────
   //   1분마다 /api/medications/check 호출 → due 발견 시 /trigger 로 멘트 받아 AI 메시지로 표시·재생.
@@ -689,6 +708,7 @@ export default function ChatPage() {
             ),
             context: getContext(),
             mode: screeningModeRef.current,
+            ...(proxyPatientIdRef.current ? { proxyPatientId: proxyPatientIdRef.current } : {}),
           }),
         });
 
@@ -803,6 +823,7 @@ export default function ChatPage() {
             })),
             context: getContext(),
             mode: screeningModeRef.current,
+            ...(proxyPatientIdRef.current ? { proxyPatientId: proxyPatientIdRef.current } : {}),
           }),
         });
         if (!res.ok) {
@@ -1119,6 +1140,18 @@ export default function ChatPage() {
           </button>
         </div>
       </header>
+
+      {/* 전문가 대리 검사 배너 — 결과가 선택한 환자(어르신)에게 기록됨을 명시 */}
+      {proxyPatientId && (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+          <span className="text-xs font-semibold sm:text-sm">
+            🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 이 어르신께 기록됩니다
+          </span>
+          <Link href="/expert" className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 sm:text-xs">
+            검사 종료
+          </Link>
+        </div>
+      )}
 
       {/* 파동 + 상태 텍스트: 헤더 아래 고정. wake 대기 중에도 시각화 표시 */}
       {micAllowed && (alwaysOn || listening || aiSpeaking) && (

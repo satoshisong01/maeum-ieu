@@ -24,6 +24,7 @@ export interface ChatRequestBody {
   audio?: AudioInput;
   context?: ClientContext;
   mode?: ScreeningMode;
+  proxyPatientId?: string;     // 전문가 대리 검사 — 결과를 이 환자 계정에 귀속(서버가 연결 검증)
 }
 
 export interface TimeContext {

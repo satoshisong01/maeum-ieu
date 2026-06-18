@@ -771,5 +771,13 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - 마이페이지 연결 라벨 "전문가" → "보호자·전문가", 안내에 "어르신 본인에게는 결과 비공개" 명시.
 - **라이브 E2E PASS**: 어르신 health-logs 403·건강기록 링크 없음·/dashboard→/chat 리다이렉트 / 보호자(pro)는 /expert 상세+복약 열람. tsc 0 · safety 116.
 
+## 2026-06-18 — 전문가 온보딩(#1·#2) + 대리 검사(#4)
+- **#1 가입 필드 정리** — 전문가·보호자(pro) 가입 시 환자(어르신) 전용 입력란(나이/성별·보호자·AI동반자·복약) 숨김.
+- **#2 로그인 랜딩** — pro는 getSession 역할 확인 후 /chat 대신 /expert(환자 목록)로. 검사용 /chat 접근은 유지.
+- **#4 전문가 대리 검사(회원별 검사)** — pro가 /expert/patients/[id] "검사 시작" → /chat?patient=ID → 대화·인지결과를 **환자 계정에 귀속**.
+  - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
+  - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
+  - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+
 ## 캠페인 종합 (2026-06-17)
 재참여 + B1~B5 + C1~C5 = **18커밋, 전부 tsc 0 + 라이브 검증 + 양 repo 푸시**. rate-limit은 코드에 한계 명시됨(실구현=Redis 인프라). 잔여 후속(선택): 음성 idle 실기기 검증 · 챗 복약 자동캡처 · 전용 guardian role 라벨 · 광범위 폰트/대비 시각 패스 · 분산 rate-limit(인프라).
