@@ -7,7 +7,7 @@ export function LogoutButton({ className }: { className?: string }) {
   return (
     <button
       type="button"
-      onClick={() => signOut({ callbackUrl: "/" })}
+      onClick={async () => { await signOut({ redirect: false }); window.location.href = "/login"; }}
       title="로그아웃"
       className={className ?? "text-sm text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"}
     >

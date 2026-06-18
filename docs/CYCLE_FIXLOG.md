@@ -778,6 +778,14 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
   - 보안: pro 계정 + ExpertPatient active 연결만 허용(chat·conversations 라우트 이중 검증). user/general·미연결·타 사용자 proxy = 403.
   - 클라: ?patient= 읽어(paramsReady 게이트로 레이스 방지) 모든 요청에 proxyPatientId 전달 + "검사 모드" 배너(결과가 환자에 기록됨 명시).
   - **라이브 E2E PASS**: 환자 대화로 귀속·본인 대화 누출 0·배너 표시·미연결/비pro/타사용자 403. tsc 0.
+- **A-Z 라이브 테스트(Playwright 보이는 브라우저 직접 운전) 발견 이슈 수정** (2026-06-18)
+  - 신규 3계정 가입→연결(코드)→대화→검진→코멘트 A-Z 드라이브 + DB 대조. PASS: 가입필드게이팅·아이디저장·역할랜딩·가족추출(영호/son)·인지분석 환자귀손(의사 누출 0행)·연결동의·검진 문답기록+코멘트 영속.
+  - 🔴 **로그아웃 chrome-error 수정**: `signOut({callbackUrl:"/"})` 내부 리다이렉트가 깨짐 → `signOut({redirect:false})` 후 `window.location="/login"`(LogoutButton + chat 아이콘). 라이브: /login 정상 이동.
+  - 🟠 **분석기 과대귀인 수정**: (a) 한 발화 같은 오류의 **다영역 중복 채점 금지**(1988 발화가 시간+판단 이중채점되던 것 → 단일영역). (b) 사용자가 **AI에게 "내가 뭐랬지" 되묻는 것을 환자 기억결손으로 오채점 금지**(memory_delayed는 AI 회상문항에 직접 회상실패한 경우만).
+  - 🟠 **검진 오염·루프 완화**(proGuide 원칙 추가): 과거 일상대화를 검사에 끌어오지 말 것 + 무응답 영역은 1회만 재청 후 다음으로(같은 질문 3회+ 고착 금지). (근본 해결은 Phase 2 항목단위 상태머신.)
+  - 🟡 **레거시 "검사 결과지(이 기기에서 시행)" 섹션 제거**(/expert) — 검진이 환자에 귀속되어 pro 본인 결과지는 항상 비어 혼란. 관련 state/fetch/interface 정리.
+  - 🟡 **공감 미세결**: 사용자 주관적 느낌(춥다/쌀쌀/아프다)을 "사실은 따뜻해요"로 정정·무효화 금지 → 공감 우선.
+  - 검증: tsc 0 · safety 116 · vitest 173 · 로그아웃 라이브 PASS. (분석기·proGuide·공감은 프롬프트 튜닝 — 다음 사이클 라이브 재확인.)
 - **검진 문답 기록 + 의사 코멘트(환자 일지) — Phase 2 Stage 2b** (2026-06-18)
   - `exam_session` 테이블 신설(ops-create, db push 금지): id·patient·expert·conversation·started_at·ended_at·**doctor_comment**. 문답 원문은 이 세션 구간 메시지만 노출(보호자가 보는 일상대화 프라이버시와 분리).
   - `/api/expert/exam`(start/end/comment, pro+연결 검증) + startExam/endExam에서 세션 시작·종료 기록.

@@ -20,6 +20,10 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
 평가 영역: orientation_time, orientation_place, memory_immediate, memory_delayed, language, judgment, attention_calculation
 점수: 0(정상), 1(경계), 2(주의)
 
+⛔ **중복 채점 금지**: 하나의 발화에 담긴 같은 오류를 여러 영역에 나눠 채점하지 마세요. 그 오류가 가장 직접적으로 속하는 **단일 영역에만** 점수를 줍니다.
+   - 예: "올해가 1988년이지(서울 올림픽)" → 이건 연도 오인지 = **orientation_time 한 영역만** 채점. 같은 발화를 judgment(과거를 현재로 묘사)로 또 채점하지 마세요.
+⛔ **AI에게 되묻는 것 ≠ 사용자 기억 결손**: 사용자가 동반자(AI)에게 "내가 아까 뭐라고 했지?/무슨 단어였지?/내가 무슨 얘기 했더라?"처럼 **AI의 기억을 확인·요청**하는 것은 대화이지 사용자의 회상 실패가 아닙니다 → memory_delayed로 채점하지 마세요(무판정). memory_delayed는 **AI가 회상 문항을 냈고(예: "아까 외운 단어 뭐였죠?") 사용자가 직접 회상하지 못한 경우에만** 채점합니다.
+
 [필수 판단 기준 — 하나라도 해당되면 isAnomaly: true]
 
 1. 시간 지남력 (orientation_time):
