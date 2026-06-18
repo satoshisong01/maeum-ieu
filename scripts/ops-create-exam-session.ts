@@ -29,6 +29,15 @@ async function main() {
     await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS current_item INTEGER NOT NULL DEFAULT 0`); // 현재 진행 영역 인덱스
     await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS total_score INTEGER`);  // 획득 점수
     await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS max_score INTEGER`);    // 만점(음성 시행 영역)
+    // 평가(잠정 등급)·답변 커버리지·재질문·의사 보정(학력·시공간)
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS eval_band TEXT`);            // 잠정 등급(정상범위/경계/저하의심/자료부족)
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS coverage_status TEXT`);      // ok | insufficient
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS answered_domains INTEGER NOT NULL DEFAULT 0`); // 실제 응답한 영역 수
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS total_domains INTEGER`);     // 시행 영역 수
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS reask_count INTEGER NOT NULL DEFAULT 0`); // 현재 영역 재질문 횟수
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS education_years INTEGER`);   // 의사 입력 학력(년)
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS visuospatial_score INTEGER`);// 의사 입력 시공간(시계, 0~2)
+    await client.query(`ALTER TABLE exam_session ADD COLUMN IF NOT EXISTS formal_band TEXT`);          // 학력보정 잠정 등급
     await client.query(`
       CREATE TABLE IF NOT EXISTS exam_item_score (
         id              TEXT PRIMARY KEY,
@@ -43,6 +52,8 @@ async function main() {
         created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_eis_session ON exam_item_score(session_id)`);
+    // 멱등성 — 같은 세션·항목은 1행만(재채점은 UPSERT). 중복 INSERT로 인한 점수 이중집계 방지.
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_eis_session_item ON exam_item_score(session_id, item_id)`);
     console.log("✓ exam_session(+항목채점 컬럼) + exam_item_score 생성 완료");
   } finally {
     client.release(); await pool.end();

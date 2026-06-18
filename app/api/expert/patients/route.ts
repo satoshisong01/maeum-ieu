@@ -8,6 +8,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchDomainStats } from "@/lib/health/cognitive-alert";
 import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability } from "@/lib/health/severity";
+import { classifyProvisional } from "@/lib/screening/exam-eval";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -27,7 +28,7 @@ export async function GET() {
 
   const patients = await Promise.all(links.map(async (link) => {
     const p = link.patient;
-    const [recent, baseline, lastMsg, anomaly7d] = await Promise.all([
+    const [recent, baseline, lastMsg, anomaly7d, examRows] = await Promise.all([
       fetchDomainStats(p.id, 6, 0),
       fetchDomainStats(p.id, 36, 7),
       prisma.message.findFirst({
@@ -38,7 +39,15 @@ export async function GET() {
       prisma.message.count({
         where: { conversation: { userId: p.id }, isAnomaly: true, createdAt: { gte: new Date(Date.now() - 7 * 86400000) } },
       }),
+      prisma.$queryRawUnsafe<{ total_score: number | null; max_score: number | null; coverage_status: string | null; started_at: Date }[]>(
+        `SELECT total_score, max_score, coverage_status, started_at FROM exam_session WHERE patient_user_id = $1 AND expert_user_id = $2 AND ended_at IS NOT NULL AND total_score IS NOT NULL ORDER BY started_at DESC LIMIT 1`,
+        p.id, session.user.id).catch(() => []),
     ]);
+    // 최신 검진(1차 신호) — 잠정 등급 + 점수. 자료부족이면 점수 비노출.
+    const ex = examRows[0];
+    const examLatest = ex
+      ? (() => { const r = classifyProvisional(ex.total_score ?? 0, ex.max_score ?? undefined, ex.coverage_status !== "insufficient"); return { band: r.band, label: r.label, score: ex.total_score, max: ex.max_score, sufficient: ex.coverage_status !== "insufficient", at: ex.started_at }; })()
+      : null;
     const recentAvg = computeOverallAvg(recent);
     const tier = classifySeverity(recentAvg);
     const reliability = assessReliability(recent.reduce((s, d) => s + d.count, 0), recent.filter((d) => d.count >= 2).length);
@@ -62,6 +71,7 @@ export async function GET() {
       trendText: trend.text,
       anomaly7d,
       lastActiveAt: lastMsg?.createdAt ?? null,
+      examLatest,
     };
   }));
 

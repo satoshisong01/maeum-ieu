@@ -23,7 +23,8 @@ import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement"
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { randomUUID } from "crypto";
-import { buildExamPlan, renderDomainBattery, scoreDomainAnswer } from "@/lib/screening/exam-runner";
+import { buildExamPlan, renderDomainBattery, scoreDomainAnswer, isNonResponse, renderDomainReask, itemsForDomain } from "@/lib/screening/exam-runner";
+import { classifyProvisional, assessCoverage } from "@/lib/screening/exam-eval";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
@@ -242,13 +243,15 @@ async function handleReEngageGreeting(
 }
 
 // ─── 전문가 검진 상태머신 (Phase 2) ───────────────────────────────────────
-interface ExamSessionRow { id: string; item_order: string | null; current_item: number }
+interface ExamSessionRow { id: string; item_order: string | null; current_item: number; reask_count: number; answered_domains: number }
+
+const MAX_REASK = 2; // 무응답 영역당 재질문 최대 횟수(이후 무응답 처리·다음 영역)
 
 /** 진행 중(미종료) 검진 세션 조회 — 전문가(actor)↔환자 기준. */
 async function lookupOpenExam(expertId: string, patientId: string): Promise<ExamSessionRow | null> {
   try {
     const rows = await prisma.$queryRawUnsafe<ExamSessionRow[]>(
-      `SELECT id, item_order, current_item FROM exam_session WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`,
+      `SELECT id, item_order, current_item, COALESCE(reask_count,0) AS reask_count, COALESCE(answered_domains,0) AS answered_domains FROM exam_session WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`,
       expertId, patientId);
     return rows[0] ?? null;
   } catch { return null; }
@@ -265,8 +268,16 @@ function examEnv(): string {
 
 /** 검진 시작 — 영역 순서 확정 + 첫 영역 문항 제시(자동 인사 대체). */
 async function handleExamGreeting(examSession: ExamSessionRow, conversationId: string | undefined, dateSeed: string) {
+  // 멱등: 이미 시작된(item_order 있는) 세션이면 리셋·재채점하지 말고 현재 영역만 재안내(재접속/재인사 중복 방지)
+  if (examSession.item_order) {
+    const cur: string[] = (() => { try { return JSON.parse(examSession.item_order || "[]"); } catch { return []; } })();
+    const at = Math.min(Math.max(0, examSession.current_item ?? 0), Math.max(0, cur.length - 1));
+    const text = cur.length ? `검사를 이어서 진행하겠습니다. ${renderDomainBattery(cur[at])}` : "잠시만요, 검사를 준비하고 있어요.";
+    if (conversationId) await saveGreetingMessage(conversationId, text);
+    return NextResponse.json({ text, role: "assistant" });
+  }
   const order = buildExamPlan(`${conversationId ?? "x"}:${dateSeed}`);
-  await prisma.$executeRawUnsafe(`UPDATE exam_session SET item_order = $2, current_item = 0 WHERE id = $1`, examSession.id, JSON.stringify(order));
+  await prisma.$executeRawUnsafe(`UPDATE exam_session SET item_order = $2, current_item = 0, reask_count = 0, answered_domains = 0, total_domains = $3 WHERE id = $1`, examSession.id, JSON.stringify(order), order.length);
   const text = `안녕하세요. 지금부터 기억력과 사고력을 알아보는 간단한 검사를 시작하겠습니다. 편하게 답해 주시면 돼요. ${renderDomainBattery(order[0])}`;
   if (conversationId) await saveGreetingMessage(conversationId, text);
   return NextResponse.json({ text, role: "assistant" });
@@ -280,32 +291,65 @@ async function handleExamTurn(params: { examSession: ExamSessionRow; answer: str
   const ans = (answer || "").trim();
 
   if (!order.length || idx >= order.length) {
+    // 비정상 상태(ended_at만 NULL) 자가 복구 — 반복 메시지 루프 방지
+    await prisma.$executeRawUnsafe(`UPDATE exam_session SET ended_at = now() WHERE id = $1 AND ended_at IS NULL`, examSession.id).catch(() => {});
     const text = "오늘 검사는 모두 끝났습니다. 수고 많으셨어요.";
     if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
     return NextResponse.json({ text, role: "assistant", transcription });
   }
 
-  // 현재 영역 항목별 채점 + 저장
-  const scores = await scoreDomainAnswer(order[idx], ans, examEnv());
-  for (const s of scores) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      `eis_${randomUUID()}`, examSession.id, s.itemId, s.domain, s.prompt, s.answer, s.score, s.max, s.reason).catch(() => {});
+  const domain = order[idx];
+  const reask = examSession.reask_count ?? 0;
+
+  // 무응답(빈 응답·거부)이고 재질문 여유가 있으면 — 더 쉬운 표현으로 같은 영역 재질문(채점·진행 보류)
+  if (isNonResponse(ans) && reask < MAX_REASK) {
+    await prisma.$executeRawUnsafe(`UPDATE exam_session SET reask_count = $2 WHERE id = $1`, examSession.id, reask + 1);
+    const lead = reask === 0 ? "괜찮아요, 조금 더 쉽게 여쭤볼게요. " : "한 번만 더 여쭤볼게요. ";
+    const text = lead + renderDomainReask(domain);
+    if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(무응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
+    return NextResponse.json({ text, role: "assistant", transcription });
   }
 
+  // 영역 마감 — 무응답이면 0점/무응답으로 기록(채점 호출 안 함), 응답이면 항목별 채점
+  const domainAnswered = !isNonResponse(ans);
+  if (domainAnswered) {
+    const scores = await scoreDomainAnswer(domain, ans, examEnv());
+    for (const s of scores) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (session_id, item_id) DO UPDATE SET prompt=EXCLUDED.prompt, answer=EXCLUDED.answer, score=EXCLUDED.score, max_points=EXCLUDED.max_points, reason=EXCLUDED.reason`,
+        `eis_${randomUUID()}`, examSession.id, s.itemId, s.domain, s.prompt, s.answer, s.score, s.max, s.reason).catch(() => {});
+    }
+  } else {
+    for (const it of itemsForDomain(domain)) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (session_id, item_id) DO UPDATE SET prompt=EXCLUDED.prompt, answer=EXCLUDED.answer, score=EXCLUDED.score, max_points=EXCLUDED.max_points, reason=EXCLUDED.reason`,
+        `eis_${randomUUID()}`, examSession.id, it.id, domain, it.prompt, ans || "", 0, it.points, "무응답").catch(() => {});
+    }
+  }
+
+  const answered = (examSession.answered_domains ?? 0) + (domainAnswered ? 1 : 0);
   const nextIdx = idx + 1;
   let text: string;
   if (nextIdx >= order.length) {
     const rows = await prisma.$queryRawUnsafe<{ t: number; m: number }[]>(
       `SELECT COALESCE(SUM(score),0)::int t, COALESCE(SUM(max_points),0)::int m FROM exam_item_score WHERE session_id = $1`, examSession.id);
-    await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2, total_score = $3, max_score = $4, ended_at = now() WHERE id = $1`,
-      examSession.id, nextIdx, rows[0]?.t ?? 0, rows[0]?.m ?? 0);
-    text = "이제 검사가 모두 끝났습니다. 끝까지 잘 해주셔서 감사합니다. 수고 많으셨어요."; // 점수는 환자에게 비노출(검사자만 열람)
+    const total = rows[0]?.t ?? 0, max = rows[0]?.m ?? 0;
+    const coverage = assessCoverage(answered, order.length);
+    const evalRes = classifyProvisional(total, max, coverage.sufficient);
+    await prisma.$executeRawUnsafe(
+      `UPDATE exam_session SET current_item = $2, total_score = $3, max_score = $4, answered_domains = $5, reask_count = 0, eval_band = $6, coverage_status = $7, ended_at = now() WHERE id = $1`,
+      examSession.id, nextIdx, total, max, answered, evalRes.band, coverage.sufficient ? "ok" : "insufficient");
+    // 점수·등급은 환자에게 비노출(검사자만 열람). 자료부족이면 추가 문진 권유만.
+    text = coverage.sufficient
+      ? "이제 검사가 모두 끝났습니다. 끝까지 잘 해주셔서 감사합니다. 수고 많으셨어요."
+      : "오늘은 여기까지 하겠습니다. 답하기 어려우셨던 부분이 있어, 다음에 한 번 더 도와드리며 진행하면 좋겠어요. 수고 많으셨습니다.";
   } else {
-    await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2 WHERE id = $1`, examSession.id, nextIdx);
+    await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2, answered_domains = $3, reask_count = 0 WHERE id = $1`, examSession.id, nextIdx, answered);
     text = `네, 답변 감사합니다. 다음 질문이에요. ${renderDomainBattery(order[nextIdx])}`;
   }
-  if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
+  if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(무응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
   return NextResponse.json({ text, role: "assistant", transcription });
 }
 

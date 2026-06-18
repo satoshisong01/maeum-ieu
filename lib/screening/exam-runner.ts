@@ -33,6 +33,31 @@ export function domainMaxPoints(domain: string): number {
   return itemsForDomain(domain).reduce((s, i) => s + i.points, 0);
 }
 
+// 무응답 영역 재질문용 — 더 쉽고 부드러운 대체 표현(예비문항). 같은 영역을 다시 묻되 표현을 낮춤.
+const DOMAIN_REASK: Record<string, string> = {
+  orientation_time: "천천히 생각하셔도 괜찮아요. 올해가 몇 년도일까요? 지금은 무슨 계절인가요?",
+  orientation_place: "지금 계신 여기가 어디인지 편하게 말씀해 주세요. 무슨 동네, 어떤 곳인가요?",
+  memory_immediate: "제가 단어 세 개를 천천히 다시 불러드릴게요 — ‘나무, 자동차, 모자’. 따라서 말씀해 보세요.",
+  attention_calculation: "괜찮아요, 천천히 하셔도 돼요. 100에서 7을 빼고, 거기서 또 7씩 빼 나가 보실까요? (93, 86 …처럼요)",
+  memory_delayed: "조금 전에 외워 두시라고 한 단어가 있었죠. 하나라도 생각나는 게 있으면 말씀해 주세요.",
+  language: "제가 짧은 문장을 천천히 말할게요 — ‘백문이 불여일견’. 그대로 따라 해 보세요.",
+  judgment: "기차하고 자전거, 둘 다 어디에 쓰는 물건일까요? 편하게 떠오르는 대로 말씀해 주세요.",
+};
+
+/** 응답이 사실상 없음(빈 응답·부호만·거부) — 무응답 처리/재질문 트리거. '모르겠다'는 응답으로 간주(=시도, 0점). */
+export function isNonResponse(answer: string): boolean {
+  const a = (answer || "").trim();
+  const stripped = a.replace(/[\s.,…·~!?\-‘’"']/g, "");
+  if (stripped.length === 0) return true; // 빈 응답 또는 "..." 같은 부호만
+  if (/^(그만|안\s*할|안\s*해|안\s*하|싫|패스|관둬|관둘|됐어|됐다|하기\s*싫|그만하)/.test(a)) return true; // 명시적 거부
+  return false;
+}
+
+/** 무응답 영역 재질문 — 더 쉬운 표현(없으면 원 문항). */
+export function renderDomainReask(domain: string): string {
+  return DOMAIN_REASK[domain] || renderDomainBattery(domain);
+}
+
 const SCORE_SCHEMA: Schema = {
   type: SchemaType.OBJECT,
   properties: {
