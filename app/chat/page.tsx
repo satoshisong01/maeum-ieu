@@ -832,6 +832,11 @@ export default function ChatPage() {
     setExamCountdown(null);
     setTextOnly(false);
     setModeSelected(true);
+    // 검진 모드는 환자 앞에서 진행 — "마음아" wake-word 없이 바로 세션 시작(인사 직후 즉시 환자 음성 청취).
+    //   wake-word는 사용자 모드 일상대화의 자연스러운 시작·재호출용. 검진엔 불필요.
+    setAlwaysOn(true); alwaysOnRef.current = true;
+    setSessionActive(true); sessionActiveRef.current = true;
+    setWakeArmed(true); wakeArmedRef.current = true;
     if (!conversationId) return;
     setLoading(true);
     try {
