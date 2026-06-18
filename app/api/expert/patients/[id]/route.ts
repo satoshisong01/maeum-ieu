@@ -101,6 +101,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     medWeek = { confirmed: wRows[0]?.c ?? 0, expected: dailyDoses * 7 };
   } catch { /* medication_log 미생성 환경 방어 */ }
 
+  // 회차별 분석 — 검사일(session_date)별로 묶어 회차로 비교(주기적 검사: 월 1회 등)
+  const sessionRows = await prisma.$queryRawUnsafe<{ date: string; domain: string; avg: number; cnt: number }[]>(
+    `SELECT to_char(session_date,'YYYY-MM-DD') AS date, domain, AVG(score)::float AS avg, COUNT(*)::int AS cnt
+       FROM cognitive_assessments WHERE user_id = $1
+       GROUP BY session_date, domain ORDER BY session_date DESC`, patientId);
+  const byDate = new Map<string, DomainRow[]>();
+  for (const r of sessionRows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date)!.push({ domain: r.domain, avg_score: r.avg, count: r.cnt });
+  }
+  const sessions = [...byDate.entries()].slice(0, 12).map(([date, stats]) => {
+    const avg = computeOverallAvg(stats);
+    return {
+      date,
+      overallAvg: avg < 0 ? null : Number(avg.toFixed(2)),
+      tier: classifySeverity(avg).tier,
+      count: stats.reduce((s, d) => s + d.count, 0),
+      domains: stats.map((d) => ({ label: DOMAIN_KO[d.domain] ?? d.domain, avg: Number(d.avg_score.toFixed(2)) })),
+    };
+  });
+
   // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
   prisma.$executeRawUnsafe(
     `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, 'detail')`,
@@ -115,5 +136,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     weekly: weekly.map((w) => ({ weekStart: w.week_start, avg: Number(w.avg_score.toFixed(2)), count: w.count })),
     events: events.map((e) => ({ date: e.session_date, domain: DOMAIN_KO[e.domain] ?? e.domain, score: e.score, note: e.note, evidence: e.evidence })),
     medication: { items: medications, todayConfirmed: medToday, weekCompliance: medWeek },
+    sessions,
   });
 }
