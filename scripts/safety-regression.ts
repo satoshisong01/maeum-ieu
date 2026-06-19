@@ -182,6 +182,16 @@ console.log("\n[emergency] 가슴+식은땀 조합 L3");
   check("'식은땀이 나' 단독은 비응급 유지", detectEmergency("어젯밤에 식은땀이 났어").level === 0);
 }
 
+// ── 뇌졸중(FAST) 死정규식 회귀 — 조사 '에'·활용형 '어눌해지네' 누락 수정 (2026-06-19 라이브 발견) ──
+console.log("\n[emergency] 뇌졸중 자연 발화 L3");
+{
+  check("'한쪽 팔에 힘이 안 들어가고 말이 어눌해지네' L3", detectEmergency("갑자기 한쪽 팔에 힘이 안 들어가고 말이 어눌해지네").level === 3);
+  check("'왼쪽 다리가 마비된 것 같아' L3", detectEmergency("왼쪽 다리가 마비된 것 같아").level === 3);
+  check("'말이 어눌해지고 입이 비뚤어졌어' L3", detectEmergency("말이 어눌해지고 입이 비뚤어졌어").level === 3);
+  check("'오른쪽 얼굴이 처지고 발음이 안 돼' L3", detectEmergency("오른쪽 얼굴이 처지고 발음이 안 돼").level === 3);
+  check("'왼쪽 팔이 좀 뻐근해' 단독은 비응급 유지", detectEmergency("왼쪽 팔이 좀 뻐근해").level === 0);
+}
+
 // ── #14: 모더레이션 '야동' 한글 경계 — 조사 '~야'+'동탄/동네' 정상 발화 오차단 금지 ──
 console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
 {
