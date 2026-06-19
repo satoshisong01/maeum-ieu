@@ -237,7 +237,7 @@ export default function PatientDetailPage() {
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {ex.items.map((it) => (
-                              <span key={it.itemId} title={`${it.prompt} → ${it.answer || "(무응답)"} · ${it.score}/${it.max}점${it.reason ? " · " + it.reason : ""}`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.reason === "무응답" ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>{it.label} {it.score}/{it.max}</span>
+                              <span key={it.itemId} title={`${it.prompt} → ${it.answer || "(무응답)"} · ${it.score}/${it.max}점${it.reason ? " · " + it.reason : ""}`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.reason === "무응답" ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : it.max > 0 && it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>{it.label} {it.score}/{it.max}</span>
                             ))}
                           </div>
                         </div>
