@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, type DomainStat } from "@/lib/health/severity";
 import { classifyProvisional, classifyFormal, compareSessions, summarizeExamTrend, EXAM_DISCLAIMER, type ExamTrend } from "@/lib/screening/exam-eval";
+import { itemLabel } from "@/lib/screening/cist-bank";
 import { toKstDateString } from "@/lib/chat/time";
 
 interface DomainRow extends DomainStat { domain: string }
@@ -148,7 +149,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     evalBand: string | null; evalLabel: string | null; evalAdvice: string | null;
     educationYears: number | null; visuospatialScore: number | null;
     formalBand: string | null; formalLabel: string | null; formalAdvice: string | null; formalScore: number | null; formalMax: number | null;
-    items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
+    items: { itemId: string; label: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
     qa: { role: string; content: string; at: string }[];
     trend: null | { direction: string; deltaPct: number };
   }
@@ -186,7 +187,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         evalBand: provisional?.band ?? null, evalLabel: provisional?.label ?? null, evalAdvice: provisional?.advice ?? null,
         educationYears: r.education_years, visuospatialScore: r.visuospatial_score,
         formalBand: formal?.band ?? null, formalLabel: formal?.label ?? null, formalAdvice: formal?.advice ?? null, formalScore: formal?.fullScore ?? null, formalMax: formal?.fullMax ?? null,
-        items: itemRows.map((it) => ({ itemId: it.item_id, domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
+        items: itemRows.map((it) => ({ itemId: it.item_id, label: itemLabel(it.item_id), domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
         qa: msgs.map((m) => ({ role: m.role, content: m.content, at: m.createdAt.toISOString() })),
         trend: null as null | { direction: string; deltaPct: number },
       };

@@ -35,7 +35,7 @@ interface ExamSession {
   evalBand: string | null; evalLabel: string | null; evalAdvice: string | null;
   educationYears: number | null; visuospatialScore: number | null;
   formalBand: string | null; formalLabel: string | null; formalAdvice: string | null; formalScore: number | null; formalMax: number | null;
-  items: { itemId: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
+  items: { itemId: string; label: string; domain: string; prompt: string; answer: string; score: number; max: number; reason: string }[];
   qa: { role: string; content: string; at: string }[];
   trend: null | { direction: string; deltaPct: number };
 }
@@ -225,10 +225,19 @@ export default function PatientDetailPage() {
                       </div>
                       {ex.items.length > 0 && (
                         <div className="mt-3">
-                          <p className="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점</p>
+                          <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점</p>
+                            {/* 색상 범례 */}
+                            <span className="flex items-center gap-2 text-[10px] text-zinc-400">
+                              <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" />만점</span>
+                              <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />부분정답</span>
+                              <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-red-400" />0점(오답)</span>
+                              <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-zinc-300" />무응답</span>
+                            </span>
+                          </div>
                           <div className="flex flex-wrap gap-1">
                             {ex.items.map((it) => (
-                              <span key={it.itemId} title={`${it.prompt} → ${it.answer} (${it.reason})`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.reason === "무응답" ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>{it.itemId} {it.score}/{it.max}</span>
+                              <span key={it.itemId} title={`${it.prompt} → ${it.answer || "(무응답)"} · ${it.score}/${it.max}점${it.reason ? " · " + it.reason : ""}`} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${it.reason === "무응답" ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : it.score >= it.max ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : it.score > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200"}`}>{it.label} {it.score}/{it.max}</span>
                             ))}
                           </div>
                         </div>
