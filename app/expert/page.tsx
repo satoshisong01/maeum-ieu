@@ -136,8 +136,12 @@ export default function ExpertPage() {
                       {p.examLatest
                         ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${BAND_STYLE[p.examLatest.band] ?? BAND_STYLE["자료부족"]}`}>검진 {p.examLatest.label}{p.examLatest.score != null && p.examLatest.sufficient ? ` ${p.examLatest.score}/${p.examLatest.max}` : ""}</span>
                         : <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${TIER_STYLE["평가전"]}`}>검진 전</span>}
-                      {/* 일상 모니터링(보조) */}
-                      <span className="text-[11px] text-zinc-400">일상 {p.showLevel === false ? "수집중" : `${p.tier}${p.provisional ? "(잠정)" : ""}`} · {TREND_LABEL[p.trend] ?? p.trend}</span>
+                      {/* 일상 모니터링(보조) — 평소 대화 기반. 자료 없으면 '검진'의 자료부족과 혼동되지 않게 추세칩 숨김 */}
+                      <span className="text-[11px] text-zinc-400">
+                        {p.showLevel === false
+                          ? "일상 대화 자료 수집중"
+                          : `일상 ${p.tier}${p.provisional ? "(잠정)" : ""}${p.trend && p.trend !== "자료부족" ? ` · ${TREND_LABEL[p.trend] ?? p.trend}` : ""}`}
+                      </span>
                     </div>
                     <div className="text-xs text-zinc-500">
                       최근 활동 {fmtDate(p.lastActiveAt)} · 7일 이상징후 {p.anomaly7d}건{p.overallAvg !== null ? ` · 평균 ${p.overallAvg}` : ""}
