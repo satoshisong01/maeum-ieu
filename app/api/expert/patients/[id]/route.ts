@@ -187,7 +187,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         evalBand: provisional?.band ?? null, evalLabel: provisional?.label ?? null, evalAdvice: provisional?.advice ?? null,
         educationYears: r.education_years, visuospatialScore: r.visuospatial_score,
         formalBand: formal?.band ?? null, formalLabel: formal?.label ?? null, formalAdvice: formal?.advice ?? null, formalScore: formal?.fullScore ?? null, formalMax: formal?.fullMax ?? null,
-        items: itemRows.map((it) => ({ itemId: it.item_id, label: itemLabel(it.item_id), domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
+        // 배점 0점 보조 문항(예: 숫자 거꾸로)은 총점 미반영 → 항목별 채점/결과지에서 제외(질문·답변은 문답 기록에 남음)
+        items: itemRows.filter((it) => it.max_points > 0).map((it) => ({ itemId: it.item_id, label: itemLabel(it.item_id), domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
         qa: msgs.map((m) => ({ role: m.role, content: m.content, at: m.createdAt.toISOString() })),
         trend: null as null | { direction: string; deltaPct: number },
       };
