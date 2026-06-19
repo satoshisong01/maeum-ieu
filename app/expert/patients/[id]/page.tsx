@@ -52,6 +52,13 @@ const TREND_STYLE: Record<string, string> = {
   "유지": "text-zinc-500 dark:text-zinc-400",
 };
 
+/** 도움말 아이콘 — 마우스 hover 시 설명(title) 표시. */
+function Help({ text }: { text: string }) {
+  return (
+    <span title={text} className="ml-0.5 inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full bg-zinc-300 align-middle text-[9px] font-bold text-white dark:bg-zinc-600" aria-label={text}>?</span>
+  );
+}
+
 const TIER_STYLE: Record<string, string> = {
   "정상": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
   "경증": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
@@ -209,12 +216,14 @@ export default function PatientDetailPage() {
                         <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">무응답이 많아 평가가 어렵습니다(응답 {ex.coverage.answered}/{ex.coverage.total}영역). 추가 문진을 권장합니다.</p>
                       )}
                       <div className="mt-3 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/50">
-                        <p className="mb-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">의사 보정 — 학력·시공간(시계)을 입력하면 학력보정 잠정 평가로 승급</p>
+                        <p className="mb-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">의사 보정 — 학력·시계 그리기를 입력하면 학력보정 잠정 평가로 승급</p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">학력(년)
+                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            학력(년)<Help text="환자가 학교를 다닌 햇수(교육 연수)예요. 인지검사 점수는 학력 영향이 커서, 못 배우신 분은 치매가 아니어도 낮게 나옵니다. 저학력일수록 점수를 조금 후하게 보정해 과잉 '저하의심'(위양성)을 줄입니다. 예: 무학 0 · 초졸 6 · 중졸 9 · 고졸 12"/>
                             <input type="number" min={0} max={30} value={draft.edu} onChange={(e) => setEvalDrafts((p) => ({ ...p, [ex.id]: { ...draft, edu: e.target.value } }))} className="ml-1 w-16 rounded border border-zinc-200 px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800" />
                           </label>
-                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">시공간(시계)
+                          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            시계 그리기<Help text="종이에 동그란 시계를 그리고 '11시 10분'을 표시하게 하는 검사(0~2점)예요. 그림 검사라 음성으로는 못 해서 음성 검진(29점)에는 빠져 있습니다. 의사가 직접 종이로 시행한 점수를 입력하면 시공간 능력까지 포함한 더 정확한 평가(31점 기준)가 됩니다."/>
                             <select value={draft.vs} onChange={(e) => setEvalDrafts((p) => ({ ...p, [ex.id]: { ...draft, vs: e.target.value } }))} className="ml-1 rounded border border-zinc-200 px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
                               <option value="">미입력</option><option value="0">0점</option><option value="1">1점</option><option value="2">2점</option>
                             </select>
