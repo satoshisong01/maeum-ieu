@@ -50,7 +50,7 @@ export const CIST_ITEMS: CistItem[] = [
 /** 항목 ID → 짧은 한글 이름(전문가 화면 표시용 — 변수명 대신 사람이 읽을 라벨). */
 export const CIST_ITEM_LABELS: Record<string, string> = {
   ot_year: "연도", ot_season: "계절", ot_month: "월", ot_day: "날짜", ot_weekday: "요일",
-  op_sido: "시·도", op_sigungu: "시·군·구", op_dong: "동·읍·면", op_kind: "장소 유형", op_floor: "층수",
+  op_sido: "광역 지역(시·도)", op_sigungu: "시·군·구", op_dong: "동네(동·읍·면)", op_kind: "장소 종류", op_floor: "층수",
   mi_words: "단어 등록", ac_serial7: "연속 빼기", ac_digitspan: "숫자 거꾸로",
   md_recall: "단어 회상(지연)", lg_repeat: "문장 따라하기", lg_naming: "이름 대기", lg_fluency: "동물 말하기",
   jd_similarity: "공통점 찾기", jd_social: "상황 판단", vs_clock: "시계 그리기",
