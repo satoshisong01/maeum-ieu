@@ -228,7 +228,7 @@ export default function PatientDetailPage() {
                           <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                             <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">항목별 채점</p>
                             {/* 색상 범례 */}
-                            <span className="flex items-center gap-2 text-[10px] text-zinc-400">
+                            <span className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-400">
                               <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" />만점</span>
                               <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />부분정답</span>
                               <span className="flex items-center gap-0.5"><span className="inline-block h-2 w-2 rounded-sm bg-red-400" />0점(오답)</span>
