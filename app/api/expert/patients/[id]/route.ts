@@ -22,6 +22,20 @@ const DOMAIN_KO: Record<string, string> = {
   language: "언어", judgment: "판단력", attention_calculation: "주의·계산",
 };
 
+// 응급 카테고리 → 보호자용 한글 라벨 (lib/chat/emergency.ts EmergencyCategory와 일치)
+const EMERGENCY_KO: Record<string, string> = {
+  medical_acute: "급성 의학적 위급(호흡·가슴·의식)",
+  fall_injury: "낙상·부상",
+  medication_error: "약물 오남용",
+  suicidal: "자해·자살 위험",
+  bleeding: "출혈",
+  severe_pain: "심한 통증",
+  dizziness_help: "어지럼·도움 요청",
+  weakness_trend: "누적 무기력",
+  appetite_loss: "식욕 저하",
+  sleep_distress: "수면 곤란",
+};
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
@@ -207,6 +221,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     examTrend = summarizeExamTrend(chrono.map((e) => ({ score: e.totalScore as number, max: e.maxScore as number })));
   } catch { /* exam_session 미생성 환경 방어 */ }
 
+  // 위급 알림 이력 — 응급(L2/L3) 감지 이벤트 + 보호자 알림 발송 여부(notifiedAt)
+  const emergencyRows = await prisma.message.findMany({
+    where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, createdAt: true },
+  });
+  const emergencies = emergencyRows.map((e) => {
+    const key = (e.emergencyEvidence ?? "").split(":")[0];
+    return {
+      level: e.emergencyLevel ?? 0,
+      category: EMERGENCY_KO[key] ?? "기타 위급",
+      at: e.createdAt.toISOString(),
+      notified: e.notifiedAt != null,
+    };
+  });
+
   // 감사 로그 — 환자 상세 열람 기록 (규제 대비, 실패 무시)
   prisma.$executeRawUnsafe(
     `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, 'detail')`,
@@ -220,6 +251,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     domains,
     weekly: weekly.map((w) => ({ weekStart: w.week_start, avg: Number(w.avg_score.toFixed(2)), count: w.count })),
     events: events.map((e) => ({ date: e.session_date, domain: DOMAIN_KO[e.domain] ?? e.domain, score: e.score, note: e.note, evidence: e.evidence })),
+    emergencies,
     medication: { items: medications, todayConfirmed: medToday, weekCompliance: medWeek },
     sessions,
     cistEstimate,
