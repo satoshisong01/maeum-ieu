@@ -84,7 +84,7 @@ export async function POST(req: Request) {
         companionName: companionName?.trim().slice(0, 20) || undefined,
         companionRelation: companionRelation?.trim().slice(0, 20) || undefined,
         userHonorific: userHonorific?.trim().slice(0, 20) || null,
-        screeningMode: screeningMode === "pro" ? "pro" : screeningMode === "general" ? "general" : "user", // 계정 역할(가입 시 선택)
+        screeningMode: screeningMode === "pro" ? "pro" : "user", // 계정 역할. 일반인(general)은 이번 단계 범위 제외 — user로 처리(하반기 재개)
       },
     });
 
