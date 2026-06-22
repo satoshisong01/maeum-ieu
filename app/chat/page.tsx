@@ -1315,7 +1315,7 @@ export default function ChatPage() {
                     : "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
                 }`}
               >
-                <p className="whitespace-pre-wrap text-sm">{displayMessageContent(m.content)}</p>
+                <p className={`whitespace-pre-wrap ${screeningMode === "user" ? "text-lg leading-relaxed" : "text-sm"}`}>{displayMessageContent(m.content)}</p>
               </div>
             </div>
           ))}
@@ -1412,7 +1412,7 @@ export default function ChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="메시지를 입력하세요."
-                  className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className={`min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-4 text-zinc-900 outline-none focus:border-[#007bff] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 ${screeningMode === "user" ? "py-3 text-lg" : "py-2.5 text-sm"}`}
                   disabled={loading}
                   autoFocus
                 />
