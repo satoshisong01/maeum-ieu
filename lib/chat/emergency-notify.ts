@@ -13,6 +13,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { sendEmergencyPush } from "@/lib/notify/push-fcm";
 import dns from "node:dns/promises";
 
 export interface NotifyPayload {
@@ -156,23 +157,37 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   });
   if (!user) return { sent: false, channels: [], reason: "user not found" };
 
-  const hasWebhook = !!user.guardianWebhookUrl;
-  if (!hasWebhook) {
-    return { sent: false, channels: [], reason: "guardian webhook not configured" };
-  }
-
-  // 3) Webhook 발송
-  if (hasWebhook && user.guardianWebhookUrl) {
-    const body = buildWebhookBody(payload);
-    const r = await sendWebhook(user.guardianWebhookUrl, body);
+  // 3) Webhook 발송 (보호자가 URL을 등록한 경우)
+  if (user.guardianWebhookUrl) {
+    const r = await sendWebhook(user.guardianWebhookUrl, buildWebhookBody(payload));
     if (r.ok) channels.push("webhook");
     else console.warn("[emergency-notify] webhook failed:", r);
   }
 
-  // 4) 이메일 채널 — Phase 2.5 예정. nodemailer 설치 + SMTP_HOST 환경변수 설정 후 활성화.
-  //   현재는 guardianEmail 저장만 지원하고 발송 로직은 webhook 측에서 처리 권장 (Zapier 등).
+  // 4) FCM 푸시 — 환자와 연결된 보호자(전문가) 계정의 앱 토픽으로 발송.
+  //    보호자가 마음이음 앱에 로그인하면 maeum_<보호자id> 토픽을 구독함.
+  const links = await prisma.expertPatient.findMany({
+    where: { patientUserId: payload.userId, status: "active" },
+    select: { expertUserId: true },
+  });
+  const guardianIds = links.map((l) => l.expertUserId);
+  if (guardianIds.length > 0) {
+    const push = await sendEmergencyPush(guardianIds, {
+      title: payload.level === 3 ? "🚨 즉시 응급 신호" : "⚠️ 주의 신호",
+      body:
+        payload.level === 3
+          ? `${payload.userName}님 — ${payload.category}. 지금 바로 연락하시거나 119에 신고해주세요.`
+          : `${payload.userName}님 — ${payload.category}. 안부를 확인해주세요.`,
+      level: payload.level,
+      category: payload.category,
+    });
+    if (push.sent > 0) channels.push("fcm");
+    else if (push.failed > 0) console.warn("[emergency-notify] fcm failed:", push);
+  }
 
-  // 5) 발송 시각 마킹
+  // 5) 이메일 채널 — 추후 SMTP 연동 시 활성화 (현재 webhook/FCM로 처리).
+
+  // 6) 발송 시각 마킹 (어느 채널이든 1건 이상 성공 시)
   if (channels.length > 0) {
     await prisma.message.update({
       where: { id: payload.messageId },
