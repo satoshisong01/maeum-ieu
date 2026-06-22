@@ -88,6 +88,8 @@ export async function sendEmergencyPush(userIds: string[], payload: PushPayload)
 
   const messages: Message[] = userIds.map((uid) => ({
     topic: userTopic(uid),
+    // notification 페이로드 — 앱이 종료/백그라운드여도 OS가 직접 알림 표시(앱 코드 실행 불필요).
+    notification: { title: payload.title, body: payload.body },
     data: {
       title: payload.title,
       body: payload.body,
@@ -96,7 +98,14 @@ export async function sendEmergencyPush(userIds: string[], payload: PushPayload)
       sound: payload.sound ?? "alarm",
       notificationId: `${Date.now()}_${uid}`, // 앱 측 중복 표시 차단용 고유 ID
     },
-    android: { priority: "high" },
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "maeum-emergency", // 앱이 만든 HIGH 채널(소리·진동·bypassDnd). 없으면 기본 채널로 표시
+        sound: payload.sound ?? "alarm",
+        priority: "max",
+      },
+    },
   }));
 
   try {
