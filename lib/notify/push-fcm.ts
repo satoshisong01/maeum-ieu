@@ -16,19 +16,36 @@ import { getMessaging, type Message } from "firebase-admin/messaging";
 
 let cachedApp: App | null | undefined;
 
+/**
+ * 서비스 계정 JSON 문자열 로드.
+ * FCM_SERVICE_ACCOUNT_B64(base64, 권장 — 줄바꿈·따옴표 문제 없음) 우선,
+ * 없으면 FCM_SERVICE_ACCOUNT(raw JSON, 반드시 한 줄).
+ */
+function loadServiceAccountJson(): string | null {
+  const b64 = process.env.FCM_SERVICE_ACCOUNT_B64;
+  if (b64) {
+    try {
+      return Buffer.from(b64, "base64").toString("utf8");
+    } catch {
+      return null;
+    }
+  }
+  return process.env.FCM_SERVICE_ACCOUNT ?? null;
+}
+
 /** 서비스 계정 env로 firebase-admin 1회 초기화. 미설정/파싱 실패 시 null(=비활성). */
 function getFcmApp(): App | null {
   if (cachedApp !== undefined) return cachedApp;
-  const raw = process.env.FCM_SERVICE_ACCOUNT;
-  if (!raw) {
+  const json = loadServiceAccountJson();
+  if (!json) {
     cachedApp = null;
     return null;
   }
   try {
-    const serviceAccount = JSON.parse(raw) as ServiceAccount;
+    const serviceAccount = JSON.parse(json) as ServiceAccount;
     cachedApp = getApps().length ? getApp() : initializeApp({ credential: cert(serviceAccount) });
   } catch (e) {
-    console.warn("[push-fcm] FCM_SERVICE_ACCOUNT 파싱 실패 — 푸시 비활성:", (e as Error).message);
+    console.warn("[push-fcm] 서비스 계정 파싱 실패 — 푸시 비활성:", (e as Error).message);
     cachedApp = null;
   }
   return cachedApp;
