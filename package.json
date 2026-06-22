@@ -27,10 +27,12 @@
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "bcryptjs": "^3.0.3",
+    "firebase-admin": "^14.0.0",
     "maeum-ieu": "file:",
     "next": "16.1.6",
     "next-auth": "^4.24.13",
     "pg": "^8.13.0",
+    "pptxgenjs": "^4.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
