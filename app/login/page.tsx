@@ -85,6 +85,15 @@ export default function LoginPage() {
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
+        {/* 앱 다운로드 (임시 — Play Store 정식 배포 전까지 접근성용. 안드로이드 .apk) */}
+        <a
+          href="/maeum-app.apk"
+          download="마음이음.apk"
+          className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-50 py-4 text-base font-medium text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+        >
+          📱 안드로이드 앱 다운로드
+        </a>
+        <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">테스트용 · 안드로이드 전용(.apk)</p>
         <p className="mt-6 text-center text-base text-zinc-600 dark:text-zinc-300">
           계정이 없으신가요?{" "}
           <Link href="/signup" className="font-medium text-[#007bff] dark:text-blue-400">
