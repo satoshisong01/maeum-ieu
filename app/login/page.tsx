@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import { LATEST_APP_VERSION, isOlderVersion } from "@/lib/app-version";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -11,11 +12,22 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null); // RN 앱이 주입한 설치 버전(브라우저면 null)
+  const [updateNeeded, setUpdateNeeded] = useState(false);
 
   // 저장된 아이디(이메일) 자동 채움
   useEffect(() => {
     const saved = localStorage.getItem("savedEmail");
     if (saved) { setEmail(saved); setRemember(true); }
+  }, []);
+
+  // 설치된 앱 버전 확인(RN WebView가 window.MAEUM_APP_VERSION 주입) → 구버전이면 업데이트 안내
+  useEffect(() => {
+    const v = (window as unknown as { MAEUM_APP_VERSION?: string }).MAEUM_APP_VERSION;
+    if (typeof v === "string") {
+      setAppVersion(v);
+      setUpdateNeeded(isOlderVersion(v, LATEST_APP_VERSION));
+    }
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -85,15 +97,25 @@ export default function LoginPage() {
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
+        {/* 업데이트 안내 — 설치된 앱이 최신보다 낮을 때 */}
+        {updateNeeded && (
+          <div className="mt-3 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-sm text-amber-800 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-200">
+            ⚠️ 새 버전 <b>v{LATEST_APP_VERSION}</b>이 나왔어요. 아래에서 최신 앱으로 업데이트해 주세요.
+            <span className="block text-xs text-amber-600 dark:text-amber-300/80">현재 설치 버전: v{appVersion}</span>
+          </div>
+        )}
         {/* 앱 다운로드 (임시 — Play Store 정식 배포 전까지 접근성용. 안드로이드 .apk) */}
         <a
           href="/maeum-app.apk"
           download="마음이음.apk"
-          className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-emerald-500 bg-emerald-50 py-4 text-base font-medium text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-400 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+          className={`mt-3 flex items-center justify-center gap-2 rounded-xl border py-4 text-base font-medium transition focus:outline-none focus:ring-2 ${updateNeeded ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400" : "border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 focus:ring-emerald-400 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40"}`}
         >
-          📱 안드로이드 앱 다운로드
+          {updateNeeded ? `⬆️ 최신 앱으로 업데이트 (v${LATEST_APP_VERSION})` : `📱 안드로이드 앱 다운로드 (v${LATEST_APP_VERSION})`}
         </a>
-        <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">테스트용 · 안드로이드 전용(.apk)</p>
+        <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
+          테스트용 · 안드로이드 전용(.apk) · 최신 v{LATEST_APP_VERSION}
+          {appVersion && !updateNeeded && <span className="text-emerald-500"> · 설치됨 v{appVersion} ✓</span>}
+        </p>
         <p className="mt-6 text-center text-base text-zinc-600 dark:text-zinc-300">
           계정이 없으신가요?{" "}
           <Link href="/signup" className="font-medium text-[#007bff] dark:text-blue-400">
