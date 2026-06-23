@@ -941,6 +941,15 @@ export async function POST(req: Request) {
       : session.user.screeningMode === "general" ? "general"
       : "user";
 
+    // 건강정보 수집 동의 게이트(API 레벨) — 어르신 본인이 자기 데이터를 생성하는 경우 동의 필수.
+    //   UI(app/page.tsx)에서 미동의 시 /consent로 보내지만, /api/chat 직접 호출로 우회되지 않도록 서버에서도 차단.
+    if (mode === "user") {
+      const me = await prisma.user.findUnique({ where: { id: actorId }, select: { consentedAt: true } });
+      if (!me?.consentedAt) {
+        return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
+      }
+    }
+
     // 전문가 대리 검사 — pro가 연결된 환자를 선택해 검사하면 이력·인지·저장을 환자 계정에 귀속.
     //   보안: pro 계정만, ExpertPatient active 연결 검증. 그 외엔 본인(actor)에 귀속.
     let userId = actorId;

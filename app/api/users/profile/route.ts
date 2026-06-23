@@ -67,9 +67,9 @@ export async function PATCH(req: Request) {
     if (!currentPassword) {
       return NextResponse.json({ error: "현재 비밀번호를 입력해주세요." }, { status: 400 });
     }
-    // 회원가입 기준(8자)과 동일하게 — 변경 경로로 더 짧은 비밀번호 다운그레이드 방지
-    if (newPassword.length < 8) {
-      return NextResponse.json({ error: "새 비밀번호는 최소 8자 이상이어야 합니다." }, { status: 400 });
+    // 회원가입 기준(8~128자)과 동일하게 — 짧은 비번 다운그레이드 + 초장문 bcrypt CPU DoS 방지
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      return NextResponse.json({ error: "새 비밀번호는 8~128자여야 합니다." }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({
@@ -112,7 +112,7 @@ export async function PATCH(req: Request) {
     if (url) {
       let host = "";
       try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ""); } catch { /* invalid */ }
-      const isHttp = /^https?:\/\//i.test(url);
+      const isHttps = /^https:\/\//i.test(url); // 민감 발화 평문 전송 방지 — https 전용
       // SSRF 방어 — 내부/사설/링크로컬/CGNAT 대역 차단(공개 webhook만 허용)
       const isPrivate = !host
         || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")
@@ -120,8 +120,8 @@ export async function PATCH(req: Request) {
         || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)
         || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host)
         || /^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(host);
-      if (!isHttp || isPrivate) {
-        return NextResponse.json({ error: "Webhook URL은 공개된 http(s) 주소여야 합니다(내부·사설 주소 불가)." }, { status: 400 });
+      if (!isHttps || isPrivate) {
+        return NextResponse.json({ error: "Webhook URL은 공개된 https 주소여야 합니다(http·내부·사설 주소 불가)." }, { status: 400 });
       }
     }
     updateData.guardianWebhookUrl = url || null;

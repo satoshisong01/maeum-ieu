@@ -89,7 +89,7 @@ function isPrivateIPv4(ip: string): boolean {
 async function isSafeWebhookUrl(rawUrl: string): Promise<boolean> {
   let u: URL;
   try { u = new URL(rawUrl); } catch { return false; }
-  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  if (u.protocol !== "https:") return false; // 민감 발화 평문 전송 방지 — https만 허용(Discord/Slack 등 모두 https)
   const host = u.hostname.toLowerCase();
   if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
   try {

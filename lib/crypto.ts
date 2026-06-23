@@ -13,9 +13,16 @@ import crypto from "node:crypto";
 
 const PREFIX = "enc:v1:";
 
+let warnedNoKey = false;
 function getKey(): Buffer | null {
   const raw = process.env.ENCRYPTION_KEY;
-  if (!raw) return null;
+  if (!raw) {
+    if (process.env.NODE_ENV === "production" && !warnedNoKey) {
+      warnedNoKey = true;
+      console.error("[crypto] ⚠️ ENCRYPTION_KEY 미설정 — 운영 환경에서 연락처 PII가 평문으로 저장됩니다. env 설정 필요.");
+    }
+    return null;
+  }
   if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
   return crypto.createHash("sha256").update(raw).digest(); // 패스프레이즈 → 32바이트
 }
