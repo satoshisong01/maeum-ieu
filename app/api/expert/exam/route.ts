@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   if (session.user.screeningMode !== "pro") return NextResponse.json({ error: "전문가 전용 기능입니다." }, { status: 403 });
   const expertId = session.user.id;
   // 검진 세션 생성·갱신 폭주(고아 세션·쓰기 DoS) 방지
-  if (!checkRateLimit(`exam:${expertId}`, 30, 60_000).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
+  if (!(await checkRateLimit(`exam:${expertId}`, 30, 60_000)).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const action = typeof body.action === "string" ? body.action : "";

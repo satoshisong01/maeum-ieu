@@ -20,7 +20,7 @@ export async function POST() {
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   // 토큰 발급 남용 방지 — 계정당 분당 10회(세션 재접속 여유 포함)
-  const rl = checkRateLimit(`live-token:${session.user.id}`, 10, 60_000);
+  const rl = await checkRateLimit(`live-token:${session.user.id}`, 10, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const apiKey = process.env.GEMINI_API_KEY;

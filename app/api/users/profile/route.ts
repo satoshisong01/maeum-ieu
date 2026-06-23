@@ -40,7 +40,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
   // 프로필 수정 폭주 방어 + bcrypt(비밀번호 변경) 반복 호출 CPU 점유 차단
-  if (!checkRateLimit(`profile:${session.user.id}`, 10, 60_000).ok) {
+  if (!(await checkRateLimit(`profile:${session.user.id}`, 10, 60_000)).ok) {
     return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
   }
 

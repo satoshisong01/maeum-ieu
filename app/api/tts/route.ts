@@ -118,7 +118,7 @@ export async function POST(req: Request) {
   }
 
   // 고비용 TTS 폭주 방어 — 계정당 분당 40회
-  const rl = checkRateLimit(`tts:${session.user.id}`, 40, 60_000);
+  const rl = await checkRateLimit(`tts:${session.user.id}`, 40, 60_000);
   if (!rl.ok) {
     return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
   }

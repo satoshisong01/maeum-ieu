@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   try {
     // 미인증 엔드포인트 — IP 기준 가입 폭주/봇 방어 (분당 10회)
     const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] || req.headers.get("x-real-ip") || "unknown").trim();
-    const rl = checkRateLimit(`signup:${ip}`, 10, 60_000);
+    const rl = await checkRateLimit(`signup:${ip}`, 10, 60_000);
     if (!rl.ok) {
       return NextResponse.json({ error: "잠시 후 다시 시도해 주세요." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
     }
