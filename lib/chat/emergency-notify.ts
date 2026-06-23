@@ -14,6 +14,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendEmergencyPush } from "@/lib/notify/push-fcm";
+import { sendEmergencyEmail } from "@/lib/notify/email";
+import { decryptPII } from "@/lib/crypto";
 import dns from "node:dns/promises";
 
 export interface NotifyPayload {
@@ -185,7 +187,19 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
     else if (push.failed > 0) console.warn("[emergency-notify] fcm failed:", push);
   }
 
-  // 5) 이메일 채널 — 추후 SMTP 연동 시 활성화 (현재 webhook/FCM로 처리).
+  // 5) 이메일 — 보호자 이메일(암호화 저장)로 발송. RESEND_API_KEY 없으면 skip.
+  if (user.guardianEmail) {
+    const email = decryptPII(user.guardianEmail);
+    if (email) {
+      const ok = await sendEmergencyEmail(email, {
+        userName: payload.userName,
+        level: payload.level,
+        category: payload.category,
+        createdAt: payload.createdAt,
+      });
+      if (ok) channels.push("email");
+    }
+  }
 
   // 6) 발송 시각 마킹 (어느 채널이든 1건 이상 성공 시)
   if (channels.length > 0) {
