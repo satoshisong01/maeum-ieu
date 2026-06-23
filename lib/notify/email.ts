@@ -1,16 +1,28 @@
 /**
- * 위급 알림 이메일 발송 — Resend.
- * RESEND_API_KEY env 없으면 graceful skip. from은 RESEND_FROM env(없으면 onboarding@resend.dev 테스트용).
- *   ⚠️ 임의 수신자에게 보내려면 Resend에서 발신 도메인 인증 필요(테스트는 본인 메일만 가능).
+ * 위급 알림 이메일 발송 — Gmail SMTP(nodemailer).
+ *
+ * env: GMAIL_USER(보내는 Gmail 주소) + GMAIL_APP_PASSWORD(앱 비밀번호, 공백 자동 제거).
+ *   미설정 시 graceful skip. 수신자는 보호자 이메일(동적).
+ *   ⚠️ 앱 비밀번호는 절대 코드/깃에 두지 말 것 — env로만. 노출 시 Google 계정에서 재발급.
  */
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
-let cached: Resend | null | undefined;
-function getResend(): Resend | null {
-  if (cached !== undefined) return cached;
-  const key = process.env.RESEND_API_KEY;
-  cached = key ? new Resend(key) : null;
-  return cached;
+let transporter: nodemailer.Transporter | null | undefined;
+function getTransporter(): nodemailer.Transporter | null {
+  if (transporter !== undefined) return transporter;
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, ""); // "abcd efgh ..." → 공백 제거
+  if (!user || !pass) {
+    transporter = null;
+    return null;
+  }
+  transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+  });
+  return transporter;
 }
 
 export interface EmergencyEmailPayload {
@@ -21,10 +33,10 @@ export interface EmergencyEmailPayload {
 }
 
 export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): Promise<boolean> {
-  const resend = getResend();
-  if (!resend || !to) return false;
+  const t = getTransporter();
+  if (!t || !to) return false;
 
-  const from = process.env.RESEND_FROM || "마음이음 <onboarding@resend.dev>";
+  const from = `마음이음 <${process.env.GMAIL_USER}>`;
   const urgent = p.level === 3;
   const when = p.createdAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
   const subject = `${urgent ? "🚨 즉시 응급" : "⚠️ 주의"} [마음이음] ${p.userName}님 위급 신호`;
@@ -51,14 +63,10 @@ export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): 
   </div>`;
 
   try {
-    const { error } = await resend.emails.send({ from, to, subject, html });
-    if (error) {
-      console.warn("[email] Resend 오류:", error.message);
-      return false;
-    }
+    await t.sendMail({ from, to, subject, html });
     return true;
   } catch (e) {
-    console.warn("[email] 발송 실패:", (e as Error).message);
+    console.warn("[email] Gmail 발송 실패:", (e as Error).message);
     return false;
   }
 }
