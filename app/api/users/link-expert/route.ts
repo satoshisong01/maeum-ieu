@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   // 코드 무차별 대입 방지 — 계정당 분당 10회
-  const rl = checkRateLimit(`link-expert:${session.user.id}`, 10, 60_000);
+  const rl = await checkRateLimit(`link-expert:${session.user.id}`, 10, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   let code = "";

@@ -19,7 +19,7 @@ export async function PATCH(req: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
-  if (!checkRateLimit(`speaker:${session.user.id}`, 60, 60_000).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
+  if (!(await checkRateLimit(`speaker:${session.user.id}`, 60, 60_000)).ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({}));
   const { messageId, label } = body as { messageId?: string; label?: string | null };

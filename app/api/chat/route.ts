@@ -967,7 +967,7 @@ export async function POST(req: Request) {
     const examSession = (proxyPatientId && mode === "pro") ? await lookupOpenExam(actorId, proxyPatientId) : null;
 
     // 고비용 엔드포인트 폭주 방어 — 행위 주체(전문가/본인) 기준 분당 40회 (대리 검사 다환자 남용도 차단)
-    const rl = checkRateLimit(`chat:${actorId}`, 40, 60_000);
+    const rl = await checkRateLimit(`chat:${actorId}`, 40, 60_000);
     if (!rl.ok) {
       return NextResponse.json(
         { error: "잠시 후 다시 시도해주세요." },
