@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       name: user.name,
     });
   } catch (e) {
-    console.error("signup error", e);
+    console.error("signup error:", e instanceof Error ? e.message : "unknown"); // 전체 예외 객체 로깅 시 DATABASE_URL 등 누출 위험
     return NextResponse.json(
       { error: "회원가입 처리 중 오류가 발생했습니다." },
       { status: 500 }

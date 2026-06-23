@@ -32,9 +32,12 @@ export interface EmergencyEmailPayload {
   createdAt: Date;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): Promise<boolean> {
   const t = getTransporter();
-  if (!t || !to) return false;
+  if (!t || !to || !EMAIL_RE.test(to)) return false; // 복호 실패 시 enc:… 값이 수신자로 가는 것 방지
 
   const from = `마음이음 <${process.env.GMAIL_USER}>`;
   const urgent = p.level === 3;
@@ -50,9 +53,9 @@ export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): 
       ${urgent ? "🚨 즉시 응급 신호" : "⚠️ 주의 신호"}
     </div>
     <div style="border:1px solid #DDD9E6;border-top:none;border-radius:0 0 14px 14px;padding:20px">
-      <p style="font-size:16px;margin:0 0 12px"><b>${p.userName}</b>님에게서 위급 신호가 감지되었습니다.</p>
+      <p style="font-size:16px;margin:0 0 12px"><b>${esc(p.userName)}</b>님에게서 위급 신호가 감지되었습니다.</p>
       <table style="font-size:14px;color:#4b4b5a;border-collapse:collapse">
-        <tr><td style="padding:4px 12px 4px 0;color:#6B7280">종류</td><td>${p.category}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6B7280">종류</td><td>${esc(p.category)}</td></tr>
         <tr><td style="padding:4px 12px 4px 0;color:#6B7280">시각</td><td>${when}</td></tr>
       </table>
       <p style="margin:16px 0 0;padding:12px 14px;background:#FBEAEF;border-radius:10px;font-size:15px;font-weight:600;color:${accent}">
