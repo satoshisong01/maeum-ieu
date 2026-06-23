@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
-  // 역할별 랜딩 — 전문가·보호자는 환자 목록으로(본인은 대화 안 함), 그 외는 대화로. 서버에서 결정해 /chat 깜빡임 방지.
-  if (session) redirect(session.user?.screeningMode === "pro" ? "/expert" : "/chat");
+  // 역할별 랜딩 — 전문가·보호자는 환자 목록으로(본인은 대화 안 함). 서버에서 결정해 /chat 깜빡임 방지.
+  if (session) {
+    if (session.user?.screeningMode === "pro") redirect("/expert");
+    // 어르신(user)은 건강정보 동의 후 대화 — 미동의면 동의 화면으로
+    const u = await prisma.user.findUnique({ where: { id: session.user!.id }, select: { consentedAt: true } });
+    redirect(u?.consentedAt ? "/chat" : "/consent");
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0f2f5] px-4">

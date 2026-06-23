@@ -1061,6 +1061,8 @@ export const UserScalarFieldEnum = {
   userHonorific: 'userHonorific',
   screeningMode: 'screeningMode',
   expertCode: 'expertCode',
+  consentedAt: 'consentedAt',
+  consentVersion: 'consentVersion',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
