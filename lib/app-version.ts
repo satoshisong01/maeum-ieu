@@ -5,7 +5,7 @@
  *    그리고 RN 앱(MaeumApp/App.jsx의 APP_VERSION + android/app/build.gradle versionName)도 동일하게 맞출 것.
  *    설치된 앱이 이 값보다 낮으면 로그인 화면에서 "업데이트" 안내가 표시됨.
  */
-export const LATEST_APP_VERSION = "1.0.1";
+export const LATEST_APP_VERSION = "1.0.2";
 
 /** a < b 인지(semver 단순 비교). 설치된 앱이 최신보다 낮을 때만 업데이트 안내. */
 export function isOlderVersion(a: string, b: string): boolean {
