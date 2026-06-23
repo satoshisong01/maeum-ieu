@@ -175,7 +175,13 @@ async function login(page, email) {
       await page.locator('input[type="password"]').first().fill(PW);
       await page.waitForTimeout(400);
       await page.getByRole("button", { name: "로그인" }).click();
-      await page.waitForURL(/\/chat/, { timeout: 25000 });
+      // 동의 게이트 통과 — 신규/미동의 계정은 /consent로 리다이렉트됨 → 동의 후 /chat
+      await page.waitForURL(/\/(chat|consent)/, { timeout: 25000 });
+      if (page.url().includes("/consent")) {
+        await page.getByRole("checkbox").first().check().catch(() => {});
+        await page.getByRole("button", { name: "동의하고 시작하기" }).click();
+        await page.waitForURL(/\/chat/, { timeout: 20000 });
+      }
       return;
     } catch (e) { if (attempt === 2) throw e; await page.waitForTimeout(1500); }
   }
