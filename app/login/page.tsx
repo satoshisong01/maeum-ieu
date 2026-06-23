@@ -12,7 +12,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(false);
-  const [appVersion, setAppVersion] = useState<string | null>(null); // RN 앱이 주입한 설치 버전(브라우저면 null)
+  const [appVersion, setAppVersion] = useState<string | null>(null); // RN 앱이 주입한 설치 버전(알 수 없으면 null)
+  const [inApp, setInApp] = useState(false);   // RN 앱(WebView) 안에서 실행 중인지
   const [updateNeeded, setUpdateNeeded] = useState(false);
 
   // 저장된 아이디(이메일) 자동 채움
@@ -21,12 +22,21 @@ export default function LoginPage() {
     if (saved) { setEmail(saved); setRemember(true); }
   }, []);
 
-  // 설치된 앱 버전 확인(RN WebView가 window.MAEUM_APP_VERSION 주입) → 구버전이면 업데이트 안내
+  // 설치 앱 버전 확인 → 최신과 비교해 업데이트 안내
+  //  - 앱이 버전 주입(window.MAEUM_APP_VERSION): 그 값으로 비교
+  //  - 앱(ReactNativeWebView)인데 버전 미주입: 버전표시 이전 '구버전' → 업데이트 권장
+  //  - 일반 브라우저: 해당 없음
   useEffect(() => {
-    const v = (window as unknown as { MAEUM_APP_VERSION?: string }).MAEUM_APP_VERSION;
+    const w = window as unknown as { MAEUM_APP_VERSION?: string; ReactNativeWebView?: unknown };
+    const isApp = !!w.ReactNativeWebView;
+    setInApp(isApp);
+    const v = w.MAEUM_APP_VERSION;
     if (typeof v === "string") {
       setAppVersion(v);
       setUpdateNeeded(isOlderVersion(v, LATEST_APP_VERSION));
+    } else if (isApp) {
+      setAppVersion(null);      // 버전 확인 불가(구버전)
+      setUpdateNeeded(true);    // 업데이트 권장
     }
   }, []);
 
@@ -101,7 +111,7 @@ export default function LoginPage() {
         {updateNeeded && (
           <div className="mt-3 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-sm text-amber-800 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-200">
             ⚠️ 새 버전 <b>v{LATEST_APP_VERSION}</b>이 나왔어요. 아래에서 최신 앱으로 업데이트해 주세요.
-            <span className="block text-xs text-amber-600 dark:text-amber-300/80">현재 설치 버전: v{appVersion}</span>
+            <span className="block text-xs text-amber-600 dark:text-amber-300/80">현재 설치 버전: {appVersion ? `v${appVersion}` : "확인 불가(구버전)"}</span>
           </div>
         )}
         {/* 앱 다운로드 (임시 — Play Store 정식 배포 전까지 접근성용. 안드로이드 .apk) */}
