@@ -111,7 +111,7 @@ export default function LoginPage() {
         {updateNeeded && (
           <div className="mt-3 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2.5 text-center text-sm text-amber-800 dark:border-amber-600 dark:bg-amber-900/20 dark:text-amber-200">
             ⚠️ 새 버전 <b>v{LATEST_APP_VERSION}</b>이 나왔어요. 아래에서 최신 앱으로 업데이트해 주세요.
-            <span className="block text-xs text-amber-600 dark:text-amber-300/80">현재 설치 버전: {appVersion ? `v${appVersion}` : "확인 불가(구버전)"}</span>
+            <span className="block text-xs text-amber-600 dark:text-amber-300/80">현재 버전: {appVersion ? `v${appVersion}` : "확인 불가(구버전)"}</span>
           </div>
         )}
         {/* 앱 다운로드 (임시 — Play Store 정식 배포 전까지 접근성용. 안드로이드 .apk) */}
@@ -123,8 +123,11 @@ export default function LoginPage() {
           {updateNeeded ? `⬆️ 최신 앱으로 업데이트 (v${LATEST_APP_VERSION})` : `📱 안드로이드 앱 다운로드 (v${LATEST_APP_VERSION})`}
         </a>
         <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
-          테스트용 · 안드로이드 전용(.apk) · 최신 v{LATEST_APP_VERSION}
-          {appVersion && !updateNeeded && <span className="text-emerald-500"> · 설치됨 v{appVersion} ✓</span>}
+          테스트용 · 안드로이드 전용(.apk)<br />
+          {inApp && (
+            <>현재 버전 {appVersion ? `v${appVersion}` : "확인 불가"}{appVersion && !updateNeeded && <span className="text-emerald-500"> ✓</span>} · </>
+          )}
+          최신 v{LATEST_APP_VERSION}
         </p>
         <p className="mt-6 text-center text-base text-zinc-600 dark:text-zinc-300">
           계정이 없으신가요?{" "}
