@@ -222,11 +222,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   } catch { /* exam_session 미생성 환경 방어 */ }
 
   // 위급 알림 이력 — 응급(L2/L3) 감지 이벤트 + 보호자 알림 발송 여부(notifiedAt)
+  // 위급(응급/이상) 메시지는 role=user(어르신 발화)에만 emergencyLevel이 기록됨.
+  //   ⚠️ 프라이버시 원칙: 일상 대화 원문은 비공개. 단 '문제 있는 발화(응급)'는 보호자가 상황 파악하도록 해당 발화만 노출.
   const emergencyRows = await prisma.message.findMany({
-    where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 } },
+    where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user" },
     orderBy: { createdAt: "desc" },
     take: 20,
-    select: { emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, createdAt: true },
+    select: { emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, createdAt: true, content: true },
   });
   const emergencies = emergencyRows.map((e) => {
     const key = (e.emergencyEvidence ?? "").split(":")[0];
@@ -235,6 +237,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       category: EMERGENCY_KO[key] ?? "기타 위급",
       at: e.createdAt.toISOString(),
       notified: e.notifiedAt != null,
+      utterance: (e.content ?? "").slice(0, 300), // 응급 당시 어르신 발화(문제 있는 대화만)
     };
   });
 

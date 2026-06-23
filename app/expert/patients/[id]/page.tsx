@@ -20,7 +20,7 @@ interface Detail {
   reliability?: { reliable: boolean; provisional: boolean; showLevel: boolean };
   trend: string; trendText: string; trendDelta: number;
   domains: DomainRow[]; weekly: WeekRow[]; events: EventRow[];
-  emergencies?: { level: number; category: string; at: string; notified: boolean }[];
+  emergencies?: { level: number; category: string; at: string; notified: boolean; utterance: string }[];
   sessions?: { date: string; overallAvg: number | null; tier: string; count: number; domains: { label: string; avg: number }[] }[];
   medication?: { items: { id: string; label: string; times: string[]; enabled: boolean }[]; todayConfirmed: string[]; weekCompliance: { confirmed: number; expected: number } };
   cistEstimate?: { earned: number; max: number; assessedDomains: number } | null;
@@ -402,15 +402,18 @@ export default function PatientDetailPage() {
 
             <section className="rounded-2xl border border-rose-200 bg-white p-5 dark:border-rose-900/50 dark:bg-zinc-900">
               <h2 className="mb-1 text-sm font-semibold text-rose-700 dark:text-rose-300">🚨 위급 알림 이력 (응급 감지 · 최대 20건)</h2>
-              <p className="mb-3 text-[11px] text-zinc-400">응급(즉시·주의) 신호가 감지된 시각과 보호자 알림 발송 여부입니다.</p>
+              <p className="mb-3 text-[11px] text-zinc-400">응급(즉시·주의) 신호가 감지된 시각·발화·보호자 알림 발송 여부입니다. <b>일상 대화는 비공개</b>이며, 문제 있는 발화만 표시됩니다.</p>
               {(!data.emergencies || data.emergencies.length === 0) && <p className="text-xs text-zinc-400">위급 알림 이력이 없습니다.</p>}
               <div className="grid gap-2">
                 {data.emergencies?.map((em, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-800/50">
-                    <span className="text-zinc-400">{new Date(em.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                    <span className={`rounded px-1.5 py-0.5 font-bold ${em.level >= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"}`}>{em.level >= 3 ? "즉시 응급" : "주의"}</span>
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-200">{em.category}</span>
-                    <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${em.notified ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400"}`}>{em.notified ? "보호자 알림 발송됨" : "미발송"}</span>
+                  <div key={i} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-800/50">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-zinc-400">{new Date(em.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                      <span className={`rounded px-1.5 py-0.5 font-bold ${em.level >= 3 ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"}`}>{em.level >= 3 ? "즉시 응급" : "주의"}</span>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-200">{em.category}</span>
+                      <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${em.notified ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" : "bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400"}`}>{em.notified ? "보호자 알림 발송됨" : "미발송"}</span>
+                    </div>
+                    {em.utterance && <p className="mt-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">“{em.utterance}”</p>}
                   </div>
                 ))}
               </div>
