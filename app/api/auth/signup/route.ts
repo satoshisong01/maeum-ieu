@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { encryptPII } from "@/lib/crypto";
 import { normalizeTimes } from "@/lib/chat/medication";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -79,7 +80,7 @@ export async function POST(req: Request) {
         age: age != null && Number.isInteger(age) && age >= 0 ? age : null,
         gender: gender === "male" || gender === "female" || gender === "other" ? gender : null,
         guardianName: guardianName?.trim().slice(0, 40) || null,
-        guardianPhone: guardianPhone?.trim().slice(0, 30) || null,
+        guardianPhone: encryptPII(guardianPhone?.trim().slice(0, 30) || null),
         guardianRelation: guardianRelation?.trim().slice(0, 20) || null,
         companionName: companionName?.trim().slice(0, 20) || undefined,
         companionRelation: companionRelation?.trim().slice(0, 20) || undefined,

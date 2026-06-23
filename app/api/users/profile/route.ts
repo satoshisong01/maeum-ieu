@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { encryptPII, decryptPII } from "@/lib/crypto";
 import bcrypt from "bcryptjs";
 
 /** 문자열 길이 상한 — 무제한 입력(프롬프트 인젝션 증폭·비용·DB 남용) 방어. */
@@ -24,7 +25,12 @@ export async function GET() {
     return NextResponse.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
   }
 
-  return NextResponse.json(user);
+  // 연락처 PII 복호화 후 반환 (마이페이지 표시·수정용)
+  return NextResponse.json({
+    ...user,
+    guardianPhone: decryptPII(user.guardianPhone),
+    guardianEmail: decryptPII(user.guardianEmail),
+  });
 }
 
 /** PATCH: 프로필 수정 */
@@ -98,9 +104,9 @@ export async function PATCH(req: Request) {
   if (age !== undefined) updateData.age = age;
   if (gender !== undefined) updateData.gender = gender;
   if (guardianName !== undefined) updateData.guardianName = cap(guardianName, 40) || null;
-  if (guardianPhone !== undefined) updateData.guardianPhone = cap(guardianPhone, 30) || null;
+  if (guardianPhone !== undefined) updateData.guardianPhone = encryptPII(cap(guardianPhone, 30) || null);
   if (guardianRelation !== undefined) updateData.guardianRelation = cap(guardianRelation, 20) || null;
-  if (guardianEmail !== undefined) updateData.guardianEmail = guardianEmail || null;
+  if (guardianEmail !== undefined) updateData.guardianEmail = encryptPII(cap(guardianEmail, 254) || null);
   if (guardianWebhookUrl !== undefined) {
     const url = (guardianWebhookUrl ?? "").trim();
     if (url) {
@@ -132,5 +138,5 @@ export async function PATCH(req: Request) {
     select: { id: true, name: true, email: true, age: true, gender: true, guardianName: true, guardianPhone: true, guardianRelation: true, screeningMode: true },
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({ ...updated, guardianPhone: decryptPII(updated.guardianPhone) });
 }
