@@ -28,6 +28,8 @@ model User {
   userHonorific     String?                   // 사용자 호칭 override (null이면 성별 자동 추론)
   screeningMode     String   @default("user")  // 계정 역할: user=일상 대화형 선별 / pro=전문가 표준검사 시행
   expertCode        String?  @unique           // 전문가 초대 코드 (pro 계정이 환자 연결용으로 발급)
+  consentedAt       DateTime?                   // 건강정보 수집·이용 동의 시각 (null=미동의)
+  consentVersion    String?                     // 동의한 약관 버전
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

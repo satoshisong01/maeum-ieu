@@ -53,6 +53,8 @@ export type UserMinAggregateOutputType = {
   userHonorific: string | null
   screeningMode: string | null
   expertCode: string | null
+  consentedAt: Date | null
+  consentVersion: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -76,6 +78,8 @@ export type UserMaxAggregateOutputType = {
   userHonorific: string | null
   screeningMode: string | null
   expertCode: string | null
+  consentedAt: Date | null
+  consentVersion: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -99,6 +103,8 @@ export type UserCountAggregateOutputType = {
   userHonorific: number
   screeningMode: number
   expertCode: number
+  consentedAt: number
+  consentVersion: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -132,6 +138,8 @@ export type UserMinAggregateInputType = {
   userHonorific?: true
   screeningMode?: true
   expertCode?: true
+  consentedAt?: true
+  consentVersion?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -155,6 +163,8 @@ export type UserMaxAggregateInputType = {
   userHonorific?: true
   screeningMode?: true
   expertCode?: true
+  consentedAt?: true
+  consentVersion?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -178,6 +188,8 @@ export type UserCountAggregateInputType = {
   userHonorific?: true
   screeningMode?: true
   expertCode?: true
+  consentedAt?: true
+  consentVersion?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -288,6 +300,8 @@ export type UserGroupByOutputType = {
   userHonorific: string | null
   screeningMode: string
   expertCode: string | null
+  consentedAt: Date | null
+  consentVersion: string | null
   createdAt: Date
   updatedAt: Date
   _count: UserCountAggregateOutputType | null
@@ -334,6 +348,8 @@ export type UserWhereInput = {
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
   screeningMode?: Prisma.StringFilter<"User"> | string
   expertCode?: Prisma.StringNullableFilter<"User"> | string | null
+  consentedAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
+  consentVersion?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -363,6 +379,8 @@ export type UserOrderByWithRelationInput = {
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
   expertCode?: Prisma.SortOrderInput | Prisma.SortOrder
+  consentedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  consentVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   accounts?: Prisma.AccountOrderByRelationAggregateInput
@@ -395,6 +413,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   companionRelation?: Prisma.StringNullableFilter<"User"> | string | null
   userHonorific?: Prisma.StringNullableFilter<"User"> | string | null
   screeningMode?: Prisma.StringFilter<"User"> | string
+  consentedAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
+  consentVersion?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   accounts?: Prisma.AccountListRelationFilter
@@ -424,6 +444,8 @@ export type UserOrderByWithAggregationInput = {
   userHonorific?: Prisma.SortOrderInput | Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
   expertCode?: Prisma.SortOrderInput | Prisma.SortOrder
+  consentedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  consentVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
@@ -455,6 +477,8 @@ export type UserScalarWhereWithAggregatesInput = {
   userHonorific?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   screeningMode?: Prisma.StringWithAggregatesFilter<"User"> | string
   expertCode?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  consentedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
+  consentVersion?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
@@ -478,6 +502,8 @@ export type UserCreateInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -507,6 +533,8 @@ export type UserUncheckedCreateInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -536,6 +564,8 @@ export type UserUpdateInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -565,6 +595,8 @@ export type UserUncheckedUpdateInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -594,6 +626,8 @@ export type UserCreateManyInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -617,6 +651,8 @@ export type UserUpdateManyMutationInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -640,6 +676,8 @@ export type UserUncheckedUpdateManyInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -663,6 +701,8 @@ export type UserCountOrderByAggregateInput = {
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
   expertCode?: Prisma.SortOrder
+  consentedAt?: Prisma.SortOrder
+  consentVersion?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -690,6 +730,8 @@ export type UserMaxOrderByAggregateInput = {
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
   expertCode?: Prisma.SortOrder
+  consentedAt?: Prisma.SortOrder
+  consentVersion?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -713,6 +755,8 @@ export type UserMinOrderByAggregateInput = {
   userHonorific?: Prisma.SortOrder
   screeningMode?: Prisma.SortOrder
   expertCode?: Prisma.SortOrder
+  consentedAt?: Prisma.SortOrder
+  consentVersion?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -853,6 +897,8 @@ export type UserCreateWithoutExpertLinksInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -881,6 +927,8 @@ export type UserUncheckedCreateWithoutExpertLinksInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -914,6 +962,8 @@ export type UserCreateWithoutPatientLinksInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -942,6 +992,8 @@ export type UserUncheckedCreateWithoutPatientLinksInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -986,6 +1038,8 @@ export type UserUpdateWithoutExpertLinksInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1014,6 +1068,8 @@ export type UserUncheckedUpdateWithoutExpertLinksInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1053,6 +1109,8 @@ export type UserUpdateWithoutPatientLinksInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1081,6 +1139,8 @@ export type UserUncheckedUpdateWithoutPatientLinksInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1109,6 +1169,8 @@ export type UserCreateWithoutMedicationSchedulesInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -1137,6 +1199,8 @@ export type UserUncheckedCreateWithoutMedicationSchedulesInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -1181,6 +1245,8 @@ export type UserUpdateWithoutMedicationSchedulesInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1209,6 +1275,8 @@ export type UserUncheckedUpdateWithoutMedicationSchedulesInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1237,6 +1305,8 @@ export type UserCreateWithoutAccountsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1265,6 +1335,8 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1309,6 +1381,8 @@ export type UserUpdateWithoutAccountsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1337,6 +1411,8 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1365,6 +1441,8 @@ export type UserCreateWithoutSessionsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -1393,6 +1471,8 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -1437,6 +1517,8 @@ export type UserUpdateWithoutSessionsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1465,6 +1547,8 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1493,6 +1577,8 @@ export type UserCreateWithoutConversationsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
@@ -1521,6 +1607,8 @@ export type UserUncheckedCreateWithoutConversationsInput = {
   userHonorific?: string | null
   screeningMode?: string
   expertCode?: string | null
+  consentedAt?: Date | string | null
+  consentVersion?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
@@ -1565,6 +1653,8 @@ export type UserUpdateWithoutConversationsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
@@ -1593,6 +1683,8 @@ export type UserUncheckedUpdateWithoutConversationsInput = {
   userHonorific?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   screeningMode?: Prisma.StringFieldUpdateOperationsInput | string
   expertCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  consentedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  consentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
@@ -1697,6 +1789,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   userHonorific?: boolean
   screeningMode?: boolean
   expertCode?: boolean
+  consentedAt?: boolean
+  consentVersion?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
@@ -1727,6 +1821,8 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   userHonorific?: boolean
   screeningMode?: boolean
   expertCode?: boolean
+  consentedAt?: boolean
+  consentVersion?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1750,6 +1846,8 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   userHonorific?: boolean
   screeningMode?: boolean
   expertCode?: boolean
+  consentedAt?: boolean
+  consentVersion?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -1773,11 +1871,13 @@ export type UserSelectScalar = {
   userHonorific?: boolean
   screeningMode?: boolean
   expertCode?: boolean
+  consentedAt?: boolean
+  consentVersion?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "screeningMode" | "expertCode" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "email" | "emailVerified" | "password" | "image" | "age" | "gender" | "guardianName" | "guardianPhone" | "guardianRelation" | "guardianEmail" | "guardianWebhookUrl" | "companionName" | "companionRelation" | "userHonorific" | "screeningMode" | "expertCode" | "consentedAt" | "consentVersion" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
@@ -1819,6 +1919,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     userHonorific: string | null
     screeningMode: string
     expertCode: string | null
+    consentedAt: Date | null
+    consentVersion: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["user"]>
@@ -2268,6 +2370,8 @@ export interface UserFieldRefs {
   readonly userHonorific: Prisma.FieldRef<"User", 'String'>
   readonly screeningMode: Prisma.FieldRef<"User", 'String'>
   readonly expertCode: Prisma.FieldRef<"User", 'String'>
+  readonly consentedAt: Prisma.FieldRef<"User", 'DateTime'>
+  readonly consentVersion: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }
