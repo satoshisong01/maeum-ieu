@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { CONSENT_VERSION } from "@/lib/consent";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -41,6 +42,15 @@ export async function POST(req: Request) {
         `INSERT INTO exam_session (id, patient_user_id, expert_user_id, conversation_id) VALUES ($1, $2, $3, $4)`,
         id, patientId, expertId, conversationId,
       );
+      // 환자 검진 동의(건강 민감정보 + 전문가 제공) 기록 — 환자가 동의 화면에서 체크+성함 서명한 경우.
+      //   감사 증빙(expert_access_log) + 미동의였다면 정식 건강정보 동의(consentedAt)도 이때 성립.
+      if (body.patientConsent === true) {
+        prisma.$executeRawUnsafe(
+          `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, $4)`,
+          `eal_${randomUUID()}`, expertId, patientId, "exam_consent",
+        ).catch(() => {});
+        await prisma.user.updateMany({ where: { id: patientId, consentedAt: null }, data: { consentedAt: new Date(), consentVersion: CONSENT_VERSION } }).catch(() => {});
+      }
       return NextResponse.json({ sessionId: id });
     } catch {
       // 동시 시작 경합(부분 unique uq_es_open 위반) — 이미 열린 세션을 반환(고아·중복 방지)

@@ -771,6 +771,17 @@ export default function ChatPage() {
   useEffect(() => { reEngageCountRef.current = 0; }, [conversationId]); // 새 대화 → 재참여 카운트 리셋(stale 차단)
   const [modeSelected, setModeSelected] = useState(false); // 음성/텍스트 선택 완료
   const [examCountdown, setExamCountdown] = useState<string | null>(null); // 대리 검진 시작 카운트다운(5..1..시작)
+  // 검진 동의(건강 민감정보 + 전문가 제공) — 체크 + 성함·"동의합니다" 정자 서명 시에만 검진 시작
+  const [examConsentOpen, setExamConsentOpen] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentSign, setConsentSign] = useState("");
+  const examConsentValid = (() => {
+    const sign = consentSign.trim().replace(/\s+/g, " ");
+    if (!consentChecked || !sign.endsWith("동의합니다")) return false;
+    const nm = (proxyPatientName || "").trim();
+    return nm ? sign.includes(nm) : sign.replace(/동의합니다$/, "").trim().length >= 2; // 성함 알면 일치 요구, 모르면 2자+ 입력
+  })();
+  const closeExamConsent = () => { setExamConsentOpen(false); setConsentChecked(false); setConsentSign(""); };
   const [examRemaining, setExamRemaining] = useState<string>("");          // 검진 남은 시간(mm:ss)
   const examEndAtRef = useRef<number | null>(null);
   const examTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -870,7 +881,7 @@ export default function ChatPage() {
     }, 1000);
     // 검진 세션 기록 시작 — 이 구간의 문답을 의사가 열람·코멘트
     try {
-      const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", patientId: proxyPatientId, conversationId }) });
+      const r = await fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", patientId: proxyPatientId, conversationId, patientConsent: true }) });
       if (r.ok) { examSessionIdRef.current = (await r.json()).sessionId ?? null; }
     } catch { /* 무해화 */ }
     if (!conversationId) return;
@@ -1263,6 +1274,62 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* 검진 동의 모달 — 환자 본인이 체크 + 성함·"동의합니다" 정자 서명 후에만 검진 시작 */}
+      {examConsentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-zinc-900">
+            <h2 className="text-xl font-bold text-zinc-800 dark:text-zinc-100">🩺 인지 검진 동의 (건강 민감정보)</h2>
+            <p className="mt-1 text-xs text-zinc-400">개인정보 보호법 제15조·제22조·제23조에 따른 안내</p>
+            <div className="mt-4 space-y-3 rounded-xl bg-zinc-50 p-4 text-[15px] leading-relaxed text-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200">
+              <p><b>· 수집·이용 목적</b><br />기억력·주의력·지남력·언어·판단력 등 인지기능 선별 검진 및 변화 관찰</p>
+              <p><b>· 수집 항목 <span className="text-rose-600 dark:text-rose-400">(민감정보)</span></b><br />검진 문항 답변, 인지 영역별 점수·요약, 검진 일시</p>
+              <p><b>· 담당 전문가 제공</b><br />검진 결과(점수·요약)를 담당 전문가에게 제공합니다. <b>일상 대화 원문은 제공되지 않습니다.</b></p>
+              <p><b>· 보유·이용 기간</b><br />회원 탈퇴 또는 동의 철회 시까지 보관 후 지체 없이 파기</p>
+              <p><b>· 동의 거부권</b><br />동의를 거부할 수 있으며, 거부 시 검진을 진행할 수 없습니다.</p>
+            </div>
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                className="mt-1 h-5 w-5 rounded border-zinc-300 text-teal-600 focus:ring-2 focus:ring-teal-400 dark:border-zinc-600 dark:bg-zinc-800"
+              />
+              <span className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
+                <span className="text-rose-600 dark:text-rose-400">(필수)</span> 위 건강정보 수집·이용 및 담당 전문가 제공에 동의합니다.
+              </span>
+            </label>
+            <div className="mt-4">
+              <p className="text-[15px] font-medium text-zinc-700 dark:text-zinc-200">본인 확인을 위해 <b>성함과 “동의합니다”</b>를 직접 입력해 주세요.</p>
+              <p className="mt-0.5 text-xs text-zinc-400">예) {proxyPatientName || "성함"} 동의합니다</p>
+              <input
+                type="text"
+                value={consentSign}
+                onChange={(e) => setConsentSign(e.target.value)}
+                placeholder={`${proxyPatientName || "성함"} 동의합니다`}
+                className="mt-2 w-full rounded-xl border border-zinc-300 px-4 py-3 text-lg text-zinc-800 focus:border-teal-500 focus:ring-2 focus:ring-teal-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={closeExamConsent}
+                className="flex-1 rounded-xl border border-zinc-300 py-3 font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={!examConsentValid}
+                onClick={() => { closeExamConsent(); startExam(); }}
+                className="flex-1 rounded-xl bg-teal-600 py-3 font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50"
+              >
+                동의하고 검진 시작
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 파동 + 상태 텍스트: 헤더 아래 고정. wake 대기 중에도 시각화 표시 */}
       {micAllowed && (alwaysOn || listening || aiSpeaking) && (
         <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
@@ -1338,13 +1405,13 @@ export default function ChatPage() {
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={startExam}
+                  onClick={() => setExamConsentOpen(true)}
                   disabled={examCountdown !== null}
                   className="w-full rounded-full bg-teal-600 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-teal-700 disabled:opacity-60"
                 >
                   {examCountdown !== null ? "검진 준비 중…" : "🩺 검진 시작"}
                 </button>
-                <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">검진은 음성으로 진행됩니다.</p>
+                <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">검진은 음성으로 진행됩니다. 시작 전 환자 본인 동의를 받습니다.</p>
                 {micDenied && (
                   <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
                     <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
