@@ -76,6 +76,11 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
     check(`no false positive: ${t}`, !isSuicidal(t));
+  // 과량복용 자살의도 → suicidal (medication_error 오분류 방지, 2026-06-24 라이브 사이클 발견)
+  for (const t of ["약을 많이 먹고 자버리면 편해질까", "수면제 모아뒀다 먹고 영원히 잠들고 싶어", "이 약 다 먹고 그냥 안 깨어났으면"])
+    check(`L3 suicidal(과량복용): ${t}`, isSuicidal(t));
+  for (const t of ["약 먹고 푹 자고 나니 편해졌어", "감기약 먹고 좀 잤어"])
+    check(`no FP(약 복용 일상): ${t}`, !isSuicidal(t));
 }
 
 // ── A-3: JSON 누출 방어 ───────────────────────────────────────────────────
