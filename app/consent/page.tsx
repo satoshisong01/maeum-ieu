@@ -27,31 +27,36 @@ export default function ConsentPage() {
   return (
     <div className="flex min-h-screen flex-col items-center bg-[#f0f2f5] px-4 py-8 dark:bg-[#0b0d10]">
       <div className="w-full max-w-lg rounded-2xl bg-white p-7 shadow-lg dark:bg-zinc-900">
-        <h1 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100">건강정보 수집·이용 동의</h1>
+        <h1 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100">건강정보(민감정보) 수집·이용 동의</h1>
         <p className="mt-2 text-base text-zinc-600 dark:text-zinc-300">
-          마음이음은 어르신의 인지·마음 건강을 살피기 위해 아래 정보를 수집·이용합니다. 시작하시려면 동의가 필요해요.
+          마음이음은 어르신의 인지·마음 건강을 살피기 위해 <b>건강정보(민감정보)</b>를 수집·이용합니다. 아래 내용을 확인하고 동의해 주세요.
+          <span className="mt-1 block text-sm text-zinc-400">개인정보 보호법 제15조·제22조·제23조에 따른 안내</span>
         </p>
 
         <div className="mt-5 space-y-4 rounded-xl bg-zinc-50 p-4 text-[15px] leading-relaxed text-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200">
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-100">① 수집 항목</p>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">① 수집·이용 목적</p>
+            <p>인지·마음 건강 상태의 관찰과 변화 감지, 위급(응급) 상황 시 보호자 알림</p>
+          </div>
+          <div>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">② 수집 항목 <span className="text-rose-600 dark:text-rose-400">(민감정보 포함)</span></p>
             <p>AI와 나눈 대화 내용 · 인지/마음 건강 상태 추정 결과 · 응급(위급) 신호 · 보호자 연락처(선택)</p>
           </div>
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-100">② 이용 목적</p>
-            <p>인지·마음 건강 변화 관찰, 위급 상황 시 보호자에게 알림</p>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">③ 보유·이용 기간</p>
+            <p>회원 탈퇴 또는 동의 철회 시까지 보관하며, 그 즉시 <b>지체 없이 파기</b>합니다. (연락처 등은 암호화 저장)</p>
           </div>
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-100">③ 열람 범위 (중요)</p>
-            <p>연결된 보호자·전문가는 <b>결과 요약과 ‘문제 있는 발화(응급)’만</b> 볼 수 있어요. <b>일상 대화 내용은 공개되지 않습니다.</b></p>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">④ 보호자·전문가 제공(열람) 범위 <span className="text-zinc-500">(중요)</span></p>
+            <p>회원이 직접 <b>연결한</b> 보호자·전문가에게 <b>결과 요약과 ‘문제 있는 발화(응급)’만</b> 제공됩니다. <b>일상 대화 원문은 제공되지 않습니다.</b> (연결을 하지 않으면 누구에게도 제공되지 않습니다.)</p>
           </div>
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-100">④ 보관·파기</p>
-            <p>서비스 이용 기간 동안 안전하게 보관하고, 탈퇴 시 파기합니다. 연락처 등 민감정보는 암호화해 저장합니다.</p>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">⑤ 동의 거부 권리 및 불이익</p>
+            <p>동의를 <b>거부할 권리</b>가 있습니다. 다만 건강정보 수집에 동의하지 않으면 본 서비스(대화·건강 살핌)를 이용하실 수 없습니다.</p>
           </div>
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-100">⑤ 동의 철회</p>
-            <p>언제든 마이페이지 또는 문의를 통해 동의를 철회할 수 있어요.</p>
+            <p className="font-semibold text-zinc-800 dark:text-zinc-100">⑥ 동의 철회</p>
+            <p>언제든 마이페이지 또는 문의를 통해 동의를 철회할 수 있습니다.</p>
           </div>
         </div>
 
@@ -63,7 +68,7 @@ export default function ConsentPage() {
             className="mt-1 h-5 w-5 rounded border-zinc-300 text-[#007bff] focus:ring-2 focus:ring-blue-400 dark:border-zinc-600 dark:bg-zinc-800"
           />
           <span className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
-            위 내용을 확인했고, <b>건강정보(민감정보) 수집·이용에 동의</b>합니다.
+            <span className="text-rose-600 dark:text-rose-400">(필수)</span> 위 내용을 확인했고, <b>건강정보(민감정보)의 수집·이용 및 연결한 보호자·전문가 제공에 동의</b>합니다.
           </span>
         </label>
 
