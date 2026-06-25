@@ -80,6 +80,8 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
   for (const t of ["저 빨랫줄에 목이라도 매고 싶은 심정이여", "목을 매서라도 끝내고 싶어"]) check(`L3 suicidal(목매조사): ${t}`, isSuicidal(t));
   // 끝내뿔(끝내버리 사투리, 라운드9)
   for (const t of ["인자 다 끝내뿔고 싶다 더는 못 견디겠다", "그냥 다 끝내뿔라"]) check(`L3 suicidal(끝내뿔): ${t}`, isSuicidal(t));
+  // 뛰어내리 활용형(라운드13 — 릴/려)
+  for (const t of ["옥상에서 뛰어내릴 거야", "건물에서 뛰어내려야겠어"]) check(`L3 suicidal(뛰어내릴): ${t}`, isSuicidal(t));
   for (const t of ["다 부질없다 그냥 조용히 사라져버리고 싶어", "그냥 사라지고 싶어", "사라져 버리고 싶다", "이제 그만 사라지면 좋겠어", "그냥 다 끝내버리고 싶어", "이제 정말 죽고 싶어"])
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
@@ -106,6 +108,9 @@ console.log("\n[A-4b] medication_error 의문/부정 위양성 가드");
     check(`no FP(과거 해소 복약): ${t}`, !isMedErr(t));
   // 현재 과다복용은 여전히 감지(과거 예외가 현재를 삼키지 않게)
   for (const t of ["방금 약을 두 번 먹었어", "실수로 약을 또 먹었네"]) check(`L3 detect(현재 과다): ${t}`, isMedErr(t));
+  // 뉴스/드라마 3인칭 복약 사고는 사용자 응급 아님(라운드13)
+  for (const t of ["뉴스에서 어떤 노인이 약을 잘못 드셔서 응급실 갔다더라", "드라마에서 약 잘못 먹고 쓰러지는 장면 봤어"])
+    check(`no FP(미디어 3인칭 복약): ${t}`, !isMedErr(t));
 }
 
 // ── A-4c: 과소감지 갭 — 자연어/사투리/완곡/어순 변형 (2026-06-25 적대적 검증 발견) ──
@@ -142,6 +147,9 @@ console.log("\n[A-5] 백스톱 사전필터(SOFT_SIGNAL) 커버리지");
   // 의식저하 부사 사이(라운드11) — 정규식 직접 포착
   for (const t of ["눈앞이 자꾸 캄캄해지고 정신이 가물가물 흐려져", "정신이 막 아득해지면서 쓰러질 것 같아"])
     check(`L3 의식저하(부사사이): ${t}`, detectEmergency(t).level >= 2);
+  // 초미묘 간접 자살(라운드13) — 사전필터 통과해 백스톱 판정 받게
+  for (const t of ["이만 다 정리하고 조용히 떠날 때가 됐다", "내가 없어야 자식들이 편할 텐데", "이제 이 세상 하직할 때가 됐나 봐"])
+    check(`사전필터 통과(초미묘 자살): ${t}`, SOFT_SIGNAL.test(t));
   // 순수 일상은 사전필터에 안 걸려 백스톱 skip(비용 억제) — 측면어 일상도 skip
   for (const t of ["오늘 날씨가 참 좋네", "손주랑 공원 다녀왔어", "된장찌개 먹었지 맛있더라", "경로당에서 화투 쳤어", "한쪽 신발이 안 보이네", "오른쪽으로 쭉 가면 경로당이야"])
     check(`사전필터 skip(일상): ${t}`, !SOFT_SIGNAL.test(t));
