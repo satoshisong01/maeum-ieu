@@ -73,6 +73,8 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
 console.log("\n[A-4] suicidal ideation conjugation coverage");
 {
   const isSuicidal = (t: string) => { const r = detectEmergency(t); return r.category === "suicidal" && r.level === 3; };
+  // 조사 변형 "살기가/를 싫어"(라운드6) — 정규식 직접 포착
+  for (const t of ["이제 사는 게 지긋지긋하고 살기가 싫어", "살기를 싫어 이젠", "살 맛이 안 나"]) check(`L3 suicidal(살기/살맛): ${t}`, isSuicidal(t));
   for (const t of ["다 부질없다 그냥 조용히 사라져버리고 싶어", "그냥 사라지고 싶어", "사라져 버리고 싶다", "이제 그만 사라지면 좋겠어", "그냥 다 끝내버리고 싶어", "이제 정말 죽고 싶어"])
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
