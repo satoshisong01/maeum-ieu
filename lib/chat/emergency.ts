@@ -40,7 +40,7 @@ interface PatternRule {
 
 // 과거 회상·TV·꿈·농담 맥락 제외 가드
 // 한 발화 안에 이 표현이 있으면 응급 평가에서 일단 빼낸다 (특정 패턴은 별도 가드 적용)
-const PAST_CONTEXT_GUARD = /(예전에|옛날에|어릴\s*때|젊었을\s*때|작년에|지난번에|저번에|꿈에서|꿈\s*꿨|TV\s*에서|드라마에서|영화에서|뉴스에서)/;
+const PAST_CONTEXT_GUARD = /(예전에|옛날에|어릴\s*[때적]|어렸을\s*적|젊었을\s*[때적]|젊을\s*적|왕년에|작년에|지난번에|저번에|꿈에서|꿈\s*꿨|TV\s*에서|드라마에서|영화에서|뉴스에서)/;
 // 비유/감탄/농담 가드 (강도 강조용 "죽겠어", "쓰러질 것 같아 (피곤해서)" 등)
 // 단독으로 "죽겠다/쓰러질 것 같아"가 신체 통증·식사/날씨 등 비응급 명사와 함께 오면 L3 후보에서 강등
 const FIGURATIVE_HINT = /(맛있어\s*죽|배고파\s*죽|더워\s*죽|추워\s*죽|졸려\s*죽|좋아\s*죽|예뻐\s*죽|웃겨\s*죽|힘들어\s*죽|피곤해서\s*쓰러)/;
@@ -137,7 +137,7 @@ export function detectEmergency(userText: string): EmergencyResult {
       // 과거 회상 — suicidal/medication만 L2로 보존(과소평가 방지), 그 외는 무시
       if (isPastContext) {
         // 단, 이미 해소된 과거 복약 사고("예전에 ~한 적 있었지, 그 뒤로 잘 챙겨")는 현재 응급 아님 (2026-06-25 라운드7 위양성)
-        if (rule.category === "medication_error" && /적\s*(?:이|도)?\s*있었|그\s*뒤로|그\s*후로?|이제[는요]?\s*(?:잘|괜찮)|지금[은]?\s*(?:잘|괜찮)/.test(text)) continue;
+        if (rule.category === "medication_error" && /적\s*(?:이|도)?\s*있었|그\s*뒤로|그\s*후로?|이제[는요]?\s*(?:잘|괜찮)|인자[는]?\s*(?:잘|괜찮|챙)|지금[은]?\s*(?:잘|괜찮)/.test(text)) continue;
         if (rule.category === "suicidal" || rule.category === "medication_error") {
           return { level: 2, evidence: m[0], category: rule.category };
         }
