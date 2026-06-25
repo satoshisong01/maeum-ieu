@@ -138,8 +138,14 @@ export function detectEmergency(userText: string): EmergencyResult {
       if (isPastContext) {
         // 단, 이미 해소된 과거 복약 사고("예전에 ~한 적 있었지, 그 뒤로 잘 챙겨")는 현재 응급 아님 (2026-06-25 라운드7 위양성)
         if (rule.category === "medication_error" && (/적\s*(?:이|도)?\s*있었|그\s*뒤로|그\s*후로?|이제[는요]?\s*(?:잘|괜찮)|인자[는]?\s*(?:잘|괜찮|챙)|지금[은]?\s*(?:잘|괜찮)/.test(text) || /뉴스|드라마|TV|영화|방송|어떤\s*(?:사람|노인|할[머아])/.test(text))) continue;
-        // 명백히 해소된 과거 자살사고("젊을 때 죽고 싶었지만 이제는 마음 편해")는 현재 위기 아님 — 강한 해소 표지가 있을 때만 (2026-06-25 라운드17)
-        if (rule.category === "suicidal" && /이제[는]?\s*(?:다\s*)?(?:괜찮|편|좋아|나아)|마음\s*(?:이\s*)?편|다\s*지난\s*일|이젠\s*(?:괜찮|편|좋)|지금[은]?\s*(?:괜찮|편|행복)/.test(text)) continue;
+        // 명백히 해소된 과거 자살사고("젊을 때 죽고 싶었지만 이제는 마음 편해졌어")는 현재 위기 아님 (2026-06-25 라운드17·19)
+        //   ⚠ 부정/현재고통 가드 동반 — "지금도 죽고 싶어 마음이 안 편해"(과거틀+현재SI)를 오skip하지 않게.
+        //   해소표지는 부정으로 잘 안 깨지는 완료형(편해졌/괜찮아졌/다 지난 일/홀가분 등)만 사용.
+        {
+          const RESOLVED = /다\s*지난\s*일|편해졌|편안해졌|편안하다|홀가분|마음[\s을를]*놓[았여]|괜찮아졌|나아졌|다\s*나았|좋아졌|이제[는]?[\s가-힣]{0,4}행복|지금[은]?[\s가-힣]{0,4}행복|이제[는]?\s*(?:다\s*)?괜찮아[졌서]/;
+          const STILL_DISTRESSED = /지금도|아직도|여전히|요즘|또\s*죽|다시\s*죽|안\s*(?:괜찮|편)|죽고\s*싶어/;
+          if (rule.category === "suicidal" && RESOLVED.test(text) && !STILL_DISTRESSED.test(text)) continue;
+        }
         if (rule.category === "suicidal" || rule.category === "medication_error") {
           return { level: 2, evidence: m[0], category: rule.category };
         }
