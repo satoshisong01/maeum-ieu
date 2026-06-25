@@ -75,6 +75,8 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
   const isSuicidal = (t: string) => { const r = detectEmergency(t); return r.category === "suicidal" && r.level === 3; };
   // 조사 변형 "살기가/를 싫어"(라운드6) — 정규식 직접 포착
   for (const t of ["이제 사는 게 지긋지긋하고 살기가 싫어", "살기를 싫어 이젠", "살 맛이 안 나"]) check(`L3 suicidal(살기/살맛): ${t}`, isSuicidal(t));
+  // 목매 조사 변형(라운드7)
+  for (const t of ["저 빨랫줄에 목이라도 매고 싶은 심정이여", "목을 매서라도 끝내고 싶어"]) check(`L3 suicidal(목매조사): ${t}`, isSuicidal(t));
   for (const t of ["다 부질없다 그냥 조용히 사라져버리고 싶어", "그냥 사라지고 싶어", "사라져 버리고 싶다", "이제 그만 사라지면 좋겠어", "그냥 다 끝내버리고 싶어", "이제 정말 죽고 싶어"])
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
@@ -96,6 +98,9 @@ console.log("\n[A-4b] medication_error 의문/부정 위양성 가드");
   // 진짜 과다복용 보고는 여전히 감지
   for (const t of ["약을 잘못 먹었어", "실수로 약을 두 번 먹었어", "약을 많이 먹었어"])
     check(`L3 detect(실제 과다복용): ${t}`, isMedErr(t));
+  // 이미 해소된 과거 복약 사고는 응급 아님(라운드7)
+  for (const t of ["예전에 약을 잘못 먹은 적이 있었지, 그 뒤로는 잘 챙겨 먹는다네", "옛날에 약 두 번 먹은 적 있었는데 지금은 괜찮아"])
+    check(`no FP(과거 해소 복약): ${t}`, !isMedErr(t));
 }
 
 // ── A-4c: 과소감지 갭 — 자연어/사투리/완곡/어순 변형 (2026-06-25 적대적 검증 발견) ──
