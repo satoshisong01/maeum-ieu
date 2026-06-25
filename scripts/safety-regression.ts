@@ -14,6 +14,7 @@ import { factCheckResponse } from "../lib/chat/fact-checker";
 import { stripRecallAnswerLeak, normalizeImnida } from "../lib/chat/korean-particle";
 import { detectEmergency } from "../lib/chat/emergency";
 import { SOFT_SIGNAL } from "../lib/chat/emergency-llm";
+import { detectInappropriate } from "../lib/chat/moderation";
 import { salvageJsonLeak } from "../lib/chat/sanitize";
 import { cleanName } from "../lib/chat/profile-extractor";
 
@@ -77,6 +78,8 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
   for (const t of ["이제 사는 게 지긋지긋하고 살기가 싫어", "살기를 싫어 이젠", "살 맛이 안 나"]) check(`L3 suicidal(살기/살맛): ${t}`, isSuicidal(t));
   // 목매 조사 변형(라운드7)
   for (const t of ["저 빨랫줄에 목이라도 매고 싶은 심정이여", "목을 매서라도 끝내고 싶어"]) check(`L3 suicidal(목매조사): ${t}`, isSuicidal(t));
+  // 끝내뿔(끝내버리 사투리, 라운드9)
+  for (const t of ["인자 다 끝내뿔고 싶다 더는 못 견디겠다", "그냥 다 끝내뿔라"]) check(`L3 suicidal(끝내뿔): ${t}`, isSuicidal(t));
   for (const t of ["다 부질없다 그냥 조용히 사라져버리고 싶어", "그냥 사라지고 싶어", "사라져 버리고 싶다", "이제 그만 사라지면 좋겠어", "그냥 다 끝내버리고 싶어", "이제 정말 죽고 싶어"])
     check(`L3 detect: ${t}`, isSuicidal(t));
   for (const t of ["안개가 걷히니 구름이 사라졌어", "통증이 사라져서 살 것 같아", "고민이 사라졌으면 좋겠네"])
@@ -137,6 +140,16 @@ console.log("\n[A-5] 백스톱 사전필터(SOFT_SIGNAL) 커버리지");
   // 순수 일상은 사전필터에 안 걸려 백스톱 skip(비용 억제) — 측면어 일상도 skip
   for (const t of ["오늘 날씨가 참 좋네", "손주랑 공원 다녀왔어", "된장찌개 먹었지 맛있더라", "경로당에서 화투 쳤어", "한쪽 신발이 안 보이네", "오른쪽으로 쭉 가면 경로당이야"])
     check(`사전필터 skip(일상): ${t}`, !SOFT_SIGNAL.test(t));
+}
+
+// ── A-6: 모더레이션 성적 발언 — "가슴 (좀) 만져/보여"(사이 부사 허용) vs 의료(가슴 통증) (2026-06-25 라운드9) ──
+console.log("\n[A-6] moderation 성적 — 가슴 만져/보여 vs 의료");
+{
+  const mod = (t: string) => detectInappropriate(t).category;
+  for (const t of ["아가씨 가슴 좀 만져보면 안 되나", "가슴 좀 보여줄 수 있어?", "가슴 만지고 싶다"])
+    check(`성적 감지: ${t}`, mod(t) === "sexual");
+  for (const t of ["가슴이 아파서 만져보니 멍울이 있어", "가슴이 답답하고 뻐근해", "가슴 통증이 있어"])
+    check(`의료 가슴 FP금지: ${t}`, mod(t) === "ok");
 }
 
 // ── A-3: JSON 누출 방어 ───────────────────────────────────────────────────
