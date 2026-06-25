@@ -46,6 +46,9 @@ const PAST_CONTEXT_GUARD = /(예전에|옛날에|어릴\s*때|젊었을\s*때|�
 const FIGURATIVE_HINT = /(맛있어\s*죽|배고파\s*죽|더워\s*죽|추워\s*죽|졸려\s*죽|좋아\s*죽|예뻐\s*죽|웃겨\s*죽|힘들어\s*죽|피곤해서\s*쓰러)/;
 // 약 누락(처방량보다 적게 복용) — 오용 아님. "두 알 먹는걸 하나만 / 빼먹 / 안 먹" 같은 축소 컨텍스트
 const MEDICATION_UNDERDOSE_GUARD = /(?:두\s*알|세\s*알|두\s*번|세\s*번)\s*(?:먹는걸|먹어야|드시는걸|복용해야|복용하는걸)[^.]{0,15}(?:하나만|반만|덜|안\s*먹|빼먹|건너|잊|까먹|놓쳤|놓치)|약\s*(?:을|이)?\s*(?:빼먹|안\s*먹|덜\s*먹|건너|잊|까먹|놓쳤)/;
+// 복약 위양성 가드 — 완료된 과다복용이 아니라 (a) 복용 여부를 묻는 의문/조언요청, (b) 부정문.
+//   "한 알 더 먹어야 하나?"·"잘못 먹은 게 아니라" 등을 음독 응급으로 오발동하던 위양성 차단 (2026-06-25 라이브 사이클).
+const MEDICATION_QUESTION_GUARD = /먹어야\s*(?:하나|되나|할까|하나요|되나요|돼)|먹어도\s*(?:되|돼)|더\s*먹(?:을까|어야)|(?:먹은|먹는|먹었던?)\s*(?:게|거|건|것)\s*아니|(?:먹지|복용하지)\s*않았?|잘못\s*(?:먹|복용)\S*(?:\s*(?:게|거|건|것))?\s*아니/;
 
 // ─── L3 즉시 응급 ──────────────────────────────────────────────────────────
 const L3_RULES: PatternRule[] = [
@@ -120,13 +123,15 @@ export function detectEmergency(userText: string): EmergencyResult {
   const isFigurative = FIGURATIVE_HINT.test(text);
   // 약 누락 (처방량 미달) — 응급 X
   const isMedicationUnderdose = MEDICATION_UNDERDOSE_GUARD.test(text);
+  // 복약 의문/부정 — 음독 응급 아님
+  const isMedicationQuestion = MEDICATION_QUESTION_GUARD.test(text);
 
   // L3부터 매칭
   for (const rule of L3_RULES) {
     const m = text.match(rule.pattern);
     if (m) {
-      // 약 누락(덜 복용) — 응급 X, skip
-      if (rule.category === "medication_error" && isMedicationUnderdose) continue;
+      // 약 누락(덜 복용) / 복용 여부 질문·부정 — 응급 X, skip
+      if (rule.category === "medication_error" && (isMedicationUnderdose || isMedicationQuestion)) continue;
       // 과거 회상 — suicidal/medication만 L2로 보존(과소평가 방지), 그 외는 무시
       if (isPastContext) {
         if (rule.category === "suicidal" || rule.category === "medication_error") {

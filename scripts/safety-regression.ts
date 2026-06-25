@@ -83,6 +83,18 @@ console.log("\n[A-4] suicidal ideation conjugation coverage");
     check(`no FP(약 복용 일상): ${t}`, !isSuicidal(t));
 }
 
+// ── A-4b: 복약 의문/부정 위양성 가드 (2026-06-25 라이브 사이클 발견) ──────────
+console.log("\n[A-4b] medication_error 의문/부정 위양성 가드");
+{
+  const isMedErr = (t: string) => detectEmergency(t).category === "medication_error";
+  // 위양성 방지 — 복용 여부 질문/조언요청·부정문은 음독 응급 아님
+  for (const t of ["혈압약을 먹었던가 안 먹었던가 기억이 안 나네, 한 알 더 먹어야 하나?", "약을 잘못 먹은 게 아니라 기억이 안 나서 물어본 거야", "이거 지금 먹어도 되나?", "더 먹은 건 아니고 그냥 궁금해서"])
+    check(`no FP(복약 질문/부정): ${t}`, !isMedErr(t));
+  // 진짜 과다복용 보고는 여전히 감지
+  for (const t of ["약을 잘못 먹었어", "실수로 약을 두 번 먹었어", "약을 많이 먹었어"])
+    check(`L3 detect(실제 과다복용): ${t}`, isMedErr(t));
+}
+
 // ── A-3: JSON 누출 방어 ───────────────────────────────────────────────────
 console.log("\n[A-3] JSON leak salvage");
 {
