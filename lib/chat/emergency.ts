@@ -56,7 +56,7 @@ const L3_RULES: PatternRule[] = [
   { level: 3, category: "medical_acute", pattern: /119\s*(?:에|로|좀|불러|전화|연락)|구급차\s*(?:불러|좀|와|호출)/ },
   // 의식·호흡 — 조사(이/을) 유무 모두 매칭, "숨이 막혀"/"숨 막혀" 둘 다 포착
   { level: 3, category: "medical_acute", pattern: /숨\s*(?:이|을)?\s*(?:안\s*(?:쉬|쉬어|쉬워|쉬어져|차)|막혀|막힌다|차오|가빠|차서)|호흡이?\s*(?:안|곤란)|숨\s*쉬기?\s*(?:힘들|어려|곤란)/ },
-  { level: 3, category: "medical_acute", pattern: /의식이\s*(?:흐|혼|없)|정신이\s*(?:흐려|혼미|아득)|쓰러질\s*것\s*같아/ },
+  { level: 3, category: "medical_acute", pattern: /의식이[\s\S]{0,6}(?:흐|혼|없)|정신이[\s\S]{0,7}(?:흐려|혼미|아득|가물)|쓰러질\s*것\s*같아/ },
   // 가슴 통증 (심혈관 의심) — 가슴 + 통증 + 호흡곤란/식은땀 동반 시 L3 (단독 "가슴이 아파"는 L2)
   { level: 3, category: "medical_acute", pattern: /가슴이\s*(?:너무\s*아|찢어|쪼개|조여|짓눌|터질\s*것\s*같)/ },
   // 가슴 증상(답답·아픔·뻐근·통증) + 식은땀 동반 — 급성 심근경색의 교과서적 조합, 어순 무관.
@@ -91,7 +91,7 @@ const L2_RULES: PatternRule[] = [
   { level: 2, category: "severe_pain", pattern: /머리가\s*(?:깨질\s*것|쪼개질|어질|핑\s*돌)/ },
   // 어지러움 + 도움 호소
   { level: 2, category: "dizziness_help", pattern: /(?:어지러워|핑\s*돌아)\s*서?\s*(?:못\s*(?:일어|걷|서)|쓰러질|넘어질)/ },
-  { level: 2, category: "dizziness_help", pattern: /눈앞이\s*(?:캄캄|흐려|아득)/ },
+  { level: 2, category: "dizziness_help", pattern: /눈앞이[\s\S]{0,6}(?:캄캄|아득|핑\s*돌)/ },
   // 직접적 도움 요청 (응급 맥락)
   { level: 2, category: "dizziness_help", pattern: /(?:누구\s*좀|아무나|진짜)\s*도와줘|혼자\s*(?:못\s*일어|일어날\s*수\s*없)/ },
   // 구토·발열 강도
