@@ -27,6 +27,7 @@ import { buildExamPlan, renderDomainBattery, scoreDomainAnswer, isNonResponse, r
 import { classifyProvisional, assessCoverage } from "@/lib/screening/exam-eval";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
+import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
@@ -691,7 +692,13 @@ async function evaluateEmergency(params: {
   conversationId: string | undefined;
 }): Promise<{ result: EmergencyResult; effectiveLevel: 0 | 1 | 2 | 3; hint: string }> {
   const { userContent, conversationId } = params;
-  const result = detectEmergency(userContent);
+  let result = detectEmergency(userContent);
+  // 정규식이 놓친 과소감지 꼬리(사투리·완곡어·어순 변형) — LLM 백스톱.
+  //   정규식이 none일 때만 + 사전필터 통과 시에만 LLM 호출(평범한 대화는 비용·지연 0).
+  if (result.level === 0) {
+    const llm = await detectEmergencyLLM(userContent);
+    if (llm) result = llm;
+  }
   let effectiveLevel: 0 | 1 | 2 | 3 = result.level;
 
   // L1이면 누적 평가 후 L2로 승격할지 결정
