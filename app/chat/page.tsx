@@ -1,12 +1,13 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { ThemeToggle } from "../theme-toggle";
 import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
+import { hasJongseong } from "@/lib/chat/korean-particle";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -136,6 +137,20 @@ export default function ChatPage() {
   const [voicePaused, setVoicePaused] = useState(false);
   const voicePausedRef = useRef(false);
   voicePausedRef.current = voicePaused;
+  // 사용자 설정 AI 이름(예: 민지) — 호출어로도 쓰기 위해 로드. "마음(아)"는 유니버설 호출어로 항상 유지.
+  const [companionName, setCompanionName] = useState("");
+  const wakeCall = useMemo(() => {
+    const n = companionName.trim();
+    if (!n) return "마음아";
+    return n + (hasJongseong(n) ? "아" : "야"); // 민지→민지야, 수진→수진아
+  }, [companionName]);
+  const wakeRegex = useMemo(() => {
+    const n = companionName.trim();
+    if (!n) return /마음/;
+    // STT가 음절 사이에 공백을 넣는 경우 대비(민 지) + 정규식 특수문자 이스케이프
+    const esc = n.split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+    return new RegExp(`마음|${esc}`);
+  }, [companionName]);
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
   const textOnlyRef = useRef(false);     // 글씨로 대화 모드 동기화(콜백 stale 클로저 방지) — TTS 게이팅용
@@ -1164,10 +1179,24 @@ export default function ChatPage() {
   }, [releaseStream]);
   stopRecordingRef.current = stopRecording;
 
-  // wake-word 감지 ("마음", "마음아") — alwaysOn 활성 상태에서만 동작.
+  // AI 이름 로드 — 호출어("민지야")·안내 문구 개인화용. 실패해도 기본 호출어("마음아")로 동작.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    fetch("/api/users/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.companionName === "string") setCompanionName(d.companionName);
+      })
+      .catch(() => { /* 기본 호출어 유지 */ });
+    return () => { cancelled = true; };
+  }, [status]);
+
+  // wake-word 감지 ("마음"은 항상 + 사용자 설정 AI 이름) — alwaysOn 활성 상태에서만 동작.
   //  - 듣고 있을 때(listening) / AI 응답 중(turnLock) / 이미 wake된 상태는 일시 정지
   //  - 미지원 브라우저면 supported=false → 폴백으로 wakeArmed 자동 활성화해 기존 흐름 유지
   const { supported: wakeSupported, listening: wakeListening, lastHeard: wakeLastHeard } = useWakeWord({
+    wakePhrase: wakeRegex, // "마음" + 사용자 설정 AI 이름(예: 민지) 둘 다 호출어
     // 세션 활성 중에는 wake-word listening 불필요 (이미 발화 캡처 자동 진행)
     enabled: micAllowed && alwaysOn && !!conversationId && !sessionActive,
     // AI 응답 / 녹음 / loading / 이미 wake된 상태는 일시 정지 (echo 방지 + 충돌 방지)
@@ -1398,11 +1427,11 @@ export default function ChatPage() {
                 ? "AI가 응답하고 있어요…"
                 : voicePaused
                   ? wakeSupported
-                    ? '대화를 멈췄어요 — "마음아" 또는 아래 버튼으로 다시 시작해요'
+                    ? `대화를 멈췄어요 — "${wakeCall}" 또는 아래 버튼으로 다시 시작해요`
                     : "대화를 멈췄어요 — 아래 버튼으로 다시 시작해요"
                   : wakeSupported
                     ? wakeListening
-                      ? '"마음아" 부르시면 들을게요'
+                      ? `"${wakeCall}" 부르시면 들을게요`
                       : "마이크 준비 중…"
                     : '자동 듣기 모드 — "그만" 하시면 멈춰요'}
           </p>
@@ -1617,25 +1646,25 @@ export default function ChatPage() {
                             ? "멈춤"
                             : sessionActive
                               ? "대화 중"
-                              : '"마음아" 대기 중'
+                              : `"${wakeCall}" 대기 중`
                   }
                 </button>
                 <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   {!alwaysOn
-                    ? "(눌러서 켜면 \"마음아\" 호출로 대화 시작)"
+                    ? `(눌러서 켜면 "${wakeCall}" 호출로 대화 시작)`
                     : aiSpeaking
                       ? "(답변이 끝나면 다시 말씀해주세요)"
                       : listening
                         ? "(말씀 끝나면 자동 전송)"
                         : voicePaused
                           ? wakeSupported
-                            ? '(대화를 멈췄어요 — "마음아" 또는 옆의 버튼으로 다시 시작)'
+                            ? `(대화를 멈췄어요 — "${wakeCall}" 또는 옆의 버튼으로 다시 시작)`
                             : "(대화를 멈췄어요 — 옆의 버튼으로 다시 시작하세요)"
                           : sessionActive
                             ? "(곧 다음 말씀 받을게요 — \"그만\" 하시면 종료)"
                             : wakeSupported
                               ? wakeListening
-                                ? '("마음아" 또는 "마음" 부르시면 들을게요)'
+                                ? `("${wakeCall}" 부르시면 들을게요)`
                                 : "(마이크 준비 중…)"
                               : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
                 </span>
