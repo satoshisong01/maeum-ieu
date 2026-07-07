@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getServerSession } from "next-auth";
 import type { Part } from "@google/genai";
 import { authOptions } from "@/lib/auth";
@@ -662,10 +662,19 @@ async function handleAudioMessage(params: {
         skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
       });
       if (emergency.effectiveLevel === 2) {
-        notifyGuardian({
-          userId, userName: honorific, messageId: userMsgId, level: 2,
-          category: emergency.result.category, content: transcription, aiReply: answerText, createdAt: new Date(),
-        }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+        // 부유 프라미스 금지(2026-07-07 감사) — after()로 실행 보장, 컨텍스트 밖이면 여기서 await.
+        //   onComplete는 스트림 close 전에 await되고 'done' 이벤트는 이미 전송됐으므로 체감 지연 없음.
+        const sendL2Notify = async () => {
+          try {
+            const r = await notifyGuardian({
+              userId, userName: honorific, messageId: userMsgId, level: 2,
+              category: emergency.result.category, content: transcription, aiReply: answerText, createdAt: new Date(),
+            });
+            if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
+            else console.warn("[emergency-notify] L2 not sent:", r.reason);
+          } catch (e) { console.error("[emergency-notify] L2 error:", e); }
+        };
+        try { after(sendL2Notify); } catch { await sendL2Notify(); }
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
@@ -733,20 +742,32 @@ async function handleEmergencyL3(params: {
       emergencyLevel: 3,
       emergencyEvidence: `${result.category}:${result.evidence}`,
     });
-    // 보호자 알림 — 백그라운드로 발송 (응답 지연 방지)
-    notifyGuardian({
-      userId,
-      userName: honorific,
-      messageId: userMsgId,
-      level: 3,
-      category: result.category,
-      content: (transcription ?? userContent) || "",
-      aiReply: reply,
-      createdAt: new Date(),
-    }).then((r) => {
-      if (r.sent) console.log("[emergency-notify] L3 sent:", r.channels);
-      else console.log("[emergency-notify] L3 skipped:", r.reason);
-    }).catch((e) => console.error("[emergency-notify] L3 error:", e));
+    // 보호자 알림 — after()로 응답 후 실행을 "보장"하며 발송(응답 지연 없음).
+    //   ⚠ 부유 프라미스 금지(2026-07-07 감사 blocker): .then()으로 떠 있으면 Vercel이 응답 반환 직후
+    //   함수를 suspend할 때 알림이 무기록 유실될 수 있음. after()는 waitUntil로 함수 수명을 연장함.
+    const sendL3Notify = async () => {
+      try {
+        const r = await notifyGuardian({
+          userId,
+          userName: honorific,
+          messageId: userMsgId,
+          level: 3,
+          category: result.category,
+          content: (transcription ?? userContent) || "",
+          aiReply: reply,
+          createdAt: new Date(),
+        });
+        if (r.sent) console.log("[emergency-notify] L3 sent:", r.channels);
+        else console.warn("[emergency-notify] L3 not sent:", r.reason);
+      } catch (e) {
+        console.error("[emergency-notify] L3 error:", e);
+      }
+    };
+    try {
+      after(sendL3Notify);
+    } catch {
+      await sendL3Notify(); // 요청 컨텍스트 밖(예: 테스트 하네스) — 응답 전에 직접 완료 보장
+    }
   }
   const payload: Record<string, unknown> = { text: reply, role: "assistant", emergency: { level: 3, category: result.category } };
   if (transcription !== undefined) payload.transcription = transcription;
@@ -910,10 +931,18 @@ async function handleTextMessage(params: {
         skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
       });
       if (emergency.effectiveLevel === 2) {
-        notifyGuardian({
-          userId, userName: honorific, messageId: userMsgId, level: 2,
-          category: emergency.result.category, content: userContent, aiReply: text, createdAt: new Date(),
-        }).then((r) => { if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels); }).catch((e) => console.error("[emergency-notify] L2 error:", e));
+        // 부유 프라미스 금지(2026-07-07 감사) — after()로 실행 보장, 컨텍스트 밖이면 여기서 await.
+        const sendL2Notify = async () => {
+          try {
+            const r = await notifyGuardian({
+              userId, userName: honorific, messageId: userMsgId, level: 2,
+              category: emergency.result.category, content: userContent, aiReply: text, createdAt: new Date(),
+            });
+            if (r.sent) console.log("[emergency-notify] L2 sent:", r.channels);
+            else console.warn("[emergency-notify] L2 not sent:", r.reason);
+          } catch (e) { console.error("[emergency-notify] L2 error:", e); }
+        };
+        try { after(sendL2Notify); } catch { await sendL2Notify(); }
       }
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
