@@ -957,3 +957,10 @@ weatherMs 1167(병렬블록 max — 임베딩/날씨 캐시미스) · promptMs 7
 - **안전 실검증 `scripts/validate-dropped-backstop.ts`**: 이제 백스톱을 안 부르게 된 dropped 296건 전수에 실제 백스톱 LLM 실행 → **L2+ 0건**(오탐만 제거, 진짜 응급 누락 없음 확인).
 - **thinkingBudget A/B `scripts/ab-thinking-budget.ts`** (512 vs 384 vs 256, 실프로필 프롬프트·LLM 심판): 256은 ~1초 빠르나 인지선별 핵심 턴(정답비노출·호칭·가족순서)에서 품질↓, 384는 속도이득 작고(0.4초) 품질도↓. **512가 매 회 ~8.0으로 최고 → 512 유지 확정.** (성급한 최적화를 데이터로 차단.)
 - 체감 속도 개선의 본체는 thinkingBudget이 아니라 **백스톱 블로킹 79% 제거**였음.
+
+## 2026-07-07 파일럿 적대 재검토 → blocker 5건 당일 수정·배포 (v1.0.3)
+6차원 독립감사(26에이전트) + 적대검증 20건(19 확정/1 반박) → 확정 blocker 5: ①APK 마이크 구조적 불가(RECORD_AUDIO 미선언) ②dedup이 L2→L3 격상 억제 ③알림 fire-and-forget(Vercel suspend 유실) ④보호자(pro)가 conversations?patient로 일상 대화 전체 원문 수신 ⑤검진 qa 시간창+검사종료 미클로즈로 며칠치 원문 노출.
+수정(fabf00b·3066226 / MaeumApp 9f5a47a): dedup 레벨비교(같거나 높은 레벨만 중복)·notifyGuardian 3곳 after()+await 폴백·proxy 접근 messages 비반환·qa창 시작+30분 하드캡+3s grace·고아세션 마감 LEAST 캡·검사종료 버튼 end(keepalive)·/live 링크 숨김+token/turn 서버게이트+turn에 응급마킹·백스톱·알림 배선·proxy 폴스루 403(검진세션 필수)·APK Manifest+런타임권한+거부 Alert+BackHandler 구독패턴.
+diff 적대리뷰(4렌즈): 렌즈1 PASS("dedup·after 완전 종결"), 잔여 high 2건도 위 보완으로 종결. 배포검증 3/3(로그인 v1.0.3·APK 교체·live 403). green: tsc 0·safety 275/275·vitest 196.
+잔여(low·비차단): C2 알림 부유프라미스(env off)·dedup 회귀테스트 부재(scripts/test/test-emergency-notify.ts는 SSRF 가드로 무력화 상태)·고아세션 표시창 5분 확대·cognitive evidence 발화인용 노출(§4 문구 검토)·conversationId 없는 L3 무알림.
+교훈: ①"실기기 검증"과 "코드 감사"는 별개 — 음성은 데스크톱에서만 검증돼 APK에서 100% 불능이었음 ②프라이버시 약속은 UI가 아니라 API 단위로 검증 ③fire-and-forget 알림은 서버리스에서 무기록 유실 — after()/waitUntil 필수 ④RN 레포는 "빌드되는 상태"가 커밋돼 있는지 확인(스캐폴드만 커밋돼 있었음).
