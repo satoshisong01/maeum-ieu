@@ -818,6 +818,11 @@ export default function ChatPage() {
       setMicDenied(false);
       setModeSelected(true);
       setTextOnly(false);
+      // 음성이 기본 모드 — 진입 즉시 호출어 대기까지 켬(예전엔 🎤 칩을 한 번 더 눌러야 했음)
+      alwaysOnRef.current = true;
+      setAlwaysOn(true);
+      voicePausedRef.current = false;
+      setVoicePaused(false);
     } catch {
       setMicDenied(true);
     }
@@ -850,6 +855,17 @@ export default function ChatPage() {
     setTextOnly(true);
     setModeSelected(true);
   }, []);
+
+  // 사용자(어르신) 모드는 음성이 기본 — 로그인/입장하면 버튼 없이 곧장 호출어 대기로.
+  //   마이크 거부/실패 시 micDenied → 기존 선택 화면(글씨로 대화하기 포함)이 그대로 안내.
+  //   검진(대리) 모드는 '검진 시작' 버튼+동의 절차가 따로 있어 제외.
+  const autoVoiceTriedRef = useRef(false);
+  useEffect(() => {
+    if (autoVoiceTriedRef.current) return;
+    if (status !== "authenticated" || screeningMode !== "user" || examMode || modeSelected) return;
+    autoVoiceTriedRef.current = true;
+    void startConversation();
+  }, [status, screeningMode, examMode, modeSelected, startConversation]);
 
   // 검진 종료(시간 만료) — 세션 정리 + 안내. 수동 종료는 배너 '검사 종료' 링크(/expert)로.
   const endExam = useCallback(() => {
@@ -1589,10 +1605,10 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setModeSelected(false); setTextOnly(false); }}
+                onClick={() => void startConversation()}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
-                음성 대화로 전환
+                🎤 음성 대화로 전환
               </button>
             </div>
           ) : (
@@ -1707,10 +1723,10 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); setModeSelected(false); setMicAllowed(false); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); setTextOnly(true); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
-                텍스트 대화로 전환
+                ⌨️ 글씨 대화로 전환
               </button>
             </div>
           )}
