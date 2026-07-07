@@ -1010,6 +1010,12 @@ export async function POST(req: Request) {
 
     // 전문가 검진 상태머신 — 대리 검사 중 진행 세션이 있으면 항목단위 검진으로 라우팅
     const examSession = (proxyPatientId && mode === "pro") ? await lookupOpenExam(actorId, proxyPatientId) : null;
+    // 대리(proxy) 접근은 "열린 검진 세션"이 있을 때만 허용(2026-07-07 diff 리뷰 high).
+    //   세션 없이 통과시키면 일반 대화 경로로 폴스루 — 환자 최근 대화 이력 50건 + RAG 기억이 LLM 컨텍스트에
+    //   주입되어 전문가가 프롬프트로 일상 대화 원문을 추출 가능(동의서 §4 위반). 인지분석도 환자 계정에 오염 귀속.
+    if (userId !== actorId && !examSession) {
+      return NextResponse.json({ error: "진행 중인 검진 세션이 없습니다. 검진 시작 후 이용해주세요." }, { status: 403 });
+    }
 
     // 고비용 엔드포인트 폭주 방어 — 행위 주체(전문가/본인) 기준 분당 40회 (대리 검사 다환자 남용도 차단)
     const rl = await checkRateLimit(`chat:${actorId}`, 40, 60_000);

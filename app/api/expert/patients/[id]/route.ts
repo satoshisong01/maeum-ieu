@@ -179,7 +179,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       // 문답 창 하드캡: 시작+30분(검진 25분+여유) — ended_at이 없거나 비정상적으로 늦게 찍혔어도(과거 고아 세션
       //   데이터 포함) 창이 검진 상한을 넘지 못하게 서버에서 강제. 일상 대화 원문이 문답 기록에 섞이는 것 차단(2026-07-07 감사).
       const windowCap = new Date(start.getTime() + 30 * 60 * 1000);
-      const rawEnd = r.ended_at ? new Date(r.ended_at) : null;
+      // ended_at은 마지막 문답 saveMessages보다 먼저 찍힘(완주 분기) — +3초 여유로 마지막 답·종결 멘트 포함
+      const rawEnd = r.ended_at ? new Date(new Date(r.ended_at).getTime() + 3000) : null;
       const end = rawEnd && rawEnd < windowCap ? rawEnd : windowCap;
       const [msgs, itemRows] = await Promise.all([
         prisma.message.findMany({
