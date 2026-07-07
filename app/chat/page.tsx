@@ -131,6 +131,11 @@ export default function ChatPage() {
   const [sessionActive, setSessionActive] = useState(false);
   const sessionActiveRef = useRef(false);
   sessionActiveRef.current = sessionActive;
+  // "그만" 종료 후 일시정지 — wake-word 미지원(WebView 앱)에서는 "마음아" 재개가 불가하므로
+  //   폴백 자동청취를 이 플래그로 막고 화면의 [다시 대화하기] 버튼으로만 재개(2026-07-07 실기기 발견)
+  const [voicePaused, setVoicePaused] = useState(false);
+  const voicePausedRef = useRef(false);
+  voicePausedRef.current = voicePaused;
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
   const textOnlyRef = useRef(false);     // 글씨로 대화 모드 동기화(콜백 stale 클로저 방지) — TTS 게이팅용
@@ -953,11 +958,20 @@ export default function ChatPage() {
         // 복약 리마인더 후 "먹었어/응" 음성 응답 자동 복용 기록
         if (transcriptionText) void confirmMedIfAffirmed(transcriptionText);
 
-        // 종료 명령 감지 — "그만/조용히/끝내자" 등
-        if (transcriptionText && SESSION_END_PATTERN.current.test(transcriptionText)) {
+        // 종료 명령 감지 — "그만/조용히/끝내자" 등.
+        //   단독 "그만(요)"도 종료로 인정(앤커드 — "그만큼/그만뒀어" 같은 일상어는 문장 전체가 아니라 미매칭).
+        //   UI 안내('"그만" 하시면 종료')와 실제 동작 불일치였던 실기기 발견(2026-07-07) fix.
+        const bareStop = /^\s*(이제\s*)?그만(요|이요|입니다)?[\s.!?~…]*$/;
+        if (transcriptionText && (SESSION_END_PATTERN.current.test(transcriptionText) || bareStop.test(transcriptionText.trim()))) {
           sessionActiveRef.current = false;
           setSessionActive(false);
           reEngageCountRef.current = 0; // 세션 종료 → 재참여 카운트 리셋
+          // wake-word 미지원 환경(WebView 앱)은 폴백 자동청취가 즉시 되살아나므로 일시정지 플래그로 차단.
+          //   검진(대리) 모드는 제외 — 검진은 타이머·종료버튼으로만 끝냄.
+          if (!proxyPatientId) {
+            voicePausedRef.current = true;
+            setVoicePaused(true);
+          }
         }
         return;
       } catch (e) {
@@ -1163,6 +1177,8 @@ export default function ChatPage() {
       // 첫 wake = 세션 시작
       sessionActiveRef.current = true;
       setSessionActive(true);
+      voicePausedRef.current = false; // "그만" 후에도 "마음아"로 재개(wake 지원 기기)
+      setVoicePaused(false);
       reEngageCountRef.current = 0; // 새 세션 시작 → 재참여 카운트 리셋
       wakeArmedRef.current = true;
       setWakeArmed(true);
@@ -1171,15 +1187,16 @@ export default function ChatPage() {
     },
   });
 
-  // 폴백: SpeechRecognition 미지원 브라우저 → wake-word 없이 기존처럼 자동 녹음
+  // 폴백: SpeechRecognition 미지원 브라우저 → wake-word 없이 기존처럼 자동 녹음.
+  //   voicePaused("그만" 종료) 중에는 재시작하지 않음 — [다시 대화하기] 버튼으로만 재개.
   useEffect(() => {
-    if (!wakeSupported && micAllowed && alwaysOn && !listening && !loading && conversationId && !turnLockRef.current) {
+    if (!wakeSupported && micAllowed && alwaysOn && !voicePaused && !listening && !loading && conversationId && !turnLockRef.current) {
       wakeArmedRef.current = true;
       setWakeArmed(true);
       const timer = setTimeout(() => startRecording(), 1000);
       return () => clearTimeout(timer);
     }
-  }, [wakeSupported, micAllowed, alwaysOn, listening, loading, conversationId, startRecording]);
+  }, [wakeSupported, micAllowed, alwaysOn, voicePaused, listening, loading, conversationId, startRecording]);
 
   if (status === "loading") {
     return (
@@ -1363,12 +1380,26 @@ export default function ChatPage() {
               ? "말씀하세요… (끝나면 자동 전송됩니다)"
               : aiSpeaking
                 ? "AI가 응답하고 있어요…"
-                : wakeSupported
-                  ? wakeListening
-                    ? '"마음아" 부르시면 들을게요'
-                    : "마이크 준비 중…"
-                  : "자동 듣기 모드 (호출어 미지원)"}
+                : voicePaused
+                  ? wakeSupported
+                    ? '대화를 멈췄어요 — "마음아" 부르시면 다시 시작해요'
+                    : "대화를 멈췄어요"
+                  : wakeSupported
+                    ? wakeListening
+                      ? '"마음아" 부르시면 들을게요'
+                      : "마이크 준비 중…"
+                    : '자동 듣기 모드 — "그만" 하시면 멈춰요'}
           </p>
+          {/* "그만" 후 재개 — wake-word 미지원(WebView 앱)에선 이 버튼이 유일한 음성 재개 수단이라 크게 */}
+          {voicePaused && !wakeSupported && !listening && !aiSpeaking && (
+            <button
+              type="button"
+              onClick={() => { voicePausedRef.current = false; setVoicePaused(false); }}
+              className="rounded-full bg-[#007bff] px-8 py-3 text-lg font-bold text-white shadow-md transition hover:bg-[#0069d9]"
+            >
+              🎤 다시 대화하기
+            </button>
+          )}
         </div>
       )}
 
@@ -1566,9 +1597,11 @@ export default function ChatPage() {
                         ? "답변 중"
                         : listening
                           ? "듣는 중"
-                          : sessionActive
-                            ? "대화 중"
-                            : '"마음아" 대기 중'
+                          : voicePaused
+                            ? "멈춤"
+                            : sessionActive
+                              ? "대화 중"
+                              : '"마음아" 대기 중'
                   }
                 </button>
                 <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -1578,14 +1611,28 @@ export default function ChatPage() {
                       ? "(답변이 끝나면 다시 말씀해주세요)"
                       : listening
                         ? "(말씀 끝나면 자동 전송)"
-                        : sessionActive
-                          ? "(곧 다음 말씀 받을게요 — \"그만\" 하시면 종료)"
-                          : wakeSupported
-                            ? wakeListening
-                              ? '("마음아" 또는 "마음" 부르시면 들을게요)'
-                              : "(마이크 준비 중…)"
-                            : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
+                        : voicePaused
+                          ? wakeSupported
+                            ? '(대화를 멈췄어요 — "마음아" 부르시면 다시 시작해요)'
+                            : "(대화를 멈췄어요 — 옆의 버튼으로 다시 시작하세요)"
+                          : sessionActive
+                            ? "(곧 다음 말씀 받을게요 — \"그만\" 하시면 종료)"
+                            : wakeSupported
+                              ? wakeListening
+                                ? '("마음아" 또는 "마음" 부르시면 들을게요)'
+                                : "(마이크 준비 중…)"
+                              : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
                 </span>
+                {/* "그만" 후 재개 버튼 — wake-word 미지원(WebView 앱)에선 이 버튼이 유일한 음성 재개 수단 */}
+                {alwaysOn && voicePaused && !wakeSupported && (
+                  <button
+                    type="button"
+                    onClick={() => { voicePausedRef.current = false; setVoicePaused(false); }}
+                    className="shrink-0 rounded-full bg-[#007bff] px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-[#0069d9]"
+                  >
+                    🎤 다시 대화하기
+                  </button>
+                )}
                 {alwaysOn && !listening && !aiSpeaking && !sessionActive && wakeSupported && wakeLastHeard && (
                   <span className="max-w-[280px] truncate text-[10px] text-zinc-400 dark:text-zinc-500" title={wakeLastHeard}>
                     들림: {wakeLastHeard}
