@@ -124,14 +124,17 @@ async function sendWebhook(url: string, body: unknown): Promise<{ ok: boolean; s
 }
 
 /**
- * 중복 발송 차단 — 같은 사용자 + 같은 카테고리 + 1시간 내 발송 이력이 있으면 skip.
+ * 중복 발송 차단 — 같은 사용자 + 같은 카테고리 + 1시간 내 "같거나 높은 레벨" 발송 이력이 있으면 skip.
+ * ⚠ 레벨 비교 필수(2026-07-07 감사 blocker): 비교 없이 카테고리만 보면 L2(주의) 알림 후 1시간 내
+ *   같은 카테고리 L3(즉시응급) 격상 — 요양원에서 가장 개연성 높은 "경증 호소 → 악화" 경로 — 가 통째로 억제됨.
+ *   L2→L3 격상은 반드시 재발송, L3→L2 하향·동일 레벨 반복만 dedup.
  */
-async function isDuplicate(userId: string, category: string): Promise<boolean> {
+async function isDuplicate(userId: string, category: string, level: 2 | 3): Promise<boolean> {
   const cutoff = new Date(Date.now() - DEDUP_WINDOW_MS);
   const recent = await prisma.message.findFirst({
     where: {
       conversation: { userId },
-      emergencyLevel: { gte: 2 },
+      emergencyLevel: { gte: level }, // 이번 레벨 이상으로 이미 알렸을 때만 중복 — 격상은 통과
       notifiedAt: { gte: cutoff },
       emergencyEvidence: { startsWith: `${category}:` },
     },
@@ -147,9 +150,9 @@ async function isDuplicate(userId: string, category: string): Promise<boolean> {
 export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResult> {
   const channels: string[] = [];
 
-  // 1) 중복 차단
-  if (await isDuplicate(payload.userId, payload.category)) {
-    return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 발송 이력)` };
+  // 1) 중복 차단 (같은 카테고리·같거나 높은 레벨만 — L2→L3 격상은 통과)
+  if (await isDuplicate(payload.userId, payload.category, payload.level)) {
+    return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 L${payload.level}+ 발송 이력)` };
   }
 
   // 2) 사용자 보호자 정보 조회
@@ -207,7 +210,9 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
       where: { id: payload.messageId },
       data: { notifiedAt: new Date() },
     });
+    return { sent: true, channels };
   }
-
-  return { sent: channels.length > 0, channels };
+  // 전 채널 실패/미설정 — 사유를 남겨 호출부 로그('skipped: undefined')가 원인 불명이 되지 않게
+  const hadTargets = Boolean(user.guardianWebhookUrl) || guardianIds.length > 0 || Boolean(user.guardianEmail);
+  return { sent: false, channels, reason: hadTargets ? "모든 채널 발송 실패(위 warn 로그 참조)" : "알림 대상 없음(보호자 미연결·webhook/email 미등록)" };
 }

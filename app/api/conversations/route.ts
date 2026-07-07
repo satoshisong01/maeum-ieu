@@ -28,21 +28,28 @@ export async function GET(req: Request) {
   const proxyPatientId = new URL(req.url).searchParams.get("patient");
   const ownerId = await resolveOwnerId(session, proxyPatientId);
   if (!ownerId) return NextResponse.json({ error: "연결되지 않은 환자입니다." }, { status: 403 });
+  // 대리(검진) 접근은 대화 "원문"을 반환하지 않는다(2026-07-07 감사 blocker).
+  //   동의서 §4: 일상 대화 원문은 보호자·전문가에게 비공개 — 검진 플로우는 conversation.id만 필요.
+  const isProxyAccess = ownerId !== session.user.id;
 
   const conv = await prisma.conversation.findUnique({
     where: { userId: ownerId },
     include: {
-      messages: { orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } },
+      messages: isProxyAccess
+        ? { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, role: true, content: true, createdAt: true } } // lastMessageAt 계산용 1건만(내용 미반환)
+        : { orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } },
     },
   });
 
   if (!conv) return NextResponse.json({ conversation: null, messages: [], lastMessageAt: null });
 
-  const lastMsg = conv.messages.length > 0 ? conv.messages[conv.messages.length - 1] : null;
+  const lastMsg = conv.messages.length > 0
+    ? (isProxyAccess ? conv.messages[0] : conv.messages[conv.messages.length - 1])
+    : null;
 
   return NextResponse.json({
     conversation: { id: conv.id },
-    messages: conv.messages.map((m) => ({
+    messages: isProxyAccess ? [] : conv.messages.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,

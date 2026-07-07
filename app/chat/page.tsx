@@ -1208,13 +1208,17 @@ export default function ChatPage() {
             {screeningMode === "pro" ? "🩺 전문가" : screeningMode === "general" ? "🧠 일반인" : "👵 사용자"}
           </span>
           <ThemeToggle />
-          <Link
-            href="/live"
-            className="rounded-lg bg-violet-50 px-2 py-1 text-[10px] font-medium leading-tight text-violet-600 hover:bg-violet-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
-            title="라이브 음성 대화 (베타) — 첫 응답 1.4초"
-          >
-            🎙 라이브<br />베타
-          </Link>
+          {/* 라이브 베타(/live)는 응급 감지·보호자 알림·LLM 백스톱을 우회하는 실험 경로(2026-07-07 감사) —
+              안전망이 연결되기 전까지 어르신 화면에서 숨김. 개발 확인은 NEXT_PUBLIC_SHOW_LIVE_BETA=1로만 노출. */}
+          {process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1" && (
+            <Link
+              href="/live"
+              className="rounded-lg bg-violet-50 px-2 py-1 text-[10px] font-medium leading-tight text-violet-600 hover:bg-violet-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+              title="라이브 음성 대화 (베타) — 첫 응답 1.4초"
+            >
+              🎙 라이브<br />베타
+            </Link>
+          )}
           {/* 결과 열람 링크 — 모드별. 사용자(어르신) 본인은 결과 비공개라 링크 없음(A안). */}
           {screeningMode === "pro" ? (
             <Link
@@ -1260,7 +1264,20 @@ export default function ChatPage() {
           <span className="text-xs font-semibold sm:text-sm">
             🩺 검사 모드 — <strong>{proxyPatientName || "환자"}</strong>님 검진 중 · 결과가 기록됩니다{examRemaining && <span className="ml-1 font-bold">· 남은 시간 {examRemaining}</span>}
           </span>
-          <Link href="/expert" className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 sm:text-xs">
+          <Link
+            href="/expert"
+            onClick={() => {
+              // 세션을 실제로 종료(2026-07-07 감사 blocker) — 이거 없이 이동만 하면 ended_at=NULL 고아 세션이 남아
+              //   문답 창이 확장되고 일상 대화가 검진 기록에 섞임. keepalive로 페이지 이동 중에도 요청 완료 보장.
+              if (examSessionIdRef.current) {
+                fetch("/api/expert/exam", {
+                  method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+                  body: JSON.stringify({ action: "end", sessionId: examSessionIdRef.current }),
+                }).catch(() => {});
+              }
+            }}
+            className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 sm:text-xs"
+          >
             검사 종료
           </Link>
         </div>
