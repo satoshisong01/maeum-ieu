@@ -1198,6 +1198,22 @@ export default function ChatPage() {
     }
   }, [wakeSupported, micAllowed, alwaysOn, voicePaused, listening, loading, conversationId, startRecording]);
 
+  // "그만" 멈춤 상태에서 [다시 대화하기] — 호출어 지원 기기는 onWake와 동일하게 즉시 세션 재개,
+  //   미지원 기기는 플래그만 풀면 폴백 자동청취가 ~1초 내 재시작(기존 폴백 동작 보존).
+  const resumeVoiceFromPause = () => {
+    voicePausedRef.current = false;
+    setVoicePaused(false);
+    if (wakeSupported) {
+      sessionActiveRef.current = true;
+      setSessionActive(true);
+      reEngageCountRef.current = 0;
+      wakeArmedRef.current = true;
+      setWakeArmed(true);
+      // wake recognition이 마이크를 놓을 시간을 준 뒤 녹음 시작(onWake와 동일 지연 계열)
+      setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 400);
+    }
+  };
+
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f0f2f5] dark:bg-[#0b0d10]">
@@ -1382,19 +1398,19 @@ export default function ChatPage() {
                 ? "AI가 응답하고 있어요…"
                 : voicePaused
                   ? wakeSupported
-                    ? '대화를 멈췄어요 — "마음아" 부르시면 다시 시작해요'
-                    : "대화를 멈췄어요"
+                    ? '대화를 멈췄어요 — "마음아" 또는 아래 버튼으로 다시 시작해요'
+                    : "대화를 멈췄어요 — 아래 버튼으로 다시 시작해요"
                   : wakeSupported
                     ? wakeListening
                       ? '"마음아" 부르시면 들을게요'
                       : "마이크 준비 중…"
                     : '자동 듣기 모드 — "그만" 하시면 멈춰요'}
           </p>
-          {/* "그만" 후 재개 — wake-word 미지원(WebView 앱)에선 이 버튼이 유일한 음성 재개 수단이라 크게 */}
-          {voicePaused && !wakeSupported && !listening && !aiSpeaking && (
+          {/* "그만" 후 재개 — 호출어("마음아")와 병행하는 비상구. 미지원/소음차단 기기에선 유일한 재개 수단이라 크게 */}
+          {voicePaused && !listening && !aiSpeaking && (
             <button
               type="button"
-              onClick={() => { voicePausedRef.current = false; setVoicePaused(false); }}
+              onClick={resumeVoiceFromPause}
               className="rounded-full bg-[#007bff] px-8 py-3 text-lg font-bold text-white shadow-md transition hover:bg-[#0069d9]"
             >
               🎤 다시 대화하기
@@ -1613,7 +1629,7 @@ export default function ChatPage() {
                         ? "(말씀 끝나면 자동 전송)"
                         : voicePaused
                           ? wakeSupported
-                            ? '(대화를 멈췄어요 — "마음아" 부르시면 다시 시작해요)'
+                            ? '(대화를 멈췄어요 — "마음아" 또는 옆의 버튼으로 다시 시작)'
                             : "(대화를 멈췄어요 — 옆의 버튼으로 다시 시작하세요)"
                           : sessionActive
                             ? "(곧 다음 말씀 받을게요 — \"그만\" 하시면 종료)"
@@ -1623,11 +1639,11 @@ export default function ChatPage() {
                                 : "(마이크 준비 중…)"
                               : "(이 브라우저는 호출어 미지원 — 자동 듣기 모드)"}
                 </span>
-                {/* "그만" 후 재개 버튼 — wake-word 미지원(WebView 앱)에선 이 버튼이 유일한 음성 재개 수단 */}
-                {alwaysOn && voicePaused && !wakeSupported && (
+                {/* "그만" 후 재개 버튼 — 호출어와 병행하는 비상구(미지원/소음차단 기기 대비) */}
+                {alwaysOn && voicePaused && (
                   <button
                     type="button"
-                    onClick={() => { voicePausedRef.current = false; setVoicePaused(false); }}
+                    onClick={resumeVoiceFromPause}
                     className="shrink-0 rounded-full bg-[#007bff] px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-[#0069d9]"
                   >
                     🎤 다시 대화하기
