@@ -16,6 +16,11 @@ import { getHonorific } from "@/lib/chat/prompt";
 const LIVE_MODEL = process.env.LIVE_MODEL || "gemini-2.5-flash-native-audio-preview-12-2025";
 
 export async function POST() {
+  // 라이브 베타는 응급 감지·보호자 알림·LLM 백스톱이 아직 연결되지 않은 실험 경로(2026-07-07 감사) —
+  //   UI 링크 숨김만으로는 직접 URL·북마크 진입이 가능하므로 서버에서도 차단. 플래그 켤 때만 발급.
+  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") {
+    return NextResponse.json({ error: "라이브 베타는 현재 비활성화되어 있습니다." }, { status: 403 });
+  }
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 

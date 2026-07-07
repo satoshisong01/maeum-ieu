@@ -4,7 +4,7 @@
  * Live 경로 v1 제약: 검진(mental flow)·응급 즉답 게이트는 클라 측 안전망과 별개로 미지원 —
  * 응급 어휘 감지 시 isEmergency 플래그를 반환해 클라가 안내 모드로 전환하게 한다.
  */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -13,9 +13,15 @@ import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { buildHistoryText } from "@/lib/chat/history-text";
 import { getTimeContext } from "@/lib/chat/time";
 import { detectEmergency } from "@/lib/chat/emergency";
+import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
+import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
+  // 라이브 베타 서버 게이트(2026-07-07 감사) — UI 링크 숨김과 짝. 플래그 없으면 저장 경로도 차단.
+  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") {
+    return NextResponse.json({ error: "라이브 베타는 현재 비활성화되어 있습니다." }, { status: 403 });
+  }
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const userId = session.user.id;
@@ -35,7 +41,35 @@ export async function POST(req: Request) {
     const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { userId: true } });
     if (!conv || conv.userId !== userId) return NextResponse.json({ error: "대화를 찾을 수 없습니다." }, { status: 404 });
 
-    const { userMsgId } = await saveMessages({ conversationId, userId, userContent: userText, assistantContent: aiText });
+    // 응급 감지 — 저장 전에 판정해 마킹까지(위급 이력·보호자 알림의 전제). 정규식 none이면 LLM 백스톱.
+    //   이 라우트는 음성 응답 이후의 회송이라 백스톱 지연이 대화 턴테이킹을 막지 않음.
+    let emergency = detectEmergency(userText);
+    if (emergency.level === 0) {
+      const llm = await detectEmergencyLLM(userText);
+      if (llm) emergency = llm;
+    }
+
+    const { userMsgId } = await saveMessages({
+      conversationId, userId, userContent: userText, assistantContent: aiText,
+      emergencyLevel: emergency.level > 0 ? emergency.level : undefined,
+      emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : undefined,
+    });
+
+    // 보호자 알림(L2+) — 메인 /api/chat 경로와 동등한 안전망(2026-07-07 감사: Live 경로가 알림을 전부 우회했음).
+    if (emergency.level >= 2 && userMsgId) {
+      const level = emergency.level as 2 | 3;
+      const sendLiveNotify = async () => {
+        try {
+          const r = await notifyGuardian({
+            userId, userName: session.user.name || "사용자", messageId: userMsgId, level,
+            category: emergency.category, content: userText, aiReply: aiText, createdAt: new Date(),
+          });
+          if (r.sent) console.log("[emergency-notify] live sent:", r.channels);
+          else console.warn("[emergency-notify] live not sent:", r.reason);
+        } catch (e) { console.error("[emergency-notify] live error:", e); }
+      };
+      try { after(sendLiveNotify); } catch { await sendLiveNotify(); }
+    }
 
     // 인지 분석 — 일반인(general)은 목적 분리 원칙대로 미실행
     const mode = session.user.screeningMode === "pro" ? "pro" : session.user.screeningMode === "general" ? "general" : "user";
@@ -51,8 +85,7 @@ export async function POST(req: Request) {
         .catch((e) => console.error("[live-turn:cognitive]", e));
     }
 
-    // 응급 어휘 감지 — Live 경로는 서버 즉답 게이트가 없으므로 클라에 신호만 전달
-    const emergency = detectEmergency(userText);
+    // Live 경로는 서버 즉답 게이트가 없으므로 클라에 응급 신호 전달(안내 모드 전환용)
     return NextResponse.json({ ok: true, emergencyLevel: emergency.level });
   } catch (e) {
     console.error("[live-turn]", e);
