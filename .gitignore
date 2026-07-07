@@ -61,3 +61,6 @@ next-env.d.ts
 # 자동 생성 검증 리포트 — docs/reports/ 트리 전체 git 추적 제외 (패치/버전별 로컬 산출물)
 #   핵심 문서(docs/*.md)·가이드(docs/guides/)는 추적 유지.
 docs/reports/
+
+# 파일럿 일일 점검 로그(PII 포함 가능 — 로컬 전용)
+.pilot-logs/
