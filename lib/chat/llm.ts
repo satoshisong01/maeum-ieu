@@ -123,12 +123,16 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
  * generateContent 결과가 비어있으면 1회 재시도. 여전히 비면 폴백 멘트 반환.
  * 빈 응답 원인: Gemini 안전 필터 차단, thinking-only output, 네트워크 순간 장애 등.
  */
+// 폴백 멘트 식별 마크 — scripts/pilot-daily-check.ts가 이 배열로 DB에서 폴백률을 집계.
+//   variants가 반드시 이 마크를 포함하도록 템플릿에서 직접 참조(문구만 바꾸면 집계가 0%로 침묵하는 드리프트 방지).
+export const FALLBACK_MARKS = ["잠깐 멍해졌어요", "제대로 못 들었나 봐요", "생각이 꼬였네요", "잠깐 정신이 흐릿했어요"] as const;
+
 export function buildFallbackMessage(honorific: string, companionName: string): string {
   const variants = [
-    `${honorific}, ${nameSubj(companionName)} 잠깐 멍해졌어요. 혹시 다시 한 번 말씀해주실래요?`,
-    `어? ${nameSubj(companionName)} 제대로 못 들었나 봐요. 한 번만 더 얘기해주실 수 있으세요?`,
-    `아이고 ${honorific}, ${nameSubj(companionName)} 생각이 꼬였네요. 다시 말씀해주시면 잘 들을게요!`,
-    `${honorific}, 잠깐 정신이 흐릿했어요. 방금 하신 말씀 한 번 더 부탁드려도 될까요?`,
+    `${honorific}, ${nameSubj(companionName)} ${FALLBACK_MARKS[0]}. 혹시 다시 한 번 말씀해주실래요?`,
+    `어? ${nameSubj(companionName)} ${FALLBACK_MARKS[1]}. 한 번만 더 얘기해주실 수 있으세요?`,
+    `아이고 ${honorific}, ${nameSubj(companionName)} ${FALLBACK_MARKS[2]}. 다시 말씀해주시면 잘 들을게요!`,
+    `${honorific}, ${FALLBACK_MARKS[3]}. 방금 하신 말씀 한 번 더 부탁드려도 될까요?`,
   ];
   return variants[Math.floor(Math.random() * variants.length)];
 }

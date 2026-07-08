@@ -17,12 +17,14 @@ Add-Content -Path $log -Value "`r`n[exit=$code]"
 Get-ChildItem $logDir -Filter "check_*.log" | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } | Remove-Item -Force -ErrorAction SilentlyContinue
 
 if ($code -ne 0) {
-  Add-Type -AssemblyName System.Windows.Forms
   if ($code -eq 1) {
-    $msg = "[긴급] 마음이음 점검: 발송 안 된 위급 알림이 발견됐습니다!`n`nFCM/알림 채널을 즉시 점검하세요.`n로그: $log"
+    $msg = "[긴급] 마음이음 점검: 발송 안 된 위급 알림이 발견됐습니다! FCM/알림 채널을 즉시 점검하세요. 로그: $log"
   } else {
-    $msg = "[주의] 마음이음 점검 스크립트가 실행에 실패했습니다 (code $code).`n`nDB 연결·환경을 확인하세요.`n로그: $log"
+    $msg = "[주의] 마음이음 점검 스크립트가 실행에 실패했습니다 (code $code). DB 연결·환경을 확인하세요. 로그: $log"
   }
-  [System.Windows.Forms.MessageBox]::Show($msg, "마음이음 파일럿 점검", 0, 48) | Out-Null
+  # 팝업은 별도 프로세스로(fire-and-forget) — 러너가 팝업 확인을 기다리며 블로킹되면
+  # 작업 스케줄러(IgnoreNew)가 다음날 09:00 실행을 조용히 건너뜀(2026-07-08 리뷰).
+  $esc = $msg -replace "'", "''"
+  Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('$esc','마음이음 파일럿 점검',0,48) | Out-Null"
 }
 exit $code

@@ -31,7 +31,7 @@ const CHECKS: Check[] = [
     validate: v => /^postgres(ql)?:\/\//.test(v) ? null : "postgres URL 형식 아님" },
   { label: "GEMINI_API_KEY", sev: "critical", feature: "AI 대화·분석", breaks: "대화·인지분석·백스톱 전부 불가", names: ["GEMINI_API_KEY"] },
   { label: "NEXTAUTH_SECRET", sev: "critical", feature: "로그인 세션(JWT 서명)", breaks: "로그인 불가 또는 세션 위조 위험", names: ["NEXTAUTH_SECRET"],
-    validate: v => v.length >= 32 ? null : "32자 미만 — 더 긴 무작위 값 권장" },
+    validate: v => v.length >= 32 ? null : "권장: 32자 미만 — 동작은 하나 더 긴 무작위 값 권장" },
   // ── 위급 알림(현장 테스트 핵심) ──
   { label: "FCM_SERVICE_ACCOUNT(_B64)", sev: "critical", feature: "보호자 앱 푸시", breaks: "앱 위급 알림이 조용히 skip됨", names: ["FCM_SERVICE_ACCOUNT_B64", "FCM_SERVICE_ACCOUNT"],
     validate: v => (v.trim().startsWith("{") ? jsonFields(v, ["project_id", "private_key", "client_email"]) : b64Json(v, ["project_id", "private_key", "client_email"])) },
@@ -65,7 +65,7 @@ for (const c of CHECKS) {
     continue;
   }
   const err = c.validate ? c.validate(val) : null;
-  if (err && err.startsWith("hex64")) console.log(`${icon.warn}${sevTag[c.sev]}  ${c.label} — 있음 (${err})`);
+  if (err && (err.startsWith("hex64") || err.startsWith("권장"))) console.log(`${icon.warn}${sevTag[c.sev]}  ${c.label} — 있음 (${err})`);
   else if (err) { console.log(`${icon.warn}${sevTag[c.sev]}  ${c.label} — 있으나 형식 이상: ${err}`); if (c.sev === "critical") criticalMissing++; }
   else console.log(`${icon.ok} ${sevTag[c.sev]}  ${c.label} — OK (${c.feature})`);
 }
