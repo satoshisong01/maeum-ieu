@@ -8,12 +8,11 @@
  */
 import "dotenv/config";
 import { prisma } from "../lib/prisma";
+import { FALLBACK_MARKS } from "../lib/chat/llm"; // 폴백 멘트와 단일 소스 — 문구 변경 시 자동 동기화
 
 const DAYS = Math.max(1, parseInt(process.argv[2] || "2", 10) || 2);
 const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
 const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-const FALLBACK_MARKS = ["잠깐 멍해졌어요", "제대로 못 들었나 봐요", "생각이 꼬였네요", "잠깐 정신이 흐릿했어요"];
 
 async function main() {
   console.log(`\n═══════ 마음이음 파일럿 일일 점검 (최근 ${DAYS}일) ═══════`);
@@ -25,25 +24,40 @@ async function main() {
     orderBy: { createdAt: "desc" },
   });
   const critical: string[] = [];
+  let dedupSkipped = 0;
   for (const m of unnotified) {
     const uid = m.conversation.userId;
-    const [links, u] = await Promise.all([
+    const category = (m.emergencyEvidence || "").split(":")[0];
+    const [links, u, dedupHit] = await Promise.all([
       prisma.expertPatient.count({ where: { patientUserId: uid, status: "active" } }),
       prisma.user.findUnique({ where: { id: uid }, select: { guardianWebhookUrl: true, guardianEmail: true, name: true } }),
+      // 정상 dedup 판별(2026-07-08 리뷰: 오탐 방지) — 이 메시지 시점 기준 1시간 내에 같은 카테고리·
+      //   같거나 높은 레벨로 이미 발송된 이력이 있으면, notifyGuardian이 "의도적으로" skip한 것(결함 아님).
+      //   emergency-notify.ts isDuplicate와 동일 판정 기준.
+      category
+        ? prisma.message.findFirst({
+            where: {
+              conversation: { userId: uid },
+              emergencyLevel: { gte: m.emergencyLevel ?? 2 },
+              emergencyEvidence: { startsWith: `${category}:` },
+              notifiedAt: { gte: new Date(m.createdAt.getTime() - 65 * 60 * 1000), lte: m.createdAt },
+            },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
     ]);
     const hadTargets = links > 0 || Boolean(u?.guardianWebhookUrl) || Boolean(u?.guardianEmail);
-    if (hadTargets) {
-      critical.push(`  🔴 L${m.emergencyLevel} ${(m.emergencyEvidence || "").slice(0, 30)} | ${u?.name ?? uid.slice(0, 8)} @${m.createdAt.toISOString().slice(0, 16)} (연결 ${links})`);
-    }
+    if (!hadTargets) continue; // 보호자 미연결 — [5]에서 별도 안내
+    if (dedupHit) { dedupSkipped++; continue; } // 1시간 중복 억제 — 정상 동작
+    critical.push(`  🔴 L${m.emergencyLevel} ${(m.emergencyEvidence || "").slice(0, 30)} | ${u?.name ?? uid.slice(0, 8)} @${m.createdAt.toISOString().slice(0, 16)} (연결 ${links})`);
   }
   console.log(`\n[1] 미발송 응급 워치독`);
   if (critical.length) {
     console.log(`  ❌ 알림 대상이 있는데 발송 안 된 응급 ${critical.length}건 — FCM 자격증명/채널 즉시 점검!`);
     critical.forEach((l) => console.log(l));
-  } else if (unnotified.length) {
-    console.log(`  ✅ 발송 실패 0건 (미발송 ${unnotified.length}건은 전부 보호자 미연결 사용자 — 정상)`);
   } else {
-    console.log(`  ✅ 미발송 응급 없음`);
+    const notes = [dedupSkipped ? `중복억제(정상) ${dedupSkipped}건` : "", unnotified.length - dedupSkipped ? `보호자 미연결 ${unnotified.length - dedupSkipped}건` : ""].filter(Boolean).join(", ");
+    console.log(`  ✅ 발송 실패 0건${notes ? ` (${notes})` : ""}`);
   }
 
   // ── 2) 응급 발생·발송 현황 (24h) ──
