@@ -8,6 +8,7 @@ import { ThemeToggle } from "../theme-toggle";
 import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
 import { hasJongseong } from "@/lib/chat/korean-particle";
+import { isSessionEndUtterance } from "@/lib/chat/session-end";
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
@@ -214,15 +215,8 @@ export default function ChatPage() {
   const stopRecordingRef = useRef<(opts?: { discard?: boolean }) => void>(() => {}); // 검진 시간종료 등에서 호출(정의 순서 우회)
 
   // 음성 세션 종료 명령 감지 패턴 — 사용자 발화 transcription에 매칭되면 세션 종료 → wake 대기로
-  // 부분매칭(고정밀 문구만) — 서사·인용에 잘 안 섞이는 표현
-  const SESSION_END_PATTERN = useRef(
-    /(그만\s*해(?![달주])|그만해(?![달주])|조용히\s*해|조용해|입\s*다물|쉴게|이제 됐|이제 충분|이제 끝|끝내자|잘\s*있어|잘있어|안녕히\s*계|이만 갈|이만 들어가|그만 얘기|대화\s*종료)/
-  );
-  // 문장 끝 앵커(2026-07-08 리뷰) — "아들이 회사 그만할래 그러더라", "영감이 먼저 가서" 같은
-  //   전달화법·서사 안의 표현이 세션을 끊던 오탐 방지. 발화가 이 표현으로 "끝날" 때만 종료로 인정.
-  const SESSION_END_TAIL = useRef(
-    /(이제\s*그만|그만\s*하자|그만\s*할[래게]요?|(대화|얘기|이야기)\s*그만|마무리\s*하자|먼저\s*가[가-힣]{0,3}|쉬자)[\s.!?~…요]*$/
-  );
+  // 종료 의도 판별은 lib/chat/session-end.ts로 모듈화(2026-07-09) — 3일간 regex가 매일 뒤집혀
+  //   __tests__/session-end.test.ts 매트릭스(종료 35 + 서사·인용 19)로 회귀 고정. 여기선 호출만.
 
   const cleanForTTS = (text: string): string =>
     text
@@ -273,6 +267,10 @@ export default function ChatPage() {
 
     const releaseLock = () => {
       turnLockRef.current = false;
+      // ⚠ 에코 쿨다운 스탬프는 "실제 재생 종료"인 여기서(2026-07-09 리뷰) — aiSpeaking은 SSE 수신
+      //   완료 시점에 꺼져 실제 오디오보다 수 초 이르므로, 그걸 기준 삼으면 작별 멘트 꼬리 에코가
+      //   쿨다운을 지나 phantom wake를 일으킴.
+      lastTtsEndRef.current = Date.now();
       // 세션 활성화 중이면 AI 음성 종료 직후 다음 발화 캡처 자동 시작
       // (wake word 재호출 불필요). "그만" 일시정지면 재청취 금지.
       if (sessionActiveRef.current && alwaysOnRef.current && !voicePausedRef.current) {
@@ -357,6 +355,7 @@ export default function ChatPage() {
     const isCancelled = () => speakGenRef.current !== myGen;
     const releaseLock = () => {
       turnLockRef.current = false;
+      lastTtsEndRef.current = Date.now(); // 실제 재생 종료 시각 — 에코 쿨다운 기준(2026-07-09 리뷰)
       if (sessionActiveRef.current && alwaysOnRef.current && !voicePausedRef.current) {
         wakeArmedRef.current = true; setWakeArmed(true);
         setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 600);
@@ -664,6 +663,9 @@ export default function ChatPage() {
 
     const tick = async () => {
       if (cancelled || inFlight) return;
+      // 검진(대리) 중엔 리마인더를 끼우지 않음 — 로그인 계정(전문가)의 복약이 환자 검진 대화에 삽입되고
+      //   환자의 "네" 답변이 전문가 복용으로 오기록되는 경로 차단(2026-07-09 리뷰)
+      if (proxyPatientIdRef.current) return;
       // 사용자 발화 중이거나 AI 응답 중이면 알림을 끼우지 않음 (대화 중복 방지)
       if (turnLockRef.current || loading) return;
       inFlight = true;
@@ -1008,13 +1010,10 @@ export default function ChatPage() {
         // 종료 명령 감지 — "그만/조용히/끝내자" 등.
         //   단독 "그만(요)"도 종료로 인정(앤커드 — "그만큼/그만뒀어" 같은 일상어는 문장 전체가 아니라 미매칭).
         //   UI 안내('"그만" 하시면 종료')와 실제 동작 불일치였던 실기기 발견(2026-07-07) fix.
-        const bareStop = /^\s*(이제\s*)?그만(요|이요|입니다)?[\s.!?~…]*$/;
         // ⚠ 검진(대리) 모드는 종료 감지 자체를 안 함(2026-07-08 리뷰) — 환자의 "이제 그만하고 싶어요" 같은
         //   발화가 검진 음성 루프를 조용히 죽이던 결함. 검진 종료는 타이머·[검사 종료] 버튼으로만.
-        if (!proxyPatientId && transcriptionText
-          && (SESSION_END_PATTERN.current.test(transcriptionText)
-            || SESSION_END_TAIL.current.test(transcriptionText.trim())
-            || bareStop.test(transcriptionText.trim()))) {
+        //   (proxyPatientIdRef: useCallback 의존성 밖 상태 참조로 인한 stale 클로저 방지 — 2026-07-09 리뷰)
+        if (!proxyPatientIdRef.current && transcriptionText && isSessionEndUtterance(transcriptionText)) {
           sessionActiveRef.current = false;
           setSessionActive(false);
           reEngageCountRef.current = 0; // 세션 종료 → 재참여 카운트 리셋
@@ -1049,8 +1048,13 @@ export default function ChatPage() {
     if (loading || !conversationId) return;
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
-    // "그만" 일시정지 중엔 어떤 경로로도 녹음 재개 금지(2026-07-08 리뷰: TTS 장애 시 releaseLock 순서역전 방어)
-    if (voicePausedRef.current) return;
+    // "그만" 일시정지 중엔 어떤 경로로도 녹음 재개 금지(2026-07-08 리뷰: TTS 장애 시 releaseLock 순서역전 방어).
+    //   wakeArmed도 함께 해제 — 잔존하면 wake 훅이 paused로 굳어 "마음아" 재개가 무음 실패(2026-07-09 리뷰).
+    if (voicePausedRef.current) {
+      wakeArmedRef.current = false;
+      setWakeArmed(false);
+      return;
+    }
     // wake-word 활성화 안 됐으면 시작 금지 (폴백 환경에서는 wakeArmed를 true로 유지)
     if (!wakeArmedRef.current) return;
     // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링 (언마운트 후엔 재귀 예약 중단)
@@ -1552,7 +1556,7 @@ export default function ChatPage() {
                 {micDenied && (
                   <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
                     <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
-                    <p className="text-xs text-red-600">마이크가 없거나 권한이 차단되어 있습니다. 주소창 🔒 → 마이크 → 허용 → 새로고침 후 다시 시도해 주세요.</p>
+                    <p className="text-xs text-red-600">마이크가 없거나 권한이 차단되어 있습니다. 앱은 휴대폰 설정 → 애플리케이션 → 마음이음 → 권한에서, 브라우저는 주소창 🔒 → 마이크에서 허용 후 다시 시도해 주세요.</p>
                   </div>
                 )}
               </div>
@@ -1578,6 +1582,7 @@ export default function ChatPage() {
                   <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
                   <p className="text-xs text-red-600">마이크가 없거나 권한이 차단되어 있습니다.</p>
                   <div className="mt-2 space-y-1 text-xs text-zinc-600">
+                    <p><b>마음이음 앱:</b> 휴대폰 설정 → 애플리케이션 → 마음이음 → 권한 → 마이크 허용</p>
                     <p><b>Chrome / Edge:</b> 주소창 🔒 → 마이크 → 허용 → 새로고침</p>
                     <p><b>Safari:</b> 설정 → Safari → 마이크 → 허용</p>
                   </div>
@@ -1759,7 +1764,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } setTextOnly(true); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } turnLockRef.current = false; /* 취소된 speak 경로는 releaseLock을 안 타므로 여기서 해제 — 안 하면 복약 리마인더·음성 복귀가 영구 차단(2026-07-09 리뷰) */ setTextOnly(true); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 ⌨️ 글씨 대화로 전환
