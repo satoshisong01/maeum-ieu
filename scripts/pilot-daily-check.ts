@@ -31,16 +31,18 @@ async function main() {
     const [links, u, dedupHit] = await Promise.all([
       prisma.expertPatient.count({ where: { patientUserId: uid, status: "active" } }),
       prisma.user.findUnique({ where: { id: uid }, select: { guardianWebhookUrl: true, guardianEmail: true, name: true } }),
-      // 정상 dedup 판별(2026-07-08 리뷰: 오탐 방지) — 이 메시지 시점 기준 1시간 내에 같은 카테고리·
-      //   같거나 높은 레벨로 이미 발송된 이력이 있으면, notifyGuardian이 "의도적으로" skip한 것(결함 아님).
-      //   emergency-notify.ts isDuplicate와 동일 판정 기준.
+      // 정상 dedup 판별(2026-07-08 도입, 07-09 정합 보정) — 후보 시점 기준 1시간 내에 같은 카테고리·
+      //   같거나 높은 레벨로 이미 발송된 "선행" 응급이 있으면, notifyGuardian이 의도적으로 skip한 것(결함 아님).
+      //   isDuplicate와 앵커 정합: 선행 메시지는 후보보다 먼저 생성(createdAt lt) + notifiedAt은 after()
+      //   백그라운드 마킹 지연을 감안해 후보 시각 +2분까지 허용(같은 초에 연달아 온 응급의 마킹 레이스 오탐 방지).
       category
         ? prisma.message.findFirst({
             where: {
               conversation: { userId: uid },
+              createdAt: { lt: m.createdAt },
               emergencyLevel: { gte: m.emergencyLevel ?? 2 },
               emergencyEvidence: { startsWith: `${category}:` },
-              notifiedAt: { gte: new Date(m.createdAt.getTime() - 65 * 60 * 1000), lte: m.createdAt },
+              notifiedAt: { gte: new Date(m.createdAt.getTime() - 65 * 60 * 1000), lte: new Date(m.createdAt.getTime() + 2 * 60 * 1000) },
             },
             select: { id: true },
           })
