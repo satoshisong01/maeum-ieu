@@ -93,7 +93,9 @@ function displayMessageContent(content: string): string {
 
 /** TTS 문장 분할 — 종결부호 기준으로 쪼개되 너무 짧은 조각은 앞 문장에 합침. 첫 문장부터 재생해 첫 소리까지 지연 단축. */
 function splitForTts(text: string): string[] {
-  const parts = text.split(/(?<=[.!?…。])\s+/).map((s) => s.trim()).filter(Boolean);
+  // lookbehind 금지 — 정규식 "리터럴"의 lookbehind는 구형 iOS Safari(<16.4)에서 파싱 시점 SyntaxError로
+  // /chat 청크 전체가 죽음(2026-07-09 리뷰). match 방식으로 동일 분할.
+  const parts = (text.match(/[^.!?…。]+[.!?…。]*/g) ?? [text]).map((s) => s.trim()).filter(Boolean);
   const out: string[] = [];
   for (const p of parts) {
     const prevShort = out.length > 0 && out[out.length - 1].replace(/\s/g, "").length < 6;
@@ -310,8 +312,10 @@ export default function ChatPage() {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         const utter = new SpeechSynthesisUtterance(ttsText);
         utter.lang = "ko-KR";
-        utter.onend = releaseLock;
-        utter.onerror = releaseLock;
+        // 세대(gen) 가드 필수(2026-07-09 리뷰): 취소된 구 utterance의 onend가 비동기로 늦게 발화하면
+        // 새 턴의 turnLock을 파괴하고 새 TTS 재생 중 마이크를 열던 갈래 — 오디오 경로와 동일하게 취소 시 무시.
+        utter.onend = () => { if (!isCancelled()) releaseLock(); };
+        utter.onerror = () => { if (!isCancelled()) releaseLock(); };
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utter);
       } else {
@@ -1045,16 +1049,16 @@ export default function ChatPage() {
   const startRecording = useCallback(async () => {
     // 재참여 idle 타이머는 진입부에서 항상 정리(turnLock 폴링·early-return 누수 방지). 실제 녹음 시작 시 재설정.
     if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
-    if (loading || !conversationId) return;
-    // 전원 OFF면 절대 녹음 시작하지 않음
-    if (!alwaysOnRef.current) return;
-    // "그만" 일시정지 중엔 어떤 경로로도 녹음 재개 금지(2026-07-08 리뷰: TTS 장애 시 releaseLock 순서역전 방어).
-    //   wakeArmed도 함께 해제 — 잔존하면 wake 훅이 paused로 굳어 "마음아" 재개가 무음 실패(2026-07-09 리뷰).
+    // "그만" 일시정지 가드는 loading보다 먼저 — loading 조기 return이 wakeArmed 해제를 건너뛰면
+    //   wake 훅이 paused로 굳는 갈래가 있음(2026-07-09 리뷰: 가드 순서).
     if (voicePausedRef.current) {
       wakeArmedRef.current = false;
       setWakeArmed(false);
       return;
     }
+    if (loading || !conversationId) return;
+    // 전원 OFF면 절대 녹음 시작하지 않음
+    if (!alwaysOnRef.current) return;
     // wake-word 활성화 안 됐으면 시작 금지 (폴백 환경에서는 wakeArmed를 true로 유지)
     if (!wakeArmedRef.current) return;
     // AI 응답 중이면 녹음 시작 금지 — 락 해제될 때까지 폴링 (언마운트 후엔 재귀 예약 중단)
@@ -1666,7 +1670,13 @@ export default function ChatPage() {
                       setVoicePaused(false);
                     } else {
                       // ON → OFF: 녹음 중이던 블롭 버리고 즉시 중지 + wake/세션 모두 해제
+                      //   재생 중인 TTS도 정지("꺼도 말이 안 멈춤" 방지, 2026-07-09 리뷰) — 취소된 speak
+                      //   경로는 releaseLock을 안 타므로 락도 직접 해제.
                       stopRecording({ discard: true });
+                      speakGenRef.current++;
+                      try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
+                      try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
+                      turnLockRef.current = false;
                       wakeArmedRef.current = false;
                       setWakeArmed(false);
                       sessionActiveRef.current = false;
@@ -1764,7 +1774,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } turnLockRef.current = false; /* 취소된 speak 경로는 releaseLock을 안 타므로 여기서 해제 — 안 하면 복약 리마인더·음성 복귀가 영구 차단(2026-07-09 리뷰) */ setTextOnly(true); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } turnLockRef.current = false; /* 취소된 speak 경로는 releaseLock을 안 타므로 여기서 해제 — 안 하면 복약 리마인더·음성 복귀가 영구 차단(2026-07-09 리뷰) */ setTextOnly(true); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 ⌨️ 글씨 대화로 전환

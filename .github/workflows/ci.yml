@@ -42,6 +42,14 @@ jobs:
         run: npx tsc --noEmit
         continue-on-error: false
 
+      - name: Unit tests (vitest — 세션종료 매트릭스 포함)
+        run: npx vitest run
+        continue-on-error: false  # 음성 종료패턴 매트릭스 등 회귀 고정 — 깨지면 merge 금지
+
+      - name: Safety regression (응급 감지 회귀 275+)
+        run: npx tsx scripts/safety-regression.ts
+        continue-on-error: false  # 어르신 안전 직결 — 항상 strict
+
       - name: User-scope audit (DB queries have user_id filter)
         run: npx tsx scripts/audit-user-scope.ts
         continue-on-error: true  # false positive 많아 warning 모드. 향후 strict 전환.
