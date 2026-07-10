@@ -103,17 +103,26 @@ async function main() {
   const pool = new Pool({ connectionString: connStr, ssl: { rejectUnauthorized: false } });
   const c = await pool.connect();
 
-  // 1) 모든 사용자별 사실 데이터 수집
+  // 1) 모든 사용자별 사실 데이터 수집.
+  //    ⚠ stopword 필터(2026-07-10): 추출기가 가족 "이름"란에 일반 호칭(엄마/영감 등)이나 기본 AI 이름(민지)을
+  //    저장하는 경우가 있어, 그대로 매칭하면 프롬프트의 정상 텍스트(호칭 로직·few-shot 예시·기본값)를
+  //    누출로 오탐 — 야간 full-check가 5일 연속 헛빨간불이었음. 일반어는 "사용자 식별자"가 아니므로 제외.
+  const GENERIC_NON_NAMES = new Set([
+    "엄마", "아빠", "어머니", "아버지", "할머니", "할아버지", "할멈", "영감",
+    "아들", "딸", "손주", "손자", "손녀", "며느리", "사위", "언니", "오빠", "누나", "동생", "형",
+    "이모", "삼촌", "고모", "조카", "남편", "아내", "부인", "여보", "당신",
+    "민지", // 기본 AI 동반자 이름(COMPANION_DEFAULTS) — 정적 프롬프트에 의도적으로 존재
+  ]);
   const names = new Set<string>();
   const spouseNames = new Set<string>();
   const hometowns = new Set<string>();
   try {
     const fam = await c.query(`SELECT DISTINCT name FROM family_member`);
-    for (const r of fam.rows) names.add(r.name);
+    for (const r of fam.rows) { if (r.name && !GENERIC_NON_NAMES.has(String(r.name).trim())) names.add(r.name); }
 
     const prof = await c.query(`SELECT DISTINCT spouse_name, hometown FROM user_profile WHERE spouse_name IS NOT NULL OR hometown IS NOT NULL`);
     for (const r of prof.rows) {
-      if (r.spouse_name) spouseNames.add(r.spouse_name);
+      if (r.spouse_name && !GENERIC_NON_NAMES.has(String(r.spouse_name).trim())) spouseNames.add(r.spouse_name);
       if (r.hometown) hometowns.add(r.hometown);
     }
   } finally {
