@@ -63,5 +63,7 @@ jobs:
         run: |
           echo "## CI Safety Checks Summary" >> $GITHUB_STEP_SUMMARY
           echo "- TypeScript compile: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit tests (vitest, 세션종료 매트릭스 포함): strict" >> $GITHUB_STEP_SUMMARY
+          echo "- Safety regression (응급 감지 275+): strict" >> $GITHUB_STEP_SUMMARY
           echo "- User-scope audit: warning-only" >> $GITHUB_STEP_SUMMARY
           echo "- Prompt-leak (regex): strict" >> $GITHUB_STEP_SUMMARY

@@ -94,8 +94,9 @@ function displayMessageContent(content: string): string {
 /** TTS 문장 분할 — 종결부호 기준으로 쪼개되 너무 짧은 조각은 앞 문장에 합침. 첫 문장부터 재생해 첫 소리까지 지연 단축. */
 function splitForTts(text: string): string[] {
   // lookbehind 금지 — 정규식 "리터럴"의 lookbehind는 구형 iOS Safari(<16.4)에서 파싱 시점 SyntaxError로
-  // /chat 청크 전체가 죽음(2026-07-09 리뷰). match 방식으로 동일 분할.
-  const parts = (text.match(/[^.!?…。]+[.!?…。]*/g) ?? [text]).map((s) => s.trim()).filter(Boolean);
+  // /chat 청크 전체가 죽음(2026-07-09 리뷰). 마커 치환 방식이 구 split(/(?<=[.!?…。])\s+/)과 "정확히" 등가 —
+  // match 방식은 공백 없는 구두점에서도 쪼개져 소수점("36.5도"→"36."+"5도")이 찢어졌음(2026-07-10 리뷰).
+  const parts = text.replace(/([.!?…。])\s+/g, "$1\u0000").split("\u0000").map((s) => s.trim()).filter(Boolean);
   const out: string[] = [];
   for (const p of parts) {
     const prevShort = out.length > 0 && out[out.length - 1].replace(/\s/g, "").length < 6;
@@ -142,6 +143,9 @@ export default function ChatPage() {
   voicePausedRef.current = voicePaused;
   // TTS 종료 시각 — 자기 목소리 에코(문장 끝의 AI 이름 등)가 STT 지연으로 wake를 발동시키는 것 차단용
   const lastTtsEndRef = useRef(0);
+  // 스트리밍 "중" TTS를 취소(음성 OFF·글씨 전환)한 턴 표시 — 즉시 락을 풀면 이전 답변 스트림이 흐르는 채
+  //   마이크가 열려 동시 턴 인터리브(2026-07-10 리뷰), 안 풀면 고아 락. 턴 종료(finally)에서 회수.
+  const ttsCancelledTurnRef = useRef(false);
   // 사용자 설정 AI 이름(예: 민지) — 호출어로도 쓰기 위해 로드. "마음(아)"는 유니버설 호출어로 항상 유지.
   const [companionName, setCompanionName] = useState("");
   const wakeCall = useMemo(() => {
@@ -792,6 +796,9 @@ export default function ChatPage() {
       }
       setLoading(false);
       setAiSpeaking(false);
+      // gen-취소 턴의 고아 락 회수 — 스트림 중 취소는 여기(스트림 종료)서만 풀어 인터리브 방지(2026-07-10 리뷰)
+      if (ttsCancelledTurnRef.current) { turnLockRef.current = false; ttsCancelledTurnRef.current = false; }
+      else if ((!alwaysOnRef.current || textOnlyRef.current) && turnLockRef.current) turnLockRef.current = false;
     },
     // messages는 내부에서 messagesRef.current로 읽으므로 의존성 불필요(매 메시지마다 재생성 방지)
     [loading, conversationId, createId, streamAndSpeak, getContext]
@@ -898,6 +905,11 @@ export default function ChatPage() {
     alwaysOnRef.current = false; setAlwaysOn(false);
     wakeArmedRef.current = false; setWakeArmed(false);
     stopRecordingRef.current?.({ discard: true });
+    // 만료 시점에 재생 중인 AI 발화 정지("검진 끝났는데 말이 계속" 방지, 2026-07-10 리뷰)
+    speakGenRef.current++;
+    try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
+    turnLockRef.current = false;
     if (examSessionIdRef.current) {
       fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "end", sessionId: examSessionIdRef.current }) }).catch(() => {});
     }
@@ -1041,6 +1053,10 @@ export default function ChatPage() {
       } finally {
         setLoading(false);
         setAiSpeaking(false);
+        // TTS가 gen-취소된 턴(음성 OFF·글씨 전환)은 releaseLock이 안 돌아 락이 고아가 됨 — 여기서 회수.
+        //   스트림 진행 중 취소는 ttsCancelledTurnRef로 표시해 스트림 종료 시점에만 풀어 인터리브 방지(2026-07-10 리뷰).
+        if (ttsCancelledTurnRef.current) { turnLockRef.current = false; ttsCancelledTurnRef.current = false; }
+        else if ((!alwaysOnRef.current || textOnlyRef.current) && turnLockRef.current) turnLockRef.current = false;
       }
     },
     [conversationId, loading, streamAndSpeak, getContext]
@@ -1676,7 +1692,8 @@ export default function ChatPage() {
                       speakGenRef.current++;
                       try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
                       try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
-                      turnLockRef.current = false;
+                      // 스트림 진행 중이면 락을 유지하고 finally에서 회수(빠른 OFF→ON 인터리브 방지), 아니면 즉시 해제
+                      if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; }
                       wakeArmedRef.current = false;
                       setWakeArmed(false);
                       sessionActiveRef.current = false;
@@ -1774,7 +1791,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } turnLockRef.current = false; /* 취소된 speak 경로는 releaseLock을 안 타므로 여기서 해제 — 안 하면 복약 리마인더·음성 복귀가 영구 차단(2026-07-09 리뷰) */ setTextOnly(true); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; } /* 스트림 중이면 finally에서 회수(인터리브 방지), 아니면 즉시 해제(고아 방지) — 2026-07-10 리뷰 */ setTextOnly(true); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 ⌨️ 글씨 대화로 전환

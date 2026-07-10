@@ -52,6 +52,7 @@
     "playwright": "^1.60.0",
     "prisma": "^7.4.2",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.1"
   }
