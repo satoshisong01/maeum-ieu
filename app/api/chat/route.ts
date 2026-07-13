@@ -29,6 +29,7 @@ import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation
 import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
+import { buildSttHints } from "@/lib/chat/stt-hints";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
@@ -368,10 +369,19 @@ async function handleDateTimeQuestion(userMessage: string, honorific: string, co
   return NextResponse.json(payload);
 }
 
-/** 음성 → 텍스트 변환 (STT 전용) */
-async function transcribeAudio(audioData: string, audioMimeType: string): Promise<string> {
+/** 음성 → 텍스트 변환 (STT 전용). hintsPromise: 사용자 어휘 힌트(이름 표기) — 병렬 조회 후 여기서 합류 */
+async function transcribeAudio(audioData: string, audioMimeType: string, hintsPromise?: Promise<string>): Promise<string> {
+  // 힌트 조회(DB ~수십 ms)는 STT(수 초)에 묻히므로 여기서 await해도 병목 아님. 실패는 힌트 생략.
+  const hints = hintsPromise ? await hintsPromise.catch(() => "") : "";
   const parts: Part[] = [
-    { text: "이 음성을 한국어로 정확하게 받아쓰기하세요. 받아쓰기한 텍스트만 출력하세요. 다른 설명이나 주석은 절대 포함하지 마세요." },
+    {
+      text:
+        "이 음성을 한국어로 정확하게 받아쓰기하세요. 받아쓰기한 텍스트만 출력하세요. 다른 설명이나 주석은 절대 포함하지 마세요." +
+        // 반복환각 가드(2026-07-10 실사례: 침묵 구간에서 "지금" ×47 생성) — 침묵은 빈 출력으로.
+        " 음성이 침묵이거나 알아들을 수 없는 잡음뿐이면 아무것도 출력하지 마세요. 들리지 않은 말을 지어내거나 같은 단어를 반복해 채우지 마세요." +
+        // 힌트는 "실제 들린 경우에만" — 무음에서 힌트 어휘를 받아쓰기로 뱉는 혼입 방지
+        (hints ? ` 다음 어휘가 실제로 들린 경우에만 이 표기를 쓰세요: ${hints}.` : ""),
+    },
     { inlineData: { mimeType: audioMimeType, data: audioData } },
   ];
 
@@ -1042,8 +1052,10 @@ export async function POST(req: Request) {
 
     // 음성 STT를 가장 먼저 시작 — weather/프롬프트/이력 조회와 병렬로 진행해 음성 왕복 지연 단축.
     //   (STT는 시스템 프롬프트와 무관하므로 직렬일 이유가 없음. 실패는 핸들러에서 빈 전사로 처리)
+    //   어휘 힌트(이름 표기 바이어스)도 병렬 시작 — transcribeAudio 내부에서 합류.
+    //   단 검진(exam) 턴은 힌트 제외 — 회상/이름대기 답안이 힌트로 '보정'되면 채점 오염.
     const sttPromise = isAudio && audio
-      ? transcribeAudio(audio.data, audio.mimeType).catch((e) => { console.warn("[STT] transcription failed:", e); return ""; })
+      ? transcribeAudio(audio.data, audio.mimeType, examSession ? undefined : buildSttHints(userId)).catch((e) => { console.warn("[STT] transcription failed:", e); return ""; })
       : null;
 
     // weather · RAG(임베딩 HTTP) · DB 이력은 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
