@@ -216,6 +216,13 @@ export default function ChatPage() {
     const esc = n.split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
     return new RegExp(`마음|${esc}`);
   }, [companionName]);
+  // barge 발화 앞의 호출어 제거용 — "민지야 오늘 날씨 어때" → "오늘 날씨 어때"만 전송
+  const wakeStripRegex = useMemo(() => {
+    const esc = companionName.trim().split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+    const alts = ["마음\\s*[아이]?"];
+    if (esc) alts.push(`${esc}\\s*[야아이]?`);
+    return new RegExp(`^[\\s,.!?~]*(?:${alts.join("|")})[\\s,.!?~]*`);
+  }, [companionName]);
   const discardNextRef = useRef(false); // OFF 직후 onstop에서 전송 스킵용
   const turnLockRef = useRef(false);     // AI 응답 중 마이크 입력 완전 차단 (한 턴씩 주고받기)
   const textOnlyRef = useRef(false);     // 글씨로 대화 모드 동기화(콜백 stale 클로저 방지) — TTS 게이팅용
@@ -1457,11 +1464,24 @@ export default function ChatPage() {
 
   /** 캡처 종료 — 에코 2차 검사 후 전송/유령 판정. 타이머(debounce·안전망) 경유로만 호출 */
   const finishBargeCapture = () => {
-    const utt = bargeBufferRef.current.trim();
+    const uttRaw = bargeBufferRef.current.trim();
     resetBargeCapture();
     // 캡처 중 정지어/음성 OFF로 세션이 끝났으면 잔여물 폐기
     if (voicePausedRef.current || !sessionActiveRef.current || !alwaysOnRef.current) return;
+    // 앞의 호출어("민지야/마음아") 제거 — 호출어 게이트로 트리거됐으므로 대부분 선두에 있음
+    const utt = wakeRegex.test(uttRaw) ? uttRaw.replace(wakeStripRegex, "").trim() : uttRaw;
     const norm = normalizeForEcho(utt);
+    // 호출어"만" 부르고 기다리는 패턴("민지야!") — 유령이 아니라 정상 호출: 세워둔 채 바로 청취로 전환
+    if (wakeRegex.test(uttRaw) && norm.length < 3) {
+      if (!loadingRef.current) {
+        wakeArmedRef.current = true;
+        setWakeArmed(true);
+        setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 400);
+      } else {
+        rearmAfterTurnRef.current = true;
+      }
+      return;
+    }
     // 전송 직전 2차 검사(트리거보다 엄격한 0.45) — 부분 왜곡된 에코가 트리거를 뚫어도
     //   "사용자 메시지로 전송"까지는 못 가게. 진짜 발화는 직전 AI 문장과 겹칠 일이 거의 없어 훨씬 낮다.
     if (!utt || norm.length < 3 || echoOverlapRatio(norm, recentTtsRef.current) >= 0.45) {
@@ -1523,16 +1543,13 @@ export default function ChatPage() {
     if (bargeSentTurnRef.current) return;   // 이번 턴 이미 전송 — 늦은 final의 발화 분절 방지(리뷰 #3)
     const norm = normalizeForEcho(text);
     if (norm.length < 2) return;
-    if (echoOverlapRatio(norm, recentTtsRef.current) >= 0.6) return; // 자기 스피커 소리
+    if (echoOverlapRatio(norm, recentTtsRef.current) >= 0.6) return; // 자기 스피커 소리(AI가 자기 이름 "민지" 언급 포함)
     if (!bargeTriggeredRef.current) {
-      // 즉시 덕킹 — 사용자 소리로 보이는 첫 세그먼트에 AI 볼륨을 확 낮춰 인식기 SNR을 올림
-      //   ("말해도 2~3초 더 말함" 지연·앞잘림 완화, 상용 스피커의 ducking 패턴). 문장 단위로
-      //   Audio 엘리먼트가 새로 생성돼 volume이 1.0으로 자연 복원되므로 오탐이어도 다음 문장부터 정상.
-      try { if (audioElRef.current) audioElRef.current.volume = 0.25; } catch { /* iOS는 volume 미지원 */ }
-      // 잡음 오탐 방지 — 3자 이상일 때 중단 발동 (4자는 중단 지연 체감이 커서 완화, 2026-07-13 피드백)
-      if (norm.length < 3) return;
-      // TTS 원문이 너무 짧으면("네 맞아요") bigram 판별력이 없어 에코가 뚫음 — 재생 중엔 트리거 보류(리뷰 #7)
-      if (ttsActive && recentTtsRef.current.length < 12) return;
+      // 호출어 게이트(2026-07-13 피드백) — 아무 소리에나 끊으니 잡음에도 대화가 끊겨 오히려 불편.
+      //   AI가 말하는 중에는 "마음아" 또는 설정한 AI 이름("민지야")을 부른 경우에만 끼어들기 시작.
+      //   (정지어 "그만/멈춰/조용/스톱"은 별도 onWake 경로가 계속 처리. 잡음·혼잣말·TV 소리는 무시.)
+      //   일반 발화 전체 개방·덕킹은 폐기 — 잡음 트리거가 볼륨을 깎아 "글자보다 덜 읽는" 부작용까지 만들었음.
+      if (!wakeRegex.test(text)) return;
       bargeTriggeredRef.current = true;
       stopTtsPlayback();
       setBargeCapturing(true); // 발화 마무리까지 인식 유지(enabled 조건에 포함)
@@ -2040,7 +2057,7 @@ export default function ChatPage() {
                     ? `(눌러서 켜면 "${wakeCall}" 호출로 대화 시작)`
                     : aiSpeaking || ttsActive
                       ? bargeListening
-                        ? "(말씀하시면 답변을 멈추고 들어요)"
+                        ? `("${wakeCall}" 부르시면 답변을 멈추고 들어요)`
                         : "(답변이 끝나면 다시 말씀해주세요)"
                       : bargeCapturing
                         ? "(말씀 듣는 중이에요)"
