@@ -52,8 +52,12 @@ const WAKE_PATTERN = /마음/;
 export interface UseWakeWordOptions {
   enabled: boolean;       // alwaysOn 등 상위 ON/OFF
   paused: boolean;         // AI 응답 중에는 잠시 멈춤
-  onWake: () => void;      // wake word 감지 시
+  onWake: (heard?: string) => void; // 감지 시 — 인식 텍스트 전달(에코 필터 등 호출자 판단용)
   wakePhrase?: RegExp;     // override 가능 (기본 "마음/마음아")
+  // 연속 무결과 실패 시 자동재시작을 차단하는 한도. 기본 3.
+  // barge-in 명령 모드는 "AI 발화 중 침묵"이 정상이라 no-speech 종료가 잦음 — 높게 잡아야
+  // 긴 TTS 턴 후반에 리스너가 조용히 죽지 않는다(2026-07-10 barge-in 도입).
+  failBlockLimit?: number;
 }
 
 export interface UseWakeWordReturn {
@@ -63,7 +67,7 @@ export interface UseWakeWordReturn {
 }
 
 export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
-  const { enabled, paused, onWake, wakePhrase = WAKE_PATTERN } = opts;
+  const { enabled, paused, onWake, wakePhrase = WAKE_PATTERN, failBlockLimit = 3 } = opts;
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [lastHeard, setLastHeard] = useState("");
@@ -78,6 +82,8 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
   enabledRef.current = enabled;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  const failBlockLimitRef = useRef(failBlockLimit);
+  failBlockLimitRef.current = failBlockLimit;
   // 연속 실패(권한 거부, 즉시 종료 등) 시 무한 재시작 차단용 카운터
   const consecutiveFailRef = useRef(0);
   const blockedRef = useRef(false);
@@ -121,7 +127,7 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
         if (combined) setLastHeard(combined.slice(-60));
         if (wakePhraseRef.current.test(combined)) {
           try { rec.stop(); } catch { /* ignore */ }
-          onWakeRef.current();
+          onWakeRef.current(combined);
         }
       };
       rec.onerror = (ev) => {
@@ -142,8 +148,8 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
         // 결과 한 번도 못 받고 즉시 종료 → 권한 미허용/오류 가능성
         if (!gotResult) {
           consecutiveFailRef.current += 1;
-          if (consecutiveFailRef.current >= 3) {
-            console.warn("[wake-word] 3 consecutive failures → blocking auto-restart");
+          if (consecutiveFailRef.current >= failBlockLimitRef.current) {
+            console.warn(`[wake-word] ${failBlockLimitRef.current} consecutive failures → blocking auto-restart`);
             blockedRef.current = true;
             return;
           }
@@ -172,7 +178,14 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
       recRef.current = null;
       setListening(false);
       consecutiveFailRef.current += 1;
-      if (consecutiveFailRef.current >= 3) blockedRef.current = true;
+      if (consecutiveFailRef.current >= failBlockLimitRef.current) { blockedRef.current = true; return; }
+      // 동기 start() 실패도 onend와 동일하게 backoff 재시도 — 예약 없이는 enabled/paused가 바뀔 때까지
+      // 영구 침묵(예: barge-in 직후 다른 인식 세션이 마이크를 아직 쥔 채 throw, 2026-07-10 리뷰 #4)
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        restartTimerRef.current = null;
+        start();
+      }, 2000 + consecutiveFailRef.current * 1000);
     }
   }, []);
 

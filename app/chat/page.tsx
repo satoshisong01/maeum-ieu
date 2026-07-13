@@ -107,6 +107,16 @@ function splitForTts(text: string): string[] {
   return out.length > 0 ? out : [text];
 }
 
+/** barge-in 에코 필터용 정규화 — STT의 공백·문장부호 변주를 제거해 포함 비교를 안정화 */
+function normalizeForEcho(s: string): string {
+  return s.replace(/[^가-힣a-zA-Z0-9]/g, "");
+}
+
+/** barge-in 정지 명령 — AI 발화 중 이것"만" 청취(상용 스피커의 재생 중 키워드 스포팅 패턴).
+ *  STT가 음절 사이 공백을 넣는 경우 허용("그 만"). 넓히지 말 것 — 재생 중 인식은 에코 오탐 위험이 커서
+ *  어휘가 좁을수록 안전하다(2026-07-10 barge-in 도입). */
+const BARGE_CMD = /(그\s*만|멈\s*춰|조\s*용|스\s*[톱탑])/;
+
 export default function ChatPage() {
   const { data: session, status } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -146,6 +156,13 @@ export default function ChatPage() {
   // 스트리밍 "중" TTS를 취소(음성 OFF·글씨 전환)한 턴 표시 — 즉시 락을 풀면 이전 답변 스트림이 흐르는 채
   //   마이크가 열려 동시 턴 인터리브(2026-07-10 리뷰), 안 풀면 고아 락. 턴 종료(finally)에서 회수.
   const ttsCancelledTurnRef = useRef(false);
+  // ── barge-in(AI 발화 중 "그만" 개입) 상태 ──
+  // TTS 재생 진행 표시 — barge-in 명령 청취 훅의 enabled 조건용 (aiSpeaking은 SSE 완료 시점에 꺼져 실제 오디오보다 이름)
+  const [ttsActive, setTtsActive] = useState(false);
+  // 이번 턴 TTS로 내보낸 문장의 정규화 누적 — 인식된 명령이 이 안에 있으면 자기 스피커 소리(에코)로 보고 무시
+  const recentTtsRef = useRef("");
+  // TTS 시작 전("생각 중") barge-in 표시 — 이후 도착하는 이번 턴 TTS를 무음 처리(멈췄는데 말 시작 방지)
+  const bargeInterruptedTurnRef = useRef(false);
   // 사용자 설정 AI 이름(예: 민지) — 호출어로도 쓰기 위해 로드. "마음(아)"는 유니버설 호출어로 항상 유지.
   const [companionName, setCompanionName] = useState("");
   const wakeCall = useMemo(() => {
@@ -258,6 +275,8 @@ export default function ChatPage() {
     if (!ttsText) { onReady?.(); return; }
     // 글씨로 대화(textOnly) 모드: 음성 출력 생략 — 메시지는 onReady로 렌더, TTS/턴락 없음(비용·429 절감)
     if (textOnlyRef.current) { onReady?.(); return; }
+    // barge-in이 TTS 시작 전("생각 중")에 걸린 턴 — 이번 발화는 무음(멈추라는데 말 시작 방지), 텍스트만 렌더
+    if (bargeInterruptedTurnRef.current) { bargeInterruptedTurnRef.current = false; onReady?.(); return; }
     // 새 발화 시작 — 재참여 idle 타이머 정리(중복 트리거 방지)
     if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
 
@@ -270,8 +289,12 @@ export default function ChatPage() {
 
     // 한 턴씩 주고받기: 사용자 발화 전송 직후부터 AI 음성 종료까지 마이크 입력 차단
     turnLockRef.current = true;
+    // barge-in: 재생 진행 표시 + 에코 필터 기준 원문(정규화) — 명령 청취가 자기 소리를 되받는 것 방지
+    recentTtsRef.current = normalizeForEcho(ttsText);
+    setTtsActive(true);
 
     const releaseLock = () => {
+      setTtsActive(false);
       turnLockRef.current = false;
       // ⚠ 에코 쿨다운 스탬프는 "실제 재생 종료"인 여기서(2026-07-09 리뷰) — aiSpeaking은 SSE 수신
       //   완료 시점에 꺼져 실제 오디오보다 수 초 이르므로, 그걸 기준 삼으면 작별 멘트 꼬리 에코가
@@ -355,13 +378,18 @@ export default function ChatPage() {
   const speakStream = useCallback((): { push: (s: string) => void; finish: () => void } => {
     // 글씨로 대화(textOnly) 모드: 음성 생략 — 메시지 렌더는 streamAndSpeak의 upsert가 담당(오디오와 분리)
     if (textOnlyRef.current) return { push: () => {}, finish: () => {} };
+    // barge-in이 TTS 시작 전("생각 중")에 걸린 턴 — 이번 턴 전체 무음(텍스트 렌더는 upsert가 계속)
+    if (bargeInterruptedTurnRef.current) { bargeInterruptedTurnRef.current = false; return { push: () => {}, finish: () => {} }; }
     if (idleTimerRef.current) { clearTimeout(idleTimerRef.current); idleTimerRef.current = null; }
     if (audioElRef.current) { try { audioElRef.current.pause(); } catch { /* ignore */ } audioElRef.current = null; }
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     turnLockRef.current = true;
+    recentTtsRef.current = ""; // barge-in 에코 필터 — 이번 턴 문장은 push에서 누적
+    setTtsActive(true);
     const myGen = ++speakGenRef.current;
     const isCancelled = () => speakGenRef.current !== myGen;
     const releaseLock = () => {
+      setTtsActive(false);
       turnLockRef.current = false;
       lastTtsEndRef.current = Date.now(); // 실제 재생 종료 시각 — 에코 쿨다운 기준(2026-07-09 리뷰)
       if (sessionActiveRef.current && alwaysOnRef.current && !voicePausedRef.current) {
@@ -404,7 +432,7 @@ export default function ChatPage() {
       if (!isCancelled()) releaseLock();
     })();
     return {
-      push: (s: string) => { const t = (s || "").trim(); if (t) { queue.push(t); if (wake) { wake(); wake = null; } } },
+      push: (s: string) => { const t = (s || "").trim(); if (t) { queue.push(t); recentTtsRef.current += normalizeForEcho(t); if (wake) { wake(); wake = null; } } },
       finish: () => { producing = false; if (wake) { wake(); wake = null; } },
     };
   }, []);
@@ -793,12 +821,18 @@ export default function ChatPage() {
             content: displayMsg,
           },
         ]);
+      } finally {
+        // ⚠ finally 필수 — 성공 경로가 return으로 빠져나가는 구조라, catch 뒤 평문이던 시절엔
+        //   barge-in/취소 플래그가 성공 턴에서 회수되지 않고 다음 턴을 오염(무음·조기 락해제)시켰다(2026-07-10 리뷰 #1).
+        //   sendAudioMessage finally와 동일 블록 유지.
+        setLoading(false);
+        setAiSpeaking(false);
+        // gen-취소 턴의 고아 락 회수 — 스트림 중 취소는 여기(스트림 종료)서만 풀어 인터리브 방지(2026-07-10 리뷰)
+        if (ttsCancelledTurnRef.current) { turnLockRef.current = false; ttsCancelledTurnRef.current = false; }
+        else if ((!alwaysOnRef.current || textOnlyRef.current) && turnLockRef.current) turnLockRef.current = false;
+        // barge-in 무음 플래그 잔여 회수 — 소비 창구(speak/speakStream 초입)를 안 지나간 턴의 다음 턴 오염 방지
+        bargeInterruptedTurnRef.current = false;
       }
-      setLoading(false);
-      setAiSpeaking(false);
-      // gen-취소 턴의 고아 락 회수 — 스트림 중 취소는 여기(스트림 종료)서만 풀어 인터리브 방지(2026-07-10 리뷰)
-      if (ttsCancelledTurnRef.current) { turnLockRef.current = false; ttsCancelledTurnRef.current = false; }
-      else if ((!alwaysOnRef.current || textOnlyRef.current) && turnLockRef.current) turnLockRef.current = false;
     },
     // messages는 내부에서 messagesRef.current로 읽으므로 의존성 불필요(매 메시지마다 재생성 방지)
     [loading, conversationId, createId, streamAndSpeak, getContext]
@@ -909,6 +943,7 @@ export default function ChatPage() {
     speakGenRef.current++;
     try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
     try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
+    setTtsActive(false);
     turnLockRef.current = false;
     if (examSessionIdRef.current) {
       fetch("/api/expert/exam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "end", sessionId: examSessionIdRef.current }) }).catch(() => {});
@@ -1053,10 +1088,12 @@ export default function ChatPage() {
       } finally {
         setLoading(false);
         setAiSpeaking(false);
-        // TTS가 gen-취소된 턴(음성 OFF·글씨 전환)은 releaseLock이 안 돌아 락이 고아가 됨 — 여기서 회수.
+        // TTS가 gen-취소된 턴(음성 OFF·글씨 전환·barge-in)은 releaseLock이 안 돌아 락이 고아가 됨 — 여기서 회수.
         //   스트림 진행 중 취소는 ttsCancelledTurnRef로 표시해 스트림 종료 시점에만 풀어 인터리브 방지(2026-07-10 리뷰).
         if (ttsCancelledTurnRef.current) { turnLockRef.current = false; ttsCancelledTurnRef.current = false; }
         else if ((!alwaysOnRef.current || textOnlyRef.current) && turnLockRef.current) turnLockRef.current = false;
+        // barge-in 무음 플래그가 소비되지 않고 남은 경우(TTS 이미 시작 후 barge 등) 회수 — 다음 턴 오염 방지
+        bargeInterruptedTurnRef.current = false;
       }
     },
     [conversationId, loading, streamAndSpeak, getContext]
@@ -1072,7 +1109,15 @@ export default function ChatPage() {
       setWakeArmed(false);
       return;
     }
-    if (loading || !conversationId) return;
+    if (!conversationId) return;
+    // SSE 진행 중 재개 요청(barge-in "생각 중" 정지 → [다시 대화하기]) — 조기 return하면 재무장 경로가
+    //   전무해 "듣는 중 표시인데 아무도 안 듣는" 교착(2026-07-10 리뷰 #2) → turnLock과 동일하게 폴링.
+    //   ref 경유 재귀로 최신 loading을 읽음(구 클로저의 stale loading 고정 방지). voicePaused가 위에서
+    //   먼저 걸러지므로 일시정지 중엔 폴링 체인이 이어지지 않는다.
+    if (loading) {
+      setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 500);
+      return;
+    }
     // 전원 OFF면 절대 녹음 시작하지 않음
     if (!alwaysOnRef.current) return;
     // wake-word 활성화 안 됐으면 시작 금지 (폴백 환경에서는 wakeArmed를 true로 유지)
@@ -1282,6 +1327,50 @@ export default function ChatPage() {
       // 살짝 딜레이 두고 녹음 시작 (recognition stop이 마이크 해제하는 데 시간이 필요)
       setTimeout(() => { if (!unmountedRef.current) startRecording(); }, 250);
     },
+  });
+
+  // ── barge-in: AI가 말하는 중에도 정지 명령("그만/멈춰/조용/스톱")만 한정 청취(2026-07-10 실기기 피드백) ──
+  //   상용 스피커 패턴의 이식 — 재생 중 전체 ASR이 아니라 좁은 키워드 스포팅만(Alexa/HomePod/Clova 공통).
+  //   Android의 SpeechRecognition은 플랫폼 인식기라 자기 TTS 에코를 들을 수 있음 → 3중 방어:
+  //   ① 짧은 정지 명령 패턴 한정(BARGE_CMD) ② 이번 턴 TTS 원문(recentTtsRef)에 같은 명령어가 있으면
+  //   자기 소리로 보고 무시(그 턴은 명령이 안 먹지만 TTS 종료 후 본 경로가 처리) ③ 검진(proxy)·글씨 모드 제외.
+  const onBargeCommand = (heard?: string) => {
+    const m = (heard || "").match(BARGE_CMD);
+    if (!m) return;
+    // 에코 필터 — AI가 방금 말한 문장에 같은 명령어가 들어 있으면 스피커 에코일 가능성이 높아 무시
+    if (recentTtsRef.current.includes(normalizeForEcho(m[1]))) return;
+    // TTS 즉시 정지 (음성 OFF 전례와 동일: 세대가드 + 재생 정지)
+    speakGenRef.current++;
+    try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
+    setTtsActive(false);
+    // 취소된 경로는 releaseLock을 안 타므로 에코 쿨다운 스탬프 직접 — 중단 직후 꼬리 에코의 phantom wake 방지
+    lastTtsEndRef.current = Date.now();
+    if (loading) {
+      // SSE 진행 중 — 락은 finally에서 회수(인터리브 방지) + 이후 도착할 이번 턴 TTS는 무음 처리
+      ttsCancelledTurnRef.current = true;
+      bargeInterruptedTurnRef.current = true;
+    } else {
+      turnLockRef.current = false;
+    }
+    // 대기 모드 진입 — 발화 끝 "그만" 종료 경로(sendAudioMessage 종료 감지)와 동일한 최종 상태
+    sessionActiveRef.current = false;
+    setSessionActive(false);
+    reEngageCountRef.current = 0;
+    voicePausedRef.current = true;
+    setVoicePaused(true);
+    wakeArmedRef.current = false;
+    setWakeArmed(false);
+  };
+  useWakeWord({
+    wakePhrase: BARGE_CMD,
+    // AI 턴 동안만: SSE 진행(loading·aiSpeaking) 또는 TTS 재생(ttsActive). 검진·글씨 모드 제외.
+    enabled: micAllowed && alwaysOn && !textOnly && !proxyPatientId && sessionActive && (loading || aiSpeaking || ttsActive),
+    // 사용자 발화 녹음(MediaRecorder) 중엔 정지 — 마이크 경합 방지. 그때는 본 경로(종료 감지)가 처리.
+    paused: listening,
+    // AI 발화 중 "사용자 침묵"이 정상이라 no-speech 종료가 잦음 — 기본 3이면 긴 턴 후반에 리스너가 죽음
+    failBlockLimit: 8,
+    onWake: onBargeCommand,
   });
 
   // 폴백: SpeechRecognition 미지원 브라우저 → wake-word 없이 기존처럼 자동 녹음.
@@ -1692,6 +1781,7 @@ export default function ChatPage() {
                       speakGenRef.current++;
                       try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ }
                       try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ }
+                      setTtsActive(false);
                       // 스트림 진행 중이면 락을 유지하고 finally에서 회수(빠른 OFF→ON 인터리브 방지), 아니면 즉시 해제
                       if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; }
                       wakeArmedRef.current = false;
@@ -1791,7 +1881,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; } /* 스트림 중이면 finally에서 회수(인터리브 방지), 아니면 즉시 해제(고아 방지) — 2026-07-10 리뷰 */ setTextOnly(true); }}
+                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } setTtsActive(false); if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; } /* 스트림 중이면 finally에서 회수(인터리브 방지), 아니면 즉시 해제(고아 방지) — 2026-07-10 리뷰 */ setTextOnly(true); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 ⌨️ 글씨 대화로 전환

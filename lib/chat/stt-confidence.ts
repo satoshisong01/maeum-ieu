@@ -85,6 +85,37 @@ export function evaluateSttConfidence(
     return { pass: false, confidence: 0.0, reason: "punctuation-only" };
   }
 
+  // 9) 동일 어절 반복 루프 — LLM 전사가 침묵/잡음에서 같은 단어를 수십 번 반복하는
+  //    자기회귀 환각 (실사례 2026-07-10: "지금" ×47회가 정상 메시지로 저장됨).
+  //    실제 발화의 강조 반복("아파 아파 아파", "빨리 빨리 빨리 빨리 와")은 3~4회 수준이라
+  //    임계값을 넉넉히 잡아도 환각(수십 회)과 겹치지 않는다.
+  //    토큰은 문장부호 제거 후 비교 — "지금, 지금. 지금" 같은 구두점 변주도 동일 어절로 취급.
+  //    ⚠ 조난 어휘의 반복("아파 아파 아파 아파 아파", "살려줘"×N)은 진짜 외침일 수 있어 면제 —
+  //      환각이 잘못 통과해도 대화 LLM·응급 백스톱이 받지만, 진짜 외침이 재질문에 막히면 응급 대응이 늦는다(2026-07-10 리뷰 #3).
+  const tokens = text.split(/\s+/).map((t) => t.replace(/[^\p{L}\p{N}]/gu, "")).filter(Boolean);
+  const DISTRESS = /아파|아프|아야|살려|도와|숨|가슴|어지러|아이고/;
+  if (tokens.length >= 5 && !tokens.some((t) => DISTRESS.test(t))) {
+    let maxRun = 1;
+    let run = 1;
+    for (let i = 1; i < tokens.length; i++) {
+      run = tokens[i] === tokens[i - 1] ? run + 1 : 1;
+      if (run > maxRun) maxRun = run;
+    }
+    const unique = new Set(tokens).size;
+    // 같은 어절 연속 6회 이상 — 자연 발화에선 사실상 없음
+    if (maxRun >= 6) {
+      return { pass: false, confidence: 0.1, reason: `word repetition loop (run=${maxRun})` };
+    }
+    // 발화 전체가 한 단어의 반복 (5회 이상) — 정보량이 단어 1개뿐이라 재질문이 낫다
+    if (unique === 1) {
+      return { pass: false, confidence: 0.1, reason: `single-word loop (×${tokens.length})` };
+    }
+    // 어휘 붕괴 — 8어절 이상인데 고유 어절 2종 이하 ("네 지금 네 지금 네 지금 네 지금")
+    if (tokens.length >= 8 && unique <= 2) {
+      return { pass: false, confidence: 0.1, reason: `vocabulary collapse (unique=${unique}/${tokens.length})` };
+    }
+  }
+
   return { pass: true, confidence: 1.0, reason: "" };
 }
 
