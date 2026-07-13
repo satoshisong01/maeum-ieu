@@ -187,7 +187,6 @@ export default function ChatPage() {
   const phantomBargeCountRef = useRef(0);    // 유령 중단(전송할 말이 없던 중단) 누적
   const generalBargeOffRef = useRef(false);  // 유령 중단 2회 → 이 세션은 정지어 모드로 강등
   const pendingBargeSendRef = useRef("");    // 이전 턴 SSE 진행 중이라 대기 중인 barge 발화
-  const lastBargeFinalRef = useRef("");      // final 재보고 이중 누적 방지(Android 인식기가 같은 final을 다시 줌)
   const bargeSentTurnRef = useRef(false);    // 전송 확정 후 다음 TTS까지 재트리거 잠금(발화 분절 방지)
   const rearmAfterTurnRef = useRef(false);   // loading 중 barge가 유령으로 끝난 경우 — 턴 finally에서 재청취 재무장
   const autoListenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // releaseLock 600ms 재청취 예약(취소 가능하게)
@@ -197,7 +196,6 @@ export default function ChatPage() {
     if (bargeSendTimerRef.current) { clearTimeout(bargeSendTimerRef.current); bargeSendTimerRef.current = null; }
     if (bargeAbortTimerRef.current) { clearTimeout(bargeAbortTimerRef.current); bargeAbortTimerRef.current = null; }
     bargeBufferRef.current = "";
-    lastBargeFinalRef.current = "";
     bargeTriggeredRef.current = false;
     setBargeCapturing(false);
   };
@@ -1514,12 +1512,19 @@ export default function ChatPage() {
       bargeAbortTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 5000);
     }
     // 누적은 "중단이 발동된 뒤"의 final만 — 안 그러면 맞장구("네네")가 버퍼→유령 카운트로 흘러
-    //   두 번이면 barge 전체가 강등되는 갈래가 생김. 동일 final 재보고(Android)는 dedup(리뷰 #6).
+    //   두 번이면 barge 전체가 강등되는 갈래가 생김.
+    // ⚠ 일부 Android는 "자라는 중간 가설"까지 전부 final로 표시함 — 그대로 덧붙이면
+    //   "바람도 바람도 좀 바람도 좀 많이..." 같은 계단식 중복이 메시지로 전송됨(2026-07-13 실DB 확인).
+    //   → 새 final이 기존 버퍼를 포함하며 자란 형태면 "교체", 기존에 이미 포함된 재보고면 "무시",
+    //     그 외(휴지 뒤 진짜 새 구절)만 "추가".
     if (bargeTriggeredRef.current && isFinal) {
       const t = text.trim();
-      if (t && t !== lastBargeFinalRef.current) {
-        lastBargeFinalRef.current = t;
-        bargeBufferRef.current = bargeBufferRef.current ? `${bargeBufferRef.current} ${t}` : t;
+      if (t) {
+        const nt = normalizeForEcho(t);
+        const nb = normalizeForEcho(bargeBufferRef.current);
+        if (!nb || nt.includes(nb)) bargeBufferRef.current = t;      // 첫 결과 또는 자란 가설 — 교체
+        else if (!nb.includes(nt)) bargeBufferRef.current = `${bargeBufferRef.current} ${t}`; // 새 구절 — 추가
+        // nb.includes(nt): 이미 반영된 조각의 재보고 — 무시
       }
       if (bargeSendTimerRef.current) clearTimeout(bargeSendTimerRef.current);
       bargeSendTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 900);
