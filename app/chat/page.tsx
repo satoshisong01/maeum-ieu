@@ -187,6 +187,9 @@ export default function ChatPage() {
   const phantomBargeCountRef = useRef(0);    // 유령 중단(전송할 말이 없던 중단) 누적
   const generalBargeOffRef = useRef(false);  // 유령 중단 2회 → 이 세션은 정지어 모드로 강등
   const pendingBargeSendRef = useRef("");    // 이전 턴 SSE 진행 중이라 대기 중인 barge 발화
+  // 직전 barge 전송의 정규화 원문 — 조기 전송된 부분 문장을 이어 말한 전체 문장이 다시 오면
+  //   이미 보낸 앞부분을 잘라 "이어지는 부분"만 전송(중복 답변 방지, 2026-07-13 실DB: "근데 문제가..." 2회 전송)
+  const lastBargeSentRef = useRef<{ norm: string; at: number }>({ norm: "", at: 0 });
   const bargeSentTurnRef = useRef(false);    // 전송 확정 후 다음 TTS까지 재트리거 잠금(발화 분절 방지)
   const rearmAfterTurnRef = useRef(false);   // loading 중 barge가 유령으로 끝난 경우 — 턴 finally에서 재청취 재무장
   const autoListenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // releaseLock 600ms 재청취 예약(취소 가능하게)
@@ -1401,6 +1404,7 @@ export default function ChatPage() {
       phantomBargeCountRef.current = 0;
       generalBargeOffRef.current = false;
       bargeSentTurnRef.current = false;
+      lastBargeSentRef.current = { norm: "", at: 0 };
       wakeArmedRef.current = true;
       setWakeArmed(true);
       // 살짝 딜레이 두고 녹음 시작 (recognition stop이 마이크 해제하는 데 시간이 필요)
@@ -1486,11 +1490,31 @@ export default function ChatPage() {
       setWakeArmed(false);
       return;
     }
+    // 조기 전송분 중복 제거 — 숨 고르기로 앞부분이 먼저 나갔는데 인식기의 성장 가설이
+    //   전체 문장을 다시 주는 경우(2026-07-13 실DB), 이미 보낸 앞부분을 잘라 이어진 부분만 전송.
+    let sendText = utt;
+    const prev = lastBargeSentRef.current;
+    if (prev.norm && Date.now() - prev.at < 60_000) {
+      if (norm === prev.norm) return; // 완전 동일 재전송 — 폐기
+      if (norm.startsWith(prev.norm)) {
+        // 정규화 정렬로 원문에서 이미 보낸 앞부분의 끝 위치를 찾음
+        let seen = 0;
+        let cut = 0;
+        for (let i = 0; i < utt.length && seen < prev.norm.length; i++) {
+          if (/[가-힣a-zA-Z0-9]/.test(utt[i])) seen++;
+          cut = i + 1;
+        }
+        const suffix = utt.slice(cut).trim();
+        if (normalizeForEcho(suffix).length < 3) return; // 새 내용 없음
+        sendText = suffix;
+      }
+    }
+    lastBargeSentRef.current = { norm, at: Date.now() };
     // 전송 확정 — 다음 TTS 시작 전까지 재트리거 잠금(늦게 도착한 final이 같은 발화를 두 턴으로 쪼개는 것 방지)
     bargeSentTurnRef.current = true;
     // 이전 턴 SSE가 아직 흐르면 finally에서 전송(중복 턴 인터리브 방지), 아니면 즉시 전송
-    if (loadingRef.current) { pendingBargeSendRef.current = utt; return; }
-    sendMessageRef.current(utt);
+    if (loadingRef.current) { pendingBargeSendRef.current = sendText; return; }
+    sendMessageRef.current(sendText);
   };
 
   /** 전체 발화 barge — 인식 세그먼트마다 에코 필터 → 첫 통과 시 TTS 중단, final 누적 후 debounce 전송 */
@@ -1501,15 +1525,21 @@ export default function ChatPage() {
     if (norm.length < 2) return;
     if (echoOverlapRatio(norm, recentTtsRef.current) >= 0.6) return; // 자기 스피커 소리
     if (!bargeTriggeredRef.current) {
-      // 잡음 오탐 방지 — interim은 4자 이상, final은 3자 이상일 때만 중단 발동
-      if (!(norm.length >= 4 || (isFinal && norm.length >= 3))) return;
+      // 즉시 덕킹 — 사용자 소리로 보이는 첫 세그먼트에 AI 볼륨을 확 낮춰 인식기 SNR을 올림
+      //   ("말해도 2~3초 더 말함" 지연·앞잘림 완화, 상용 스피커의 ducking 패턴). 문장 단위로
+      //   Audio 엘리먼트가 새로 생성돼 volume이 1.0으로 자연 복원되므로 오탐이어도 다음 문장부터 정상.
+      try { if (audioElRef.current) audioElRef.current.volume = 0.25; } catch { /* iOS는 volume 미지원 */ }
+      // 잡음 오탐 방지 — 3자 이상일 때 중단 발동 (4자는 중단 지연 체감이 커서 완화, 2026-07-13 피드백)
+      if (norm.length < 3) return;
       // TTS 원문이 너무 짧으면("네 맞아요") bigram 판별력이 없어 에코가 뚫음 — 재생 중엔 트리거 보류(리뷰 #7)
       if (ttsActive && recentTtsRef.current.length < 12) return;
       bargeTriggeredRef.current = true;
       stopTtsPlayback();
       setBargeCapturing(true); // 발화 마무리까지 인식 유지(enabled 조건에 포함)
+      // 하드캡(폭주 방지)만 — 발화 종료 판정은 아래 "무활동 1.5초" 타이머가 담당.
+      //   5초로 두면 어르신이 길게 말하는 도중 캡이 걸려 문장을 반토막 냄.
       if (bargeAbortTimerRef.current) clearTimeout(bargeAbortTimerRef.current);
-      bargeAbortTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 5000);
+      bargeAbortTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 15000);
     }
     // 누적은 "중단이 발동된 뒤"의 final만 — 안 그러면 맞장구("네네")가 버퍼→유령 카운트로 흘러
     //   두 번이면 barge 전체가 강등되는 갈래가 생김.
@@ -1526,8 +1556,13 @@ export default function ChatPage() {
         else if (!nb.includes(nt)) bargeBufferRef.current = `${bargeBufferRef.current} ${t}`; // 새 구절 — 추가
         // nb.includes(nt): 이미 반영된 조각의 재보고 — 무시
       }
+    }
+    // 발화 종료 판정: "마지막 인식 활동(중간 가설 포함)으로부터 1.5초 무활동" — final 직후 0.9초로 걸면
+    //   어르신이 문장 중간에 숨 고르는 사이 부분 문장이 조기 전송됨(2026-07-13 실DB: "근데 문제가 지금 차를 타고").
+    //   중간 가설이 흐르는 동안(=말하는 중)은 타이머가 계속 뒤로 밀림.
+    if (bargeTriggeredRef.current) {
       if (bargeSendTimerRef.current) clearTimeout(bargeSendTimerRef.current);
-      bargeSendTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 900);
+      bargeSendTimerRef.current = setTimeout(() => { if (!unmountedRef.current) finishBargeCapture(); }, 2000);
     }
   };
 
@@ -1564,6 +1599,7 @@ export default function ChatPage() {
     phantomBargeCountRef.current = 0;
     generalBargeOffRef.current = false;
     bargeSentTurnRef.current = false;
+    lastBargeSentRef.current = { norm: "", at: 0 };
     if (wakeSupported) {
       sessionActiveRef.current = true;
       setSessionActive(true);
