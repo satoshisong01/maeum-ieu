@@ -54,6 +54,9 @@ export interface UseWakeWordOptions {
   paused: boolean;         // AI 응답 중에는 잠시 멈춤
   onWake: (heard?: string) => void; // 감지 시 — 인식 텍스트 전달(에코 필터 등 호출자 판단용)
   wakePhrase?: RegExp;     // override 가능 (기본 "마음/마음아")
+  // 모든 인식 결과 세그먼트 콜백(전체 barge-in용) — wake 매칭과 무관하게 호출.
+  // interim은 같은 세그먼트가 자라며 반복 호출됨 — 누적은 isFinal에서만 할 것.
+  onHeard?: (text: string, isFinal: boolean) => void;
   // 연속 무결과 실패 시 자동재시작을 차단하는 한도. 기본 3.
   // barge-in 명령 모드는 "AI 발화 중 침묵"이 정상이라 no-speech 종료가 잦음 — 높게 잡아야
   // 긴 TTS 턴 후반에 리스너가 조용히 죽지 않는다(2026-07-10 barge-in 도입).
@@ -67,7 +70,7 @@ export interface UseWakeWordReturn {
 }
 
 export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
-  const { enabled, paused, onWake, wakePhrase = WAKE_PATTERN, failBlockLimit = 3 } = opts;
+  const { enabled, paused, onWake, wakePhrase = WAKE_PATTERN, failBlockLimit = 3, onHeard } = opts;
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [lastHeard, setLastHeard] = useState("");
@@ -75,6 +78,8 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onWakeRef = useRef(onWake);
   onWakeRef.current = onWake;
+  const onHeardRef = useRef(onHeard);
+  onHeardRef.current = onHeard;
   const wakePhraseRef = useRef(wakePhrase);
   wakePhraseRef.current = wakePhrase;
   // enabled/paused 최신값을 onend 콜백에서 안전하게 참조하기 위한 ref
@@ -122,7 +127,9 @@ export function useWakeWord(opts: UseWakeWordOptions): UseWakeWordReturn {
         consecutiveFailRef.current = 0; // 정상 응답이 들어오면 실패 카운터 리셋
         let combined = "";
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          combined += e.results[i][0]?.transcript || "";
+          const seg = e.results[i][0]?.transcript || "";
+          combined += seg;
+          if (seg && onHeardRef.current) onHeardRef.current(seg, !!e.results[i].isFinal);
         }
         if (combined) setLastHeard(combined.slice(-60));
         if (wakePhraseRef.current.test(combined)) {
