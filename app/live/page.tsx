@@ -32,6 +32,10 @@ function LiveInner() {
   const engineRef = useRef<LiveVoiceEngine | null>(null);
   const convRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // 무발화 자동 종료 — Live는 마이크가 열려 있는 내내 과금(침묵 포함)되므로,
+  // 어르신이 대화를 안 끝내고 자리를 떠도 3분 뒤 세션을 닫아 공회전 비용을 차단.
+  const lastActivityRef = useRef(Date.now());
+  const IDLE_LIMIT_MS = 3 * 60_000;
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
@@ -85,10 +89,11 @@ function LiveInner() {
       }
 
       // 페르소나·전사 설정은 토큰 발급 시 서버가 고정 (Constrained 연결 — 클라 config 무시됨)
+      lastActivityRef.current = Date.now();
       const engine = new LiveVoiceEngine({
         onState: (s) => setState(s),
-        onUserTranscript: (t) => upsertBubble("user", t),
-        onAiTranscript: (t) => upsertBubble("assistant", t),
+        onUserTranscript: (t) => { lastActivityRef.current = Date.now(); upsertBubble("user", t); },
+        onAiTranscript: (t) => { lastActivityRef.current = Date.now(); upsertBubble("assistant", t); },
         onTurnComplete: async (u, a) => {
           upsertBubble("user", u, true); // 직전 두 버블 확정
           setBubbles((prev) => prev.map((b) => ({ ...b, final: true })));
@@ -128,6 +133,18 @@ function LiveInner() {
   const stop = () => { engineRef.current?.stop(); setState("stopped"); };
 
   const active = state === "listening" || state === "speaking" || state === "connecting";
+
+  // 무발화 3분 → 자동 종료 (30초 주기 점검). 화면엔 [다시 대화하기]가 남아 언제든 재개.
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > IDLE_LIMIT_MS) {
+        engineRef.current?.stop();
+        setState("stopped");
+      }
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [active, IDLE_LIMIT_MS]);
   const stateLabel: Record<string, string> = {
     idle: "", connecting: "연결하고 있어요…", listening: "🎙 듣고 있어요 — 말씀하세요", speaking: "🔊 말하는 중이에요", stopped: "대화를 마쳤어요", error: "연결에 문제가 있어요",
   };
