@@ -366,22 +366,50 @@ export default function ChatPage() {
     const isCancelled = () => speakGenRef.current !== myGen;
     const sentences = splitForTts(ttsText);
 
-    const fetchAudio = async (s: string): Promise<HTMLAudioElement | null> => {
+    const fetchAudio = async (s: string, retried = false): Promise<HTMLAudioElement | null> => {
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: s }),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          // 일시 장애(429/5xx)는 1회 재시도 — 실패 문장이 조용히 스킵되면 "글자보다 덜 읽는" 증상이 됨
+          if (!retried && (res.status === 429 || res.status >= 500)) {
+            await new Promise((r) => setTimeout(r, 600));
+            return fetchAudio(s, true);
+          }
+          return null;
+        }
         const data = (await res.json()) as { audioBase64: string; mimeType: string };
         return new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
-      } catch { return null; }
+      } catch {
+        if (!retried) {
+          await new Promise((r) => setTimeout(r, 600));
+          return fetchAudio(s, true);
+        }
+        return null;
+      }
     };
     const playToEnd = (audio: HTMLAudioElement) => new Promise<void>((resolve) => {
       let done = false;
+      let resumeTries = 0;
       const fin = () => { if (!done) { done = true; resolve(); } };
-      audio.onended = fin; audio.onerror = fin; audio.onpause = fin; // 새 speak이 pause하면 즉시 진행
+      audio.onended = fin; audio.onerror = fin;
+      // ⚠ pause ≠ 종료(2026-07-20 실기기): Android에서 barge용 SpeechRecognition이 잡음에 세션을
+      //   재시작할 때 오디오 포커스를 뺏어 재생을 pause시킴 — 이걸 종료로 보면 잡음마다 문장이
+      //   잘리고(1째줄→3째줄 점프) "AI가 멈춘 것"처럼 보임. 우리가 멈춘 경우(취소·새 발화)는
+      //   gen이 먼저 올라가므로 isCancelled로 판별. 외부 pause는 3회까지 재개, 그 뒤 종료(루프 방지).
+      audio.onpause = () => {
+        if (done || audio.ended) { fin(); return; }
+        if (resumeTries >= 3) { fin(); return; }
+        resumeTries++;
+        setTimeout(() => {
+          if (done) return;
+          if (isCancelled()) { fin(); return; }
+          audio.play().catch(fin);
+        }, 200);
+      };
       audio.play().catch(fin);
     });
     const webSpeechFallback = () => {
@@ -449,17 +477,44 @@ export default function ChatPage() {
         autoListenTimerRef.current = setTimeout(() => { autoListenTimerRef.current = null; if (!unmountedRef.current) startRecordingRef.current(); }, 600);
       }
     };
-    const fetchAudio = async (s: string): Promise<HTMLAudioElement | null> => {
+    const fetchAudio = async (s: string, retried = false): Promise<HTMLAudioElement | null> => {
       try {
         const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: s }) });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          // 일시 장애(429/5xx)는 1회 재시도 — 실패 문장의 조용한 스킵 방지(위 speak과 동일)
+          if (!retried && (res.status === 429 || res.status >= 500)) {
+            await new Promise((r) => setTimeout(r, 600));
+            return fetchAudio(s, true);
+          }
+          return null;
+        }
         const data = (await res.json()) as { audioBase64: string; mimeType: string };
         return new Audio(`data:${data.mimeType};base64,${data.audioBase64}`);
-      } catch { return null; }
+      } catch {
+        if (!retried) {
+          await new Promise((r) => setTimeout(r, 600));
+          return fetchAudio(s, true);
+        }
+        return null;
+      }
     };
     const playToEnd = (audio: HTMLAudioElement) => new Promise<void>((resolve) => {
-      let done = false; const fin = () => { if (!done) { done = true; resolve(); } };
-      audio.onended = fin; audio.onerror = fin; audio.onpause = fin; audio.play().catch(fin);
+      let done = false;
+      let resumeTries = 0;
+      const fin = () => { if (!done) { done = true; resolve(); } };
+      audio.onended = fin; audio.onerror = fin;
+      // pause ≠ 종료 — 인식기 포커스 강탈로 인한 외부 pause는 재개(3회), 취소는 gen으로 판별(위 speak과 동일)
+      audio.onpause = () => {
+        if (done || audio.ended) { fin(); return; }
+        if (resumeTries >= 3) { fin(); return; }
+        resumeTries++;
+        setTimeout(() => {
+          if (done) return;
+          if (isCancelled()) { fin(); return; }
+          audio.play().catch(fin);
+        }, 200);
+      };
+      audio.play().catch(fin);
     });
     const queue: string[] = [];
     let producing = true;
