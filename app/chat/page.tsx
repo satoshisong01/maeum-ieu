@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
@@ -132,6 +133,7 @@ const BARGE_CMD = /(그\s*만|멈\s*춰|조\s*용|스\s*[톱탑])/;
 
 export default function ChatPage() {
   const { data: session, status } = useSession();
+  const router = useRouter(); // 라이브 음성(/live) 라우팅용
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -1050,8 +1052,11 @@ export default function ChatPage() {
     const isApp = typeof window !== "undefined" && Boolean((window as unknown as { MAEUM_APP_VERSION?: string }).MAEUM_APP_VERSION);
     if (!isApp) return;
     autoVoiceTriedRef.current = true;
+    // 라이브 음성(Gemini Live)이 켜져 있으면 어르신 음성 동선은 /live가 기본(2026-07-20 전환).
+    //   /live도 마이크·오디오는 [대화 시작하기] 탭(제스처)에서 열므로 autoplay 정책과 무관.
+    if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; }
     void startConversation();
-  }, [status, screeningMode, examMode, modeSelected, startConversation]);
+  }, [status, screeningMode, examMode, modeSelected, startConversation, router]);
 
   // 검진 종료(시간 만료) — 세션 정리 + 안내. 수동 종료는 배너 '검사 종료' 링크(/expert)로.
   const endExam = useCallback(() => {
@@ -1957,7 +1962,7 @@ export default function ChatPage() {
             <div className="space-y-2">
               <button
                 type="button"
-                onClick={startConversation}
+                onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
                 className="w-full rounded-full bg-[#007bff] py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
               >
                 🎤 음성으로 대화하기
@@ -2030,7 +2035,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => void startConversation()}
+                onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 🎤 음성 대화로 전환

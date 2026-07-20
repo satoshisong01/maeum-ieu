@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * 라이브 음성 대화 (베타) — Gemini Live 직결 경로.
- * 실측 첫 음성 1.44s (현행 음성 6.1s). 안전망: 출력 전사 선행 게이트 + 턴 회송(/api/live/turn).
- * v1 제약: 검진(마음 건강 체크)은 이 화면에서 미지원 — 일반 대화 전용.
+ * 음성 대화 (Gemini Live 직결) — 어르신 기본 음성 화면.
+ * 2026-07-20 본선 승격: 전화 통화 방식(한 번 시작하면 계속 대화), AI 먼저 인사,
+ * 지난 대화 이어보기, 어르신용 큰 버튼·밝은 UI. 실측 첫 응답 1.3s.
+ * 안전망: 출력 전사 선행 게이트(live-voice) + 턴 회송(/api/live/turn: 저장·응급·보호자알림·인지분석).
+ * 제약: 검진(전문가)·마음 체크는 기존 화면(/chat) 전용.
  * 테스트: ?fakemic=1 — 마이크 없이 window.__livePush(b64Pcm)/__liveEnd()로 주입(E2E).
  */
 import Link from "next/link";
@@ -26,14 +28,41 @@ function LiveInner() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [emergency, setEmergency] = useState(false);
   const [error, setError] = useState("");
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const engineRef = useRef<LiveVoiceEngine | null>(null);
   const convRef = useRef<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
   }, [status, router]);
 
   useEffect(() => () => { engineRef.current?.stop(); }, []);
+
+  // 지난 대화 이어보기 — 최근 20개를 미리 표시 (대화 ID도 여기서 확보)
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/conversations");
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (data?.conversation?.id) {
+          convRef.current = data.conversation.id;
+          const msgs = (data.messages || []) as { role: string; content: string }[];
+          setBubbles(msgs.slice(-20).map((m) => ({ role: m.role === "user" ? "user" as const : "assistant" as const, text: m.content, final: true })));
+        }
+      } catch { /* 이력 없이 시작 가능 */ }
+      if (!cancelled) setHistoryLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [status]);
+
+  // 새 버블 도착 시 하단 스크롤 유지
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [bubbles]);
 
   const upsertBubble = (role: "user" | "assistant", text: string, final = false) => {
     setBubbles((prev) => {
@@ -47,16 +76,13 @@ function LiveInner() {
 
   const start = async () => {
     setError("");
+    setEmergency(false);
     try {
-      // 대화 확보 (기존 대화 이어쓰기 또는 생성)
-      const getRes = await fetch("/api/conversations");
-      const data = await getRes.json().catch(() => ({}));
-      let convId: string | null = data?.conversation?.id ?? null;
-      if (!convId) {
+      // 대화 확보 (이력 로드에서 못 얻었으면 생성)
+      if (!convRef.current) {
         const postRes = await fetch("/api/conversations", { method: "POST" });
-        convId = (await postRes.json()).id;
+        convRef.current = (await postRes.json()).id;
       }
-      convRef.current = convId;
 
       // 페르소나·전사 설정은 토큰 발급 시 서버가 고정 (Constrained 연결 — 클라 config 무시됨)
       const engine = new LiveVoiceEngine({
@@ -91,7 +117,8 @@ function LiveInner() {
         (window as unknown as Record<string, unknown>).__livePush = (b64: string) => engine.injectPcm(b64);
         (window as unknown as Record<string, unknown>).__liveEnd = () => engine.endInjectedUtterance();
       }
-      await engine.start({ fakeMic, conversationId: convId ?? undefined });
+      await engine.start({ fakeMic, conversationId: convRef.current ?? undefined });
+      engine.greet(); // AI가 먼저 인사
     } catch (e) {
       setError((e as Error).message);
       setState("error");
@@ -100,57 +127,56 @@ function LiveInner() {
 
   const stop = () => { engineRef.current?.stop(); setState("stopped"); };
 
+  const active = state === "listening" || state === "speaking" || state === "connecting";
   const stateLabel: Record<string, string> = {
-    idle: "대기", connecting: "연결 중…", listening: "🎙 듣는 중", speaking: "🔊 말하는 중", stopped: "중지됨", error: "오류",
+    idle: "", connecting: "연결하고 있어요…", listening: "🎙 듣고 있어요 — 말씀하세요", speaking: "🔊 말하는 중이에요", stopped: "대화를 마쳤어요", error: "연결에 문제가 있어요",
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0e1b1e] text-zinc-100">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
-        <h1 className="text-base font-bold">🎙 라이브 음성 대화 <span className="rounded bg-violet-600 px-1.5 py-0.5 text-[10px]">BETA</span></h1>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-teal-300">{stateLabel[state] ?? state}</span>
-          <Link href="/chat" className="text-zinc-400 hover:text-zinc-200">기존 대화로</Link>
-          <LogoutButton className="text-zinc-400 hover:text-zinc-200" />
+    <div className="flex min-h-screen flex-col bg-[#f0f2f5] text-zinc-900 dark:bg-[#0b0d10] dark:text-zinc-100">
+      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <h1 className="text-lg font-bold">🎤 음성 대화</h1>
+        <div className="flex items-center gap-4 text-sm">
+          <Link href="/chat" className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">⌨️ 글씨로 대화</Link>
+          <LogoutButton className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200" />
         </div>
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-2 px-4 py-4">
         {emergency && (
-          <p className="rounded-xl bg-red-600/90 px-4 py-3 text-sm font-bold">
-            🚨 응급 징후가 감지되었어요. 지금 바로 119에 전화해 주세요. 보호자에게도 알려주세요.
+          <p className="rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white">
+            🚨 응급 징후가 감지되었어요. 지금 바로 119에 전화해 주세요. 보호자에게도 알려드렸어요.
           </p>
         )}
-        {error && <p className="rounded-xl bg-amber-900/60 px-4 py-2 text-xs text-amber-200">{error}</p>}
+        {error && <p className="rounded-xl bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">{error}</p>}
 
-        <div className="flex-1 space-y-2 overflow-y-auto">
-          {bubbles.length === 0 && (
-            <p className="pt-16 text-center text-sm text-zinc-500">
-              시작을 누르고 말씀하세요. 말이 끝나면 한 박자 안에 대답해요.
-              <br />(첫 음성 실측 1.4초 — 기존 6.1초)
+        <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto">
+          {historyLoaded && bubbles.length === 0 && (
+            <p className="pt-16 text-center text-base text-zinc-500 dark:text-zinc-400">
+              아래 [대화 시작하기]를 누르면
+              <br />전화 통화하듯 편하게 이야기할 수 있어요.
             </p>
           )}
           {bubbles.map((b, i) => (
-            <div key={i} className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${b.role === "user" ? "ml-auto bg-teal-700/80" : "bg-zinc-800"}`}>
+            <div key={i} className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[16px] leading-relaxed ${b.role === "user" ? "ml-auto bg-[#007bff] text-white" : "bg-white shadow-sm dark:bg-zinc-800"}`}>
               {b.text}
             </div>
           ))}
         </div>
 
-        <div className="flex justify-center gap-3 py-3">
-          {state !== "listening" && state !== "speaking" && state !== "connecting" ? (
-            <button onClick={start} className="rounded-full bg-teal-500 px-8 py-4 text-lg font-bold text-zinc-950 hover:bg-teal-400">
-              ▶ 시작
+        <div className="flex flex-col items-center gap-2 py-3">
+          {active && <p className="text-base font-semibold text-[#007bff] dark:text-blue-400">{stateLabel[state]}</p>}
+          {!active ? (
+            <button onClick={start} className="w-full max-w-sm rounded-full bg-[#28a745] px-8 py-5 text-xl font-bold text-white shadow-lg transition hover:bg-[#218838]">
+              📞 {state === "stopped" ? "다시 대화하기" : "대화 시작하기"}
             </button>
           ) : (
-            <button onClick={stop} className="rounded-full bg-zinc-700 px-8 py-4 text-lg font-bold hover:bg-zinc-600">
-              ■ 중지
+            <button onClick={stop} className="w-full max-w-sm rounded-full bg-zinc-400 px-8 py-4 text-lg font-bold text-white shadow-md transition hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600">
+              그만하기
             </button>
           )}
+          {active && <p className="text-sm text-zinc-500 dark:text-zinc-400">말씀 도중에 끼어들어도 되고, &ldquo;그만&rdquo; 하시면 끝나요.</p>}
         </div>
-        <p className="pb-2 text-center text-[11px] text-zinc-500">
-          베타: 이 화면은 일반 대화 전용이에요. 마음 건강 체크는 기존 대화 화면에서 해주세요.
-        </p>
       </main>
     </div>
   );

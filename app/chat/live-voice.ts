@@ -103,6 +103,16 @@ export class LiveVoiceEngine {
     })) as LiveSessionLike;
   }
 
+  /** 세션 시작 직후 AI가 먼저 인사하게 한다 — 텍스트 턴 주입. 실패해도 무해(사용자가 먼저 말하면 됨) */
+  greet() {
+    try {
+      (this.session as unknown as { sendClientContent?: (p: unknown) => void })?.sendClientContent?.({
+        turns: [{ role: "user", parts: [{ text: "(방금 음성 대화가 연결되었습니다. 사용자에게 먼저 짧고 따뜻하게 인사를 건네고 안부를 하나만 물어주세요.)" }] }],
+        turnComplete: true,
+      });
+    } catch { /* 인사 생략 */ }
+  }
+
   /** 테스트 훅 — Playwright 등 마이크 없는 환경에서 PCM(base64, 16k 16bit) 주입 */
   injectPcm(b64: string) {
     this.session?.sendRealtimeInput({ audio: { data: b64, mimeType: "audio/pcm;rate=16000" } });
