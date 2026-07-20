@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { LiveVoiceEngine } from "../chat/live-voice";
 import { LogoutButton } from "../LogoutButton";
 import { isSessionEndUtterance } from "@/lib/chat/session-end";
+import { classifyMedReply } from "@/lib/chat/medication";
 
 interface Bubble { role: "user" | "assistant"; text: string; final?: boolean }
 
@@ -32,10 +33,13 @@ function LiveInner() {
   const engineRef = useRef<LiveVoiceEngine | null>(null);
   const convRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // 무발화 자동 종료 — Live는 마이크가 열려 있는 내내 과금(침묵 포함)되므로,
-  // 어르신이 대화를 안 끝내고 자리를 떠도 3분 뒤 세션을 닫아 공회전 비용을 차단.
-  const lastActivityRef = useRef(Date.now());
-  const IDLE_LIMIT_MS = 3 * 60_000;
+  // 무발화 단계 대응 — 기준은 "사용자" 발화(AI 혼잣말은 종료 타이머를 못 미룸: 공회전 과금 차단).
+  //   60초: 민지가 먼저 한 마디(재참여 1) → 120초: 한 번 더(재참여 2) → 180초: 자동 종료([다시 대화하기]로 재개).
+  const lastUserActivityRef = useRef(Date.now());
+  const reEngageCountRef = useRef(0);
+  // 복약 리마인더 — classic(/chat)과 동일 API(check→trigger→긍정답변 자동기록) 재사용
+  const pendingMedRef = useRef<{ scheduleId: string; doseTime: string; ts: number } | null>(null);
+  const stateRef = useRef("idle");
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
@@ -89,11 +93,16 @@ function LiveInner() {
       }
 
       // 페르소나·전사 설정은 토큰 발급 시 서버가 고정 (Constrained 연결 — 클라 config 무시됨)
-      lastActivityRef.current = Date.now();
+      lastUserActivityRef.current = Date.now();
+      reEngageCountRef.current = 0;
       const engine = new LiveVoiceEngine({
-        onState: (s) => setState(s),
-        onUserTranscript: (t) => { lastActivityRef.current = Date.now(); upsertBubble("user", t); },
-        onAiTranscript: (t) => { lastActivityRef.current = Date.now(); upsertBubble("assistant", t); },
+        onState: (s) => { stateRef.current = s; setState(s); },
+        onUserTranscript: (t) => {
+          lastUserActivityRef.current = Date.now();
+          reEngageCountRef.current = 0; // 사용자가 말하면 재참여 단계 리셋
+          upsertBubble("user", t);
+        },
+        onAiTranscript: (t) => upsertBubble("assistant", t),
         onTurnComplete: async (u, a) => {
           upsertBubble("user", u, true); // 직전 두 버블 확정
           setBubbles((prev) => prev.map((b) => ({ ...b, final: true })));
@@ -106,6 +115,23 @@ function LiveInner() {
               const j = await r.json().catch(() => ({}));
               if (j.emergencyLevel === 3) setEmergency(true);
             } catch { /* 회송 실패 — 다음 턴에서 복구 */ }
+          }
+          // 복약 자동캡처 — 리마인더 후 긍정 답변이면 복용 기록(classic과 동일 로직·10분 만료)
+          const pm = pendingMedRef.current;
+          if (pm && u) {
+            if (Date.now() - pm.ts > 10 * 60_000) pendingMedRef.current = null;
+            else {
+              const verdict = classifyMedReply(u);
+              if (verdict !== "unclear") {
+                pendingMedRef.current = null;
+                if (verdict === "taken") {
+                  fetch("/api/medications/check", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ scheduleId: pm.scheduleId, doseTime: pm.doseTime, status: "confirmed" }),
+                  }).catch(() => { /* 무해화 */ });
+                }
+              }
+            }
           }
           // 종료 명령("그만/이제 그만/조용히 해" 등) — 본선과 동일 패턴 모듈로 감지, 세션 종료
           if (isSessionEndUtterance(u)) {
@@ -134,17 +160,58 @@ function LiveInner() {
 
   const active = state === "listening" || state === "speaking" || state === "connecting";
 
-  // 무발화 3분 → 자동 종료 (30초 주기 점검). 화면엔 [다시 대화하기]가 남아 언제든 재개.
+  // 무발화 단계 대응 (15초 주기): 60초 재참여1 → 120초 재참여2 → 180초 자동 종료.
+  //   재참여는 AI가 말하고 있지 않을 때만 주입(자기 말 끊김 방지). 사용자 발화 기준이라
+  //   민지의 재참여 발화 자체는 종료 타이머를 미루지 못함(공회전 과금 차단).
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > IDLE_LIMIT_MS) {
+      const idleMs = Date.now() - lastUserActivityRef.current;
+      if (idleMs > 180_000) {
         engineRef.current?.stop();
         setState("stopped");
+        return;
       }
-    }, 30_000);
+      const stage = idleMs > 120_000 ? 2 : idleMs > 60_000 ? 1 : 0;
+      if (stage > reEngageCountRef.current && stateRef.current === "listening") {
+        reEngageCountRef.current = stage;
+        engineRef.current?.injectInstruction(
+          "(사용자가 잠시 말이 없습니다. 프로필이나 지난 이야기에서 화제를 하나 골라 짧고 부드럽게 한 마디 건네보세요. 대답을 재촉하지 마세요.)",
+        );
+      }
+    }, 15_000);
     return () => clearInterval(timer);
-  }, [active, IDLE_LIMIT_MS]);
+  }, [active]);
+
+  // 복약/일과 알림 폴링 (60초) — classic(/chat)과 동일 API. due 발견 시 트리거(서버 dedup·저장)
+  //   후 민지가 자연스럽게 말하도록 지시 주입. 긍정 답변 자동기록은 onTurnComplete에서.
+  useEffect(() => {
+    if (!active) return;
+    let inFlight = false;
+    const tick = async () => {
+      if (inFlight || stateRef.current !== "listening") return; // AI 발화 중엔 다음 사이클로
+      inFlight = true;
+      try {
+        const r = await fetch("/api/medications/check");
+        if (!r.ok) return;
+        const data = await r.json() as { due?: { scheduleId: string; label: string; slotTime: string }[] };
+        const first = (data.due ?? [])[0];
+        if (!first || !convRef.current) return;
+        const tr = await fetch("/api/medications/trigger", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleId: first.scheduleId, conversationId: convRef.current }),
+        });
+        if (!tr.ok) return;
+        const trig = await tr.json() as { text?: string; skipped?: boolean };
+        if (trig.skipped || !trig.text) return;
+        pendingMedRef.current = { scheduleId: first.scheduleId, doseTime: first.slotTime, ts: Date.now() };
+        engineRef.current?.injectInstruction(`(지금 복약 알림 시간입니다. 다음 내용을 자연스러운 말로 전해주세요: "${trig.text.replace(/"/g, "'")}")`);
+      } catch { /* 다음 사이클 */ } finally { inFlight = false; }
+    };
+    const initial = setTimeout(tick, 5000);
+    const interval = setInterval(tick, 60_000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, [active]);
   const stateLabel: Record<string, string> = {
     idle: "", connecting: "연결하고 있어요…", listening: "🎙 듣고 있어요 — 말씀하세요", speaking: "🔊 말하는 중이에요", stopped: "대화를 마쳤어요", error: "연결에 문제가 있어요",
   };

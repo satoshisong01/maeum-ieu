@@ -104,6 +104,19 @@ async function main() {
   console.log(`\n[5] 보호자 연결: 최근 ${DAYS}일 신규 어르신 ${recentPatients.length}명 중 미연결 ${unlinked.length}명${unlinked.length ? ` — ${unlinked.join(", ")}` : ""}`);
   if (unlinked.length) console.log(`  ⚠️ 미연결 어르신은 위급 시 앱 알림이 가지 않음 — 온보딩(코드 연결) 마저 진행 필요`);
 
+  // ── 6) 인지분석 파이프라인 흐름 (24h) — Live 전환(2026-07-20) 후 턴 회송→분석 연결이 살아있는지 ──
+  //   발화는 있는데 분석 0건이면 /api/live/turn 회송 또는 분석기 장애 신호.
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+  const assessRows = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
+    `SELECT COUNT(*) AS cnt FROM cognitive_assessments WHERE created_at >= $1`, dayAgo,
+  ).catch(() => [{ cnt: BigInt(-1) }]);
+  const assessCnt = Number(assessRows[0]?.cnt ?? -1);
+  console.log(`\n[6] 인지분석 흐름(24h): ${assessCnt < 0 ? "조회 실패" : `${assessCnt}건 생성`}`);
+  //   ⚠ 기준 주의: 분석 기록은 "확인성 문답이 있던 턴"에만 생김 — 수다만 있던 날은 0건이 정상.
+  //   발화가 꽤 많은데(30+) 0건이 이어질 때만 회송/분석기 점검 신호로 본다.
+  if (assessCnt === 0 && userMsgs.length >= 30) console.log(`  ⚠️ 발화 ${userMsgs.length}건인데 분석 0건 — 지속되면 Live 턴 회송(/api/live/turn)·분석기 점검 (수다만 있던 날은 0건 정상)`);
+  else if (assessCnt > 0) console.log(`  ✅ 회송→분석 파이프라인 정상`);
+
   console.log(`\n═══════ 판정: ${critical.length ? "🔴 즉시 조치 필요(위 [1])" : "✅ 이상 없음"} ═══════\n`);
   await prisma.$disconnect();
   process.exit(critical.length ? 1 : 0);
