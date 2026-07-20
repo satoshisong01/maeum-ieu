@@ -44,14 +44,26 @@ export class LiveVoiceEngine {
   private userBuf = "";
   private aiBuf = "";
   private stopped = false;
+  private conversationId: string | undefined;
+  private reconnects = 0;
 
   constructor(cb: LiveVoiceCallbacks) {
     this.cb = cb;
   }
 
-  async start(opts?: { fakeMic?: boolean }) {
+  async start(opts?: { fakeMic?: boolean; conversationId?: string }) {
+    this.conversationId = opts?.conversationId;
+    await this.connect();
+    if (!opts?.fakeMic) await this.startMic();
+  }
+
+  private async connect() {
     this.cb.onState("connecting");
-    const tokRes = await fetch("/api/live/token", { method: "POST" });
+    const tokRes = await fetch("/api/live/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: this.conversationId }),
+    });
     if (!tokRes.ok) throw new Error("토큰 발급 실패");
     const { token, model } = await tokRes.json();
 
@@ -63,7 +75,7 @@ export class LiveVoiceEngine {
     this.session = (await ai.live.connect({
       model,
       callbacks: {
-        onopen: () => { if (!this.stopped) this.cb.onState("listening"); },
+        onopen: () => { if (!this.stopped) { this.reconnects = 0; this.cb.onState("listening"); } },
         onmessage: (m: unknown) => {
           if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>).__liveDebug) {
             console.log("[live:msg]", JSON.stringify(m).slice(0, 400));
@@ -74,12 +86,21 @@ export class LiveVoiceEngine {
         onclose: (e: unknown) => {
           const ce = e as { code?: number; reason?: string };
           if (ce?.reason) console.warn("[live:close]", ce.code, ce.reason);
-          if (!this.stopped) this.cb.onState("stopped");
+          if (this.stopped) return;
+          // 세션 만료(오디오 15분)·네트워크 순단 — 마이크는 유지한 채 새 토큰으로 자동 재연결(3회까지).
+          //   토큰은 uses:1이라 재발급 필요. 진행 중이던 턴 전사는 유실될 수 있으나 세션 지속이 우선.
+          if (this.reconnects < 3) {
+            this.reconnects++;
+            this.session = null;
+            this.userBuf = ""; this.aiBuf = "";
+            this.resetPlayback();
+            this.connect().catch((err) => { this.cb.onError(String((err as Error)?.message || err)); this.cb.onState("error"); });
+          } else {
+            this.cb.onState("stopped");
+          }
         },
       },
     })) as LiveSessionLike;
-
-    if (!opts?.fakeMic) await this.startMic();
   }
 
   /** 테스트 훅 — Playwright 등 마이크 없는 환경에서 PCM(base64, 16k 16bit) 주입 */
