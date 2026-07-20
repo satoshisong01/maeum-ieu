@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { LiveVoiceEngine } from "../chat/live-voice";
 import { LogoutButton } from "../LogoutButton";
+import { isSessionEndUtterance } from "@/lib/chat/session-end";
 
 interface Bubble { role: "user" | "assistant"; text: string; final?: boolean }
 
@@ -65,15 +66,21 @@ function LiveInner() {
         onTurnComplete: async (u, a) => {
           upsertBubble("user", u, true); // 직전 두 버블 확정
           setBubbles((prev) => prev.map((b) => ({ ...b, final: true })));
-          if (!convRef.current) return;
-          try {
-            const r = await fetch("/api/live/turn", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ conversationId: convRef.current, userText: u, aiText: a }),
-            });
-            const j = await r.json().catch(() => ({}));
-            if (j.emergencyLevel === 3) setEmergency(true);
-          } catch { /* 회송 실패 — 다음 턴에서 복구 */ }
+          if (convRef.current) {
+            try {
+              const r = await fetch("/api/live/turn", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversationId: convRef.current, userText: u, aiText: a }),
+              });
+              const j = await r.json().catch(() => ({}));
+              if (j.emergencyLevel === 3) setEmergency(true);
+            } catch { /* 회송 실패 — 다음 턴에서 복구 */ }
+          }
+          // 종료 명령("그만/이제 그만/조용히 해" 등) — 본선과 동일 패턴 모듈로 감지, 세션 종료
+          if (isSessionEndUtterance(u)) {
+            engineRef.current?.stop();
+            setState("stopped");
+          }
         },
         onError: (m) => setError(m),
       });
@@ -84,7 +91,7 @@ function LiveInner() {
         (window as unknown as Record<string, unknown>).__livePush = (b64: string) => engine.injectPcm(b64);
         (window as unknown as Record<string, unknown>).__liveEnd = () => engine.endInjectedUtterance();
       }
-      await engine.start({ fakeMic });
+      await engine.start({ fakeMic, conversationId: convId ?? undefined });
     } catch (e) {
       setError((e as Error).message);
       setState("error");
