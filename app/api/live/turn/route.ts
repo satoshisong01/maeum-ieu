@@ -16,6 +16,8 @@ import { detectEmergency } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
+import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
 
 export async function POST(req: Request) {
   // 라이브 베타 서버 게이트(2026-07-07 감사) — UI 링크 숨김과 짝. 플래그 없으면 저장 경로도 차단.
@@ -83,6 +85,16 @@ export async function POST(req: Request) {
       const envBlock = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]\n- 현재 한국 시각: ${t.dateStr}\n- 시간대: ${t.timeLabel}`;
       runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userText, assistantResponse: aiText, historyText, envBlock })
         .catch((e) => console.error("[live-turn:cognitive]", e));
+    }
+
+    // 기억 축적 — 프로필 추출(가족·취미 등 신규 사실) + 계층 요약 롤업. classic 경로(route.ts)와 동등.
+    //   라이브가 기본 음성경로가 된 뒤 이 연결이 없으면 새로 들은 정보가 다음 세션 페르소나에 반영되지 않음(2026-07-20).
+    if (userMsgId) {
+      const runMemory = async () => {
+        await extractAndSaveProfile({ userId, userMessage: userText, userMessageId: userMsgId }).catch((e) => console.error("[live-turn:profile]", e));
+        await maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[live-turn:summary]", e));
+      };
+      try { after(runMemory); } catch { runMemory().catch(() => {}); }
     }
 
     // Live 경로는 서버 즉답 게이트가 없으므로 클라에 응급 신호 전달(안내 모드 전환용)
