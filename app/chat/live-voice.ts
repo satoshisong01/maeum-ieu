@@ -115,30 +115,9 @@ export class LiveVoiceEngine {
     this.micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true } });
     this.micCtx = new AudioContext({ sampleRate: 16000 });
     const src = this.micCtx.createMediaStreamSource(this.micStream);
-    // 인라인 워크렛: Float32 → Int16, 1600샘플(100ms) 단위 postMessage
-    const workletCode = `
-      class PcmCapture extends AudioWorkletProcessor {
-        constructor() { super(); this.buf = []; this.len = 0; }
-        process(inputs) {
-          const ch = inputs[0]?.[0];
-          if (ch) {
-            const out = new Int16Array(ch.length);
-            for (let i = 0; i < ch.length; i++) out[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768));
-            this.buf.push(out); this.len += out.length;
-            if (this.len >= 1600) {
-              const merged = new Int16Array(this.len); let o = 0;
-              for (const b of this.buf) { merged.set(b, o); o += b.length; }
-              this.port.postMessage(merged.buffer, [merged.buffer]);
-              this.buf = []; this.len = 0;
-            }
-          }
-          return true;
-        }
-      }
-      registerProcessor("pcm-capture", PcmCapture);`;
-    const url = URL.createObjectURL(new Blob([workletCode], { type: "application/javascript" }));
-    await this.micCtx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
+    // 워크렛은 정적 파일(public/worklets/) — 구 blob: URL 방식은 CSP(script-src 'self')에 차단되어
+    // "Unable to load a worklet's module" (2026-07-20 실기기). same-origin 파일은 'self'로 통과.
+    await this.micCtx.audioWorklet.addModule("/worklets/pcm-capture.js");
     const node = new AudioWorkletNode(this.micCtx, "pcm-capture");
     node.port.onmessage = (e) => {
       if (this.stopped || !this.session) return;
