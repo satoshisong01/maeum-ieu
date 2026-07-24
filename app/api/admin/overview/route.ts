@@ -18,7 +18,7 @@ export async function GET() {
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   try {
-    const [users, links, usageRows, emergRecent] = await Promise.all([
+    const [users, links, usageRows, timeRows, emergRecent] = await Promise.all([
       prisma.user.findMany({
         select: { id: true, name: true, email: true, screeningMode: true, createdAt: true },
         orderBy: { createdAt: "desc" },
@@ -41,6 +41,31 @@ export async function GET() {
          FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
          GROUP BY c."userId"`,
       ),
+      // 사용시간 추정 — 메시지 타임스탬프 세션화(30분 이상 공백 = 새 세션, 세션당 최소 60초).
+      //   별도 세션 기록 테이블 없이 산출(스키마 변경 회피). "추정"임을 화면에 명시.
+      prisma.$queryRawUnsafe<{
+        user_id: string; sessions: bigint; total_secs: unknown; secs_30d: unknown; secs_7d: unknown;
+      }[]>(
+        `WITH msgs AS (
+           SELECT c."userId" AS uid, m."createdAt" AS ts
+           FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+         ), marked AS (
+           SELECT uid, ts,
+                  CASE WHEN LAG(ts) OVER w IS NULL OR ts - LAG(ts) OVER w > INTERVAL '30 minutes' THEN 1 ELSE 0 END AS brk
+           FROM msgs WINDOW w AS (PARTITION BY uid ORDER BY ts)
+         ), sess AS (
+           SELECT uid, ts, SUM(brk) OVER (PARTITION BY uid ORDER BY ts ROWS UNBOUNDED PRECEDING) AS sid
+           FROM marked
+         ), agg AS (
+           SELECT uid, sid, MIN(ts) AS started,
+                  GREATEST(EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts))), 60) AS secs
+           FROM sess GROUP BY uid, sid
+         )
+         SELECT uid AS user_id, COUNT(*) AS sessions, SUM(secs) AS total_secs,
+                COALESCE(SUM(secs) FILTER (WHERE started >= NOW() - INTERVAL '30 days'), 0) AS secs_30d,
+                COALESCE(SUM(secs) FILTER (WHERE started >= NOW() - INTERVAL '7 days'), 0) AS secs_7d
+         FROM agg GROUP BY uid`,
+      ),
       prisma.message.findMany({
         where: { emergencyLevel: { gte: 2 }, createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } },
         orderBy: { createdAt: "desc" },
@@ -53,6 +78,13 @@ export async function GET() {
     ]);
 
     const usage = new Map(usageRows.map((r) => [r.user_id, r]));
+    const times = new Map(timeRows.map((r) => [r.user_id, r]));
+    // 이름 정리 — 과거 curl cp949 깨짐(U+FFFD) 계정은 이메일 앞부분으로 대체 표시
+    const cleanName = (name: string | null, email: string | null): string => {
+      const n = (name || "").trim();
+      if (n && !/�/.test(n)) return n;
+      return (email || "").split("@")[0] || "(이름 없음)";
+    };
     const guardianCount = new Map<string, number>(); // 어르신 → 연결 보호자 수
     const patientCount = new Map<string, number>();  // 전문가 → 담당 환자 수
     for (const l of links) {
@@ -69,10 +101,13 @@ export async function GET() {
 
     const userRows = users.map((u) => {
       const s = usage.get(u.id);
+      const t = times.get(u.id);
       const lastAt = s?.last_at ? new Date(s.last_at) : null;
+      const secs30d = Number(t?.secs_30d ?? 0);
+      const activeDays = Number(s?.active_days_30d ?? 0);
       return {
         id: u.id,
-        name: u.name ?? "(이름 없음)",
+        name: cleanName(u.name, u.email),
         email: u.email ?? "",
         role: u.screeningMode ?? "user",
         createdAt: u.createdAt.toISOString(),
@@ -80,9 +115,13 @@ export async function GET() {
         patients: patientCount.get(u.id) ?? 0,
         totalMsgs: Number(s?.total_msgs ?? 0),
         msgs7d: Number(s?.msgs_7d ?? 0),
-        activeDays30d: Number(s?.active_days_30d ?? 0),
+        activeDays30d: activeDays,
         emerg30d: Number(s?.emerg_30d ?? 0),
         lastAt: lastAt ? lastAt.toISOString() : null,
+        sessions: Number(t?.sessions ?? 0),
+        totalSecs: Number(t?.total_secs ?? 0),
+        secs7d: Number(t?.secs_7d ?? 0),
+        avgSecsPerActiveDay: activeDays > 0 ? Math.round(secs30d / activeDays) : 0,
       };
     });
 
@@ -91,6 +130,7 @@ export async function GET() {
     const activeToday = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= dayStart).length;
     const active7d = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= weekAgo).length;
     const msgs7dTotal = userRows.reduce((s, u) => s + u.msgs7d, 0);
+    const secs7dTotal = userRows.reduce((s, u) => s + u.secs7d, 0);
     const emergUnnotified = emergRecent.filter((e) => !e.notifiedAt).length;
 
     return NextResponse.json({
@@ -100,6 +140,7 @@ export async function GET() {
         activeToday,
         active7d,
         msgs7dTotal,
+        secs7dTotal,
         emerg7d: emergRecent.length,
         emergUnnotified,
       },
@@ -109,7 +150,7 @@ export async function GET() {
         evidence: e.emergencyEvidence ?? "",
         notified: !!e.notifiedAt,
         at: e.createdAt.toISOString(),
-        userName: e.conversation.user.name ?? e.conversation.user.email ?? "?",
+        userName: cleanName(e.conversation.user.name, e.conversation.user.email),
       })),
     });
   } catch (e) {
