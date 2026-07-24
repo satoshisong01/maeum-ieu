@@ -15,9 +15,10 @@ interface UserRow {
   id: string; name: string; email: string; role: string; createdAt: string;
   guardians: number; patients: number; totalMsgs: number; msgs7d: number;
   activeDays30d: number; emerg30d: number; lastAt: string | null;
+  sessions: number; totalSecs: number; secs7d: number; avgSecsPerActiveDay: number;
 }
 interface Overview {
-  summary: { totalUsers: number; byRole: Record<string, number>; activeToday: number; active7d: number; msgs7dTotal: number; emerg7d: number; emergUnnotified: number };
+  summary: { totalUsers: number; byRole: Record<string, number>; activeToday: number; active7d: number; msgs7dTotal: number; secs7dTotal: number; emerg7d: number; emergUnnotified: number };
   users: UserRow[];
   emergencies: { level: number | null; evidence: string; notified: boolean; at: string; userName: string }[];
 }
@@ -28,6 +29,18 @@ const ROLE_STYLE: Record<string, string> = {
   pro: "bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200",
   general: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200",
 };
+
+/** 사용시간 포맷 — "45분" / "3시간 25분" / "1일 4시간" */
+function fmtDur(secs: number): string {
+  if (!secs) return "—";
+  const m = Math.round(secs / 60);
+  if (m < 1) return "1분 미만";
+  if (m < 60) return `${m}분`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 ${m % 60}분`;
+  const d = Math.floor(h / 24);
+  return `${d}일 ${h % 24}시간`;
+}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -74,6 +87,7 @@ export default function AdminPage() {
     { label: "어르신 / 전문가 / 일반", value: `${summary.byRole.user ?? 0} / ${summary.byRole.pro ?? 0} / ${summary.byRole.general ?? 0}` },
     { label: "오늘 사용 / 7일 사용", value: `${summary.activeToday}명 / ${summary.active7d}명` },
     { label: "7일 발화량", value: `${summary.msgs7dTotal}건` },
+    { label: "7일 사용시간", value: fmtDur(summary.secs7dTotal) },
     { label: "응급(7일) / 미발송", value: `${summary.emerg7d}건 / ${summary.emergUnnotified}건`, warn: summary.emergUnnotified > 0 },
   ];
 
@@ -89,7 +103,7 @@ export default function AdminPage() {
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         {/* 요약 카드 */}
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-6">
           {cards.map((c) => (
             <div key={c.label} className={`rounded-xl bg-white p-4 shadow-sm dark:bg-zinc-900 ${c.warn ? "ring-2 ring-red-500" : ""}`}>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">{c.label}</p>
@@ -100,7 +114,7 @@ export default function AdminPage() {
 
         {/* 회원별 사용량 */}
         <section className="rounded-xl bg-white p-4 shadow-sm dark:bg-zinc-900">
-          <h2 className="mb-3 text-base font-bold">회원별 현황 · 사용량</h2>
+          <h2 className="mb-3 text-base font-bold">회원별 현황 · 사용량 <span className="ml-1 text-xs font-normal text-zinc-400">(사용시간은 대화 기록 기반 추정 — 30분 이상 쉬면 별도 세션)</span></h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -111,6 +125,8 @@ export default function AdminPage() {
                   <th className="py-2 pr-3">연결</th>
                   <th className="py-2 pr-3 text-right">누적 발화</th>
                   <th className="py-2 pr-3 text-right">7일 발화</th>
+                  <th className="py-2 pr-3 text-right">총 사용시간</th>
+                  <th className="py-2 pr-3 text-right">일평균(30일)</th>
                   <th className="py-2 pr-3 text-right">30일 활동일</th>
                   <th className="py-2 pr-3 text-right">응급(30일)</th>
                   <th className="py-2">마지막 사용</th>
@@ -134,6 +150,8 @@ export default function AdminPage() {
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{u.totalMsgs.toLocaleString()}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{u.msgs7d.toLocaleString()}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{fmtDur(u.totalSecs)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{fmtDur(u.avgSecsPerActiveDay)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{u.activeDays30d}일</td>
                       <td className={`py-2 pr-3 text-right tabular-nums ${u.emerg30d > 0 ? "font-bold text-red-600" : ""}`}>{u.emerg30d}</td>
                       <td className="py-2 text-xs text-zinc-500">{fmtDate(u.lastAt)}</td>
