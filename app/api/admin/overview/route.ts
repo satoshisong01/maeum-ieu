@@ -1,0 +1,119 @@
+/**
+ * GET /api/admin/overview — 관리자 대시보드 통계.
+ *
+ * 반환: ① 요약(역할별 회원·활성·발화량·응급) ② 회원별 사용량 표 ③ 최근 응급 이벤트.
+ * 개인정보 원칙: 일상 대화 원문은 관리자에게도 비노출(동의서 §4) — 수치·메타데이터만.
+ * 응급 발화 근거(emergencyEvidence)는 위급 대응 목적의 기존 노출 예외를 따른다.
+ */
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getAdminSession } from "@/lib/admin";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+export async function GET() {
+  const session = await getAdminSession();
+  if (!session) return NextResponse.json({ error: "관리자 전용입니다." }, { status: 403 });
+
+  const rl = await checkRateLimit(`admin-overview:${session.user.id}`, 30, 60_000);
+  if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
+
+  try {
+    const [users, links, usageRows, emergRecent] = await Promise.all([
+      prisma.user.findMany({
+        select: { id: true, name: true, email: true, screeningMode: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.expertPatient.findMany({
+        where: { status: "active" },
+        select: { expertUserId: true, patientUserId: true },
+      }),
+      // 회원별 사용량 — 발화 수(전체/7일)·30일 활동일수·마지막 사용·응급(30일). 1쿼리 집계.
+      prisma.$queryRawUnsafe<{
+        user_id: string; total_msgs: bigint; msgs_7d: bigint; active_days_30d: bigint; emerg_30d: bigint; last_at: Date | null;
+      }[]>(
+        `SELECT c."userId" AS user_id,
+                COUNT(*) FILTER (WHERE m.role = 'user') AS total_msgs,
+                COUNT(*) FILTER (WHERE m.role = 'user' AND m."createdAt" >= NOW() - INTERVAL '7 days') AS msgs_7d,
+                COUNT(DISTINCT DATE(m."createdAt" AT TIME ZONE 'Asia/Seoul'))
+                  FILTER (WHERE m."createdAt" >= NOW() - INTERVAL '30 days') AS active_days_30d,
+                COUNT(*) FILTER (WHERE m.role = 'user' AND m."emergencyLevel" >= 2 AND m."createdAt" >= NOW() - INTERVAL '30 days') AS emerg_30d,
+                MAX(CASE WHEN m.role = 'user' THEN m."createdAt" END) AS last_at
+         FROM "Message" m JOIN "Conversation" c ON c.id = m."conversationId"
+         GROUP BY c."userId"`,
+      ),
+      prisma.message.findMany({
+        where: { emergencyLevel: { gte: 2 }, createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } },
+        orderBy: { createdAt: "desc" },
+        take: 15,
+        select: {
+          emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, createdAt: true,
+          conversation: { select: { user: { select: { name: true, email: true } } } },
+        },
+      }),
+    ]);
+
+    const usage = new Map(usageRows.map((r) => [r.user_id, r]));
+    const guardianCount = new Map<string, number>(); // 어르신 → 연결 보호자 수
+    const patientCount = new Map<string, number>();  // 전문가 → 담당 환자 수
+    for (const l of links) {
+      guardianCount.set(l.patientUserId, (guardianCount.get(l.patientUserId) ?? 0) + 1);
+      patientCount.set(l.expertUserId, (patientCount.get(l.expertUserId) ?? 0) + 1);
+    }
+
+    const kstDayStart = () => {
+      const now = new Date(Date.now() + 9 * 3600 * 1000);
+      return new Date(Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00+09:00`));
+    };
+    const dayStart = kstDayStart();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    const userRows = users.map((u) => {
+      const s = usage.get(u.id);
+      const lastAt = s?.last_at ? new Date(s.last_at) : null;
+      return {
+        id: u.id,
+        name: u.name ?? "(이름 없음)",
+        email: u.email ?? "",
+        role: u.screeningMode ?? "user",
+        createdAt: u.createdAt.toISOString(),
+        guardians: guardianCount.get(u.id) ?? 0,
+        patients: patientCount.get(u.id) ?? 0,
+        totalMsgs: Number(s?.total_msgs ?? 0),
+        msgs7d: Number(s?.msgs_7d ?? 0),
+        activeDays30d: Number(s?.active_days_30d ?? 0),
+        emerg30d: Number(s?.emerg_30d ?? 0),
+        lastAt: lastAt ? lastAt.toISOString() : null,
+      };
+    });
+
+    const byRole = { user: 0, pro: 0, general: 0 } as Record<string, number>;
+    for (const u of userRows) byRole[u.role] = (byRole[u.role] ?? 0) + 1;
+    const activeToday = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= dayStart).length;
+    const active7d = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= weekAgo).length;
+    const msgs7dTotal = userRows.reduce((s, u) => s + u.msgs7d, 0);
+    const emergUnnotified = emergRecent.filter((e) => !e.notifiedAt).length;
+
+    return NextResponse.json({
+      summary: {
+        totalUsers: userRows.length,
+        byRole,
+        activeToday,
+        active7d,
+        msgs7dTotal,
+        emerg7d: emergRecent.length,
+        emergUnnotified,
+      },
+      users: userRows,
+      emergencies: emergRecent.map((e) => ({
+        level: e.emergencyLevel,
+        evidence: e.emergencyEvidence ?? "",
+        notified: !!e.notifiedAt,
+        at: e.createdAt.toISOString(),
+        userName: e.conversation.user.name ?? e.conversation.user.email ?? "?",
+      })),
+    });
+  } catch (e) {
+    console.error("[admin-overview]", e);
+    return NextResponse.json({ error: "통계 조회에 실패했습니다." }, { status: 500 });
+  }
+}
