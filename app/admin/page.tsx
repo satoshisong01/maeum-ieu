@@ -118,7 +118,7 @@ export default function AdminPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                <tr className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400 [&>th]:whitespace-nowrap">
                   <th className="py-2 pr-3">이름</th>
                   <th className="py-2 pr-3">역할</th>
                   <th className="py-2 pr-3">가입일</th>
@@ -136,10 +136,10 @@ export default function AdminPage() {
                 {[...data.users]
                   .sort((a, b) => (b.lastAt ?? "").localeCompare(a.lastAt ?? ""))
                   .map((u) => (
-                    <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800">
+                    <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800 [&>td]:whitespace-nowrap">
                       <td className="py-2 pr-3">
-                        <span className="font-medium">{u.name}</span>
-                        <span className="ml-1 text-xs text-zinc-400">{u.email}</span>
+                        <div className="font-medium">{u.name}</div>
+                        <div className="max-w-[200px] truncate text-xs text-zinc-400" title={u.email}>{u.email}</div>
                       </td>
                       <td className="py-2 pr-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs ${ROLE_STYLE[u.role] ?? ROLE_STYLE.general}`}>{ROLE_LABEL[u.role] ?? u.role}</span>
