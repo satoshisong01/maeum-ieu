@@ -222,6 +222,7 @@ function LiveInner() {
         <h1 className="text-lg font-bold">🎤 음성 대화</h1>
         <div className="flex items-center gap-4 text-sm">
           <Link href="/chat" className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">⌨️ 글씨로 대화</Link>
+          <Link href="/mypage" className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">⚙️ 마이페이지</Link>
           <LogoutButton className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200" />
         </div>
       </header>
