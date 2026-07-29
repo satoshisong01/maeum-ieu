@@ -44,7 +44,11 @@ function Inner() {
   const [sampleCount, setSampleCount] = useState(0);
   const [result, setResult] = useState<{ score: number; isSelf: boolean } | null>(null);
   const [msg, setMsg] = useState("");
+  const [levels, setLevels] = useState<number[]>([]); // 실시간 음량 파형(최근 값)
   const recRef = useRef<VoiceRecorder | null>(null);
+
+  const BARS = 28;
+  const MIN_PEAK = 0.03; // 이보다 낮으면 사실상 무음/저음량 — 성문이 배경만 학습
 
   const sentence = ENROLL_SENTENCES[sampleCount % ENROLL_SENTENCES.length];
 
@@ -59,25 +63,38 @@ function Inner() {
   };
   useEffect(() => { if (status === "authenticated") loadStatus(); }, [status]);
 
-  const record = async (secs: number): Promise<Float32Array | null> => {
+  const record = async (secs: number): Promise<{ audio: Float32Array; peak: number } | null> => {
     setMsg("");
+    setLevels([]);
     const rec = new VoiceRecorder();
     recRef.current = rec;
-    try { await rec.start(); }
+    try {
+      await rec.start((level) => {
+        // 실시간 파형 — 오른쪽에서 밀려 들어오는 막대(로그 스케일로 잘 보이게)
+        setLevels((prev) => {
+          const v = Math.min(1, Math.sqrt(level) * 1.6);
+          const next = prev.length >= BARS ? prev.slice(1) : prev.slice();
+          next.push(v);
+          return next;
+        });
+      });
+    }
     catch { setMsg("마이크를 사용할 수 없어요. 권한을 허용한 뒤 다시 시도해 주세요."); return null; }
     setPhase("recording");
     for (let s = secs; s > 0; s--) { setRemain(s); await new Promise((r) => setTimeout(r, 1000)); }
     setPhase("processing");
-    const { audio } = await rec.stop();
+    const { audio, peak } = await rec.stop();
     recRef.current = null;
-    return audio;
+    return { audio, peak };
   };
 
   const doEnroll = async () => {
     setBusy(true); setMode("enroll"); setResult(null);
     try {
-      const audio = await record(ENROLL_SECS);
-      if (!audio) return;
+      const rec = await record(ENROLL_SECS);
+      if (!rec) return;
+      if (rec.peak < MIN_PEAK) { setMsg("🔇 목소리가 거의 안 들렸어요. 마이크에 가까이, 또박또박 다시 읽어 주세요. (이 표본은 저장하지 않았어요)"); return; }
+      const { audio } = rec;
       const embedding = await extractVoiceprintRobust(audio, 3, 1.5);
       const res = await fetch("/api/voiceprint", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -105,8 +122,10 @@ function Inner() {
   const doTest = async () => {
     setBusy(true); setMode("test"); setResult(null);
     try {
-      const audio = await record(TEST_SECS);
-      if (!audio) return;
+      const rec = await record(TEST_SECS);
+      if (!rec) return;
+      if (rec.peak < MIN_PEAK) { setMsg("🔇 목소리가 거의 안 들렸어요. 마이크에 가까이 다시 말씀해 주세요."); return; }
+      const { audio } = rec;
       const embedding = await extractVoiceprintRobust(audio, 3, 1.5);
       const res = await fetch("/api/voiceprint", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -133,10 +152,20 @@ function Inner() {
 
       <main className="mx-auto max-w-lg space-y-5 px-4 py-6">
         {phase !== "idle" && (
-          <div className="rounded-2xl bg-[#007bff] px-6 py-8 text-center text-white shadow-lg">
-            {phase === "recording"
-              ? <><p className="text-lg font-bold">🔴 녹음 중… {remain}초</p><p className="mt-1 text-sm opacity-90">{mode === "enroll" ? "아래 문장을 또박또박 읽어 주세요" : "아무 말이나 편하게 해 주세요"}</p></>
-              : <p className="text-lg font-bold">🧠 목소리를 분석하고 있어요…</p>}
+          <div className="rounded-2xl bg-[#007bff] px-6 py-6 text-center text-white shadow-lg">
+            {phase === "recording" ? (
+              <>
+                <p className="text-lg font-bold">🔴 녹음 중… {remain}초</p>
+                {/* 실시간 음파 — 말하면 막대가 커져요 */}
+                <div className="mx-auto mt-3 flex h-16 max-w-xs items-center justify-center gap-[3px]">
+                  {Array.from({ length: BARS }).map((_, i) => {
+                    const v = levels[i] ?? 0;
+                    return <span key={i} className="w-1.5 rounded-full bg-white/90 transition-all duration-75" style={{ height: `${Math.max(6, v * 100)}%` }} />;
+                  })}
+                </div>
+                <p className="mt-2 text-sm opacity-90">{mode === "enroll" ? "아래 문장을 또박또박 읽어 주세요" : "아무 말이나 편하게 해 주세요"}</p>
+              </>
+            ) : <p className="text-lg font-bold">🧠 목소리를 분석하고 있어요…</p>}
           </div>
         )}
 
