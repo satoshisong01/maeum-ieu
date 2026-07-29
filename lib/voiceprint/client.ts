@@ -36,7 +36,10 @@ async function getExtractor() {
       wasm.numThreads = 1;
     }
     const processor = await AutoProcessor.from_pretrained("wespeaker-voiceprint");
-    const model = await AutoModel.from_pretrained("wespeaker-voiceprint", { dtype: "q8" });
+    // ⚠ dtype는 fp32 필수 — q8 양자화 모델은 onnxruntime-web(브라우저 WASM)에서 임베딩이
+    //   뭉개져(다른 성별도 동일인으로 오인식) 화자 구분이 붕괴됨(2026-07-31 실기기). node에선 정상이라
+    //   ORT-web의 int8 경로 문제로 판단. fp32(26.5MB)는 수치적으로 안전 — 정확성 우선.
+    const model = await AutoModel.from_pretrained("wespeaker-voiceprint", { dtype: "fp32" });
     return { processor, model };
   })();
   return _extractor;
