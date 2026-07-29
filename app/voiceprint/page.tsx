@@ -13,7 +13,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LogoutButton } from "../LogoutButton";
 import { VoiceRecorder } from "@/lib/voiceprint/recorder";
-import { extractVoiceprint, warmupVoiceprint, VOICEPRINT_THRESHOLD } from "@/lib/voiceprint/client";
+import { extractVoiceprintRobust, warmupVoiceprint, VOICEPRINT_THRESHOLD } from "@/lib/voiceprint/client";
 
 const ENROLL_SECS = 20;
 const TEST_SECS = 5;
@@ -74,7 +74,7 @@ function Inner() {
     try {
       const audio = await record(ENROLL_SECS);
       if (!audio) return;
-      const embedding = await extractVoiceprint(audio);
+      const embedding = await extractVoiceprintRobust(audio);
       const res = await fetch("/api/voiceprint", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "enroll", embedding, dim: embedding.length, sampleSecs: audio.length / 16000, targetUserId: target }),
@@ -94,7 +94,7 @@ function Inner() {
     try {
       const audio = await record(TEST_SECS);
       if (!audio) return;
-      const embedding = await extractVoiceprint(audio);
+      const embedding = await extractVoiceprintRobust(audio);
       const res = await fetch("/api/voiceprint", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "verify", embedding, targetUserId: target }),
