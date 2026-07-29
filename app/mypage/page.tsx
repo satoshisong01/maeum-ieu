@@ -264,6 +264,10 @@ export default function MyPage() {
                   🩺 환자 관리 페이지 열기 →
                 </Link>
               )}
+              {/* 목소리 등록(화자식별) — 베타. 본인/보호자 계정에서 진입 */}
+              <Link href="/voiceprint" className="mt-2 block rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                🎙 목소리 등록·확인 (베타) →
+              </Link>
             </div>
 
             {/* 마음 건강 체크 — T3 본인용 결과 (일반인 계정 전용 — 모드 간 플로우 비혼합) */}
