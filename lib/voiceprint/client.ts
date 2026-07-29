@@ -21,7 +21,9 @@ async function getExtractor() {
   if (_extractor) return _extractor;
   _extractor = (async () => {
     const { AutoProcessor, AutoModel, env } = await import("@huggingface/transformers");
-    // 모델은 same-origin 정적 자산에서만 로드(외부 모델 금지). wasm 런타임만 기본 CDN 사용.
+    // 모델은 same-origin 정적 자산(/models/)에서만 로드(외부 모델 금지). wasm 런타임만 기본 CDN 사용.
+    //   브라우저는 allowLocalModels 기본 false → 명시적으로 켜야 self-host 경로에서 로드됨(2026-07-29 실기기).
+    env.allowLocalModels = true;
     env.allowRemoteModels = false;
     env.localModelPath = "/models/";
     const processor = await AutoProcessor.from_pretrained("wespeaker-voiceprint");
