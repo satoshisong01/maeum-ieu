@@ -43,6 +43,8 @@ function Inner() {
   const [remain, setRemain] = useState(0);
   const [sampleCount, setSampleCount] = useState(0);
   const [result, setResult] = useState<{ score: number; isSelf: boolean } | null>(null);
+  const [history, setHistory] = useState<{ score: number; label: string }[]>([]); // 진단용 최근 점수 기록
+  const [testLabel, setTestLabel] = useState("본인"); // 이번 테스트가 누구 목소리인지 태그
   const [msg, setMsg] = useState("");
   const [levels, setLevels] = useState<number[]>([]); // 실시간 음량 파형(최근 값)
   const recRef = useRef<VoiceRecorder | null>(null);
@@ -134,6 +136,7 @@ function Inner() {
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "확인 실패");
       setResult({ score: d.score, isSelf: d.isSelf });
+      setHistory((prev) => [{ score: d.score, label: testLabel }, ...prev].slice(0, 12));
     } catch (e) { setMsg(`오류: ${(e as Error).message}`); }
     finally { setBusy(false); setPhase("idle"); setMode(null); }
   };
@@ -203,10 +206,19 @@ function Inner() {
         <section className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
           <h2 className="text-base font-bold">② 목소리 확인 테스트</h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            5초 녹음해서 등록한 목소리와 같은 사람인지 확인해요. 본인·다른 사람 목소리로 각각 해 보세요.
+            5초 녹음해서 등록한 목소리와 같은 사람인지 확인해요. 아래에서 <b>누구 목소리인지</b> 고르고 테스트하면 점수가 기록돼요.
           </p>
+          {/* 이번 테스트 대상 태그 — 진단용 기록에 라벨링 */}
+          <div className="mt-2 flex gap-2">
+            {(["본인", "다른 사람", "침묵"] as const).map((t) => (
+              <button key={t} onClick={() => setTestLabel(t)} disabled={busy}
+                className={`flex-1 rounded-full px-3 py-2 text-sm font-semibold ${testLabel === t ? "bg-[#007bff] text-white" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>
+                {t}
+              </button>
+            ))}
+          </div>
           <button onClick={doTest} disabled={busy || !enrolled} className="mt-3 w-full rounded-full bg-[#007bff] px-6 py-4 text-lg font-bold text-white shadow disabled:opacity-50">
-            {enrolled ? "🎙 확인 테스트 (5초)" : "먼저 등록해 주세요"}
+            {enrolled ? `🎙 "${testLabel}" 목소리로 확인 (5초)` : "먼저 등록해 주세요"}
           </button>
           {result && (
             <div className="mt-4 rounded-xl border p-4 text-center dark:border-zinc-700">
@@ -217,6 +229,21 @@ function Inner() {
               <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
                 <div className={`h-full ${result.isSelf ? "bg-green-500" : "bg-red-400"}`} style={{ width: `${Math.max(0, Math.min(100, result.score * 100))}%` }} />
               </div>
+            </div>
+          )}
+
+          {/* 진단용 점수 기록 — 스크린샷 한 장으로 본인/남/침묵 분포 확인 */}
+          {history.length > 0 && (
+            <div className="mt-4 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
+              <p className="mb-2 text-xs font-semibold text-zinc-500">최근 점수 기록 (진단용)</p>
+              <ul className="space-y-1 text-sm">
+                {history.map((h, i) => (
+                  <li key={i} className="flex items-center justify-between">
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${h.label === "본인" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" : h.label === "다른 사람" ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"}`}>{h.label}</span>
+                    <span className="font-mono tabular-nums">{(h.score * 100).toFixed(0)}%</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </section>
