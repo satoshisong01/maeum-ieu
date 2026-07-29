@@ -9,9 +9,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  // 화자식별(voiceprint): onnxruntime-web WASM 런타임 바이너리를 jsDelivr에서 로드(오디오·데이터는 전송 X, 런타임 코드만).
-  //   transformers.js가 워커를 blob으로 띄우므로 worker-src에 blob: 허용. 모델은 self-host(/models/).
-  "connect-src 'self' wss://generativelanguage.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net",
+  // 화자식별(voiceprint): 모델·ORT WASM 런타임 모두 self-host(/models/, /ort/) — 외부 CDN 미사용.
+  "connect-src 'self' wss://generativelanguage.googleapis.com https://generativelanguage.googleapis.com",
   "worker-src 'self' blob:",
   "media-src 'self' blob: data:",
   "frame-ancestors 'none'",

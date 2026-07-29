@@ -21,11 +21,20 @@ async function getExtractor() {
   if (_extractor) return _extractor;
   _extractor = (async () => {
     const { AutoProcessor, AutoModel, env } = await import("@huggingface/transformers");
-    // 모델은 same-origin 정적 자산(/models/)에서만 로드(외부 모델 금지). wasm 런타임만 기본 CDN 사용.
+    // 모델은 same-origin 정적 자산(/models/)에서만 로드(외부 모델 금지).
     //   브라우저는 allowLocalModels 기본 false → 명시적으로 켜야 self-host 경로에서 로드됨(2026-07-29 실기기).
     env.allowLocalModels = true;
     env.allowRemoteModels = false;
     env.localModelPath = "/models/";
+    // ORT WASM 런타임도 자체 호스팅(/ort/) — CDN 스크립트를 CSP에 열지 않기 위함(건강앱 보안).
+    //   proxy=false: blob 워커를 안 만들어 'blob 모듈 동적 import 차단'(2026-07-29 실기기) 회피 + script-src 'self' 유지.
+    //   numThreads=1: SharedArrayBuffer(COOP/COEP) 불필요. 등록·대조는 단발이라 메인스레드로 충분.
+    const wasm = env.backends?.onnx?.wasm;
+    if (wasm) {
+      wasm.wasmPaths = "/ort/";
+      wasm.proxy = false;
+      wasm.numThreads = 1;
+    }
     const processor = await AutoProcessor.from_pretrained("wespeaker-voiceprint");
     const model = await AutoModel.from_pretrained("wespeaker-voiceprint", { dtype: "q8" });
     return { processor, model };
