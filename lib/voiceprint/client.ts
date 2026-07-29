@@ -47,12 +47,45 @@ export async function warmupVoiceprint(): Promise<void> {
   try { await getExtractor(); } catch { /* 실패는 추출 시점에 표면화 */ }
 }
 
-/** 16kHz mono Float32 오디오 → 256차원 성문 임베딩 */
+/** 16kHz mono Float32 오디오 → 256차원 성문 임베딩(단일 창) */
 export async function extractVoiceprint(audio: Float32Array): Promise<number[]> {
   const { processor, model } = await getExtractor();
   const inputs = await processor(audio);
   const { last_hidden_state } = await model(inputs);
   return last_hidden_state.tolist()[0] as number[];
+}
+
+function l2normalize(v: number[]): number[] {
+  let n = 0;
+  for (const x of v) n += x * x;
+  n = Math.sqrt(n) || 1;
+  return v.map((x) => x / n);
+}
+
+/**
+ * 여러 창(window)으로 나눠 임베딩을 뽑아 평균(정규화 후) → 안정적인 성문.
+ * 통짜 1회 추출은 노이즈에 흔들려 본인도 유사도가 낮게 나올 수 있음 — PoC에서 다개 평균이 100%를 낸 방식.
+ * 짧으면 자동으로 단일 창 처리.
+ */
+export async function extractVoiceprintRobust(audio: Float32Array, windowSec = 4, stepSec = 2): Promise<number[]> {
+  const SR = 16000;
+  const win = Math.floor(windowSec * SR);
+  const step = Math.floor(stepSec * SR);
+  const segs: Float32Array[] = [];
+  if (audio.length <= win + step) {
+    segs.push(audio);
+  } else {
+    for (let start = 0; start + win <= audio.length; start += step) {
+      segs.push(audio.subarray(start, start + win));
+    }
+  }
+  const embs: number[][] = [];
+  for (const s of segs) embs.push(l2normalize(await extractVoiceprint(s)));
+  const dim = embs[0].length;
+  const mean = new Array(dim).fill(0);
+  for (const e of embs) for (let i = 0; i < dim; i++) mean[i] += e[i];
+  for (let i = 0; i < dim; i++) mean[i] /= embs.length;
+  return l2normalize(mean);
 }
 
 /** 코사인 유사도 (클라 즉시 표시용 — 서버도 동일 계산으로 판정) */
