@@ -218,13 +218,19 @@ function LiveInner() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f0f2f5] text-zinc-900 dark:bg-[#0b0d10] dark:text-zinc-100">
-      <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <h1 className="text-lg font-bold">🎤 음성 대화</h1>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/chat" className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">⌨️ 글씨로 대화</Link>
-          <Link href="/mypage" className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">⚙️ 마이페이지</Link>
-          <LogoutButton className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200" />
-        </div>
+      <header className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <h1 className="shrink-0 whitespace-nowrap text-base font-bold">🎤 음성 대화</h1>
+        <nav className="flex shrink-0 items-center gap-1">
+          <Link href="/chat" title="글씨로 대화" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+            <span className="text-lg">⌨️</span><span className="ml-1 hidden text-sm sm:inline">글씨로</span>
+          </Link>
+          <Link href="/mypage" title="마이페이지" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+            <span className="text-lg">⚙️</span><span className="ml-1 hidden text-sm sm:inline">설정</span>
+          </Link>
+          <LogoutButton title="로그아웃" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+            <span className="text-lg">🚪</span><span className="ml-1 hidden text-sm sm:inline">로그아웃</span>
+          </LogoutButton>
+        </nav>
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-2 px-4 py-4">
