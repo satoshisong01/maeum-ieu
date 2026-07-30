@@ -52,11 +52,16 @@ export async function GET(req: Request) {
   const uid = await resolveTarget(session as never, targetUserId);
   if (!uid) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
 
-  const rows = await prisma.$queryRawUnsafe<{ updated_at: Date; sample_secs: number | null; sample_count: number }[]>(
-    `SELECT updated_at, sample_secs, sample_count FROM speaker_voiceprint WHERE user_id = $1`, uid,
+  const withEmbedding = new URL(req.url).searchParams.get("withEmbedding") === "1";
+  const cols = withEmbedding ? "updated_at, sample_secs, sample_count, embedding" : "updated_at, sample_secs, sample_count";
+  const rows = await prisma.$queryRawUnsafe<{ updated_at: Date; sample_secs: number | null; sample_count: number; embedding?: unknown }[]>(
+    `SELECT ${cols} FROM speaker_voiceprint WHERE user_id = $1`, uid,
   );
   const r = rows[0];
-  return NextResponse.json({ enrolled: !!r, sampleCount: r?.sample_count ?? 0, updatedAt: r?.updated_at ?? null, sampleSecs: r?.sample_secs ?? null });
+  const out: Record<string, unknown> = { enrolled: !!r, sampleCount: r?.sample_count ?? 0, updatedAt: r?.updated_at ?? null, sampleSecs: r?.sample_secs ?? null, threshold: VOICEPRINT_THRESHOLD };
+  // 본인 성문 벡터 반환 — 상시 감시가 기기 안에서 화자 게이팅(비환자 오디오 미전송)하도록. 본인/권한자 한정.
+  if (withEmbedding && r?.embedding) out.embedding = r.embedding;
+  return NextResponse.json(out);
 }
 
 export async function POST(req: Request) {

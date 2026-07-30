@@ -49,7 +49,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     conversation: { id: conv.id },
-    messages: isProxyAccess ? [] : conv.messages.map((m) => ({
+    messages: isProxyAccess ? [] : conv.messages.filter((m) => !m.content.startsWith("[관찰]")).map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
