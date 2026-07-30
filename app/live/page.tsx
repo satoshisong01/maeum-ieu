@@ -13,7 +13,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { LiveVoiceEngine } from "../chat/live-voice";
-import { LogoutButton } from "../LogoutButton";
+import { LogoutButton, LogoutIcon } from "../LogoutButton";
 import { isSessionEndUtterance } from "@/lib/chat/session-end";
 import { classifyMedReply } from "@/lib/chat/medication";
 
@@ -230,8 +230,8 @@ function LiveInner() {
           <Link href="/mypage" title="설정" aria-label="설정" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
             <span className="text-lg">⚙️</span>
           </Link>
-          <LogoutButton title="로그아웃" aria-label="로그아웃" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-            <span className="text-lg">⏻</span>
+          <LogoutButton title="로그아웃" aria-label="로그아웃" className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+            <LogoutIcon className="h-5 w-5" /><span className="hidden text-sm sm:inline">로그아웃</span>
           </LogoutButton>
         </nav>
       </header>
