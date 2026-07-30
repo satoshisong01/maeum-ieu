@@ -15,20 +15,15 @@ import { LogoutButton } from "../LogoutButton";
 import { VoiceRecorder } from "@/lib/voiceprint/recorder";
 import { extractVoiceprintRobust, warmupVoiceprint, VOICEPRINT_THRESHOLD } from "@/lib/voiceprint/client";
 
-const ENROLL_SECS = 8;   // 표본당 녹음 길이(문장 하나 낭독)
+const ENROLL_SECS = 30;  // 한 번에 길게 — 내부에서 여러 창으로 쪼개 표본화(실측: 30초 1회로 본인 87%)
 const TEST_SECS = 5;
-const RECOMMEND_SAMPLES = 5; // 권장 표본 수(이 이상이면 충분)
+const RECOMMEND_SAMPLES = 1; // 30초 1회면 충분. 더 하면 조금 더 안정적(선택)
 
-// 발음(받침·모음·자음·숫자)을 고루 담은 다양한 표본 문장 — 표본마다 다른 것을 로테이션
+// 30초 동안 읽을 긴 지문 — 받침·모음·자음·숫자를 고루 담아 발음 다양성 확보. 표본마다 로테이션.
 const ENROLL_SENTENCES = [
-  "안녕하세요, 오늘 날씨가 참 맑고 좋네요.",
-  "아침에 미역국이랑 김치를 먹었더니 속이 든든합니다.",
-  "우리 손주가 여덟 살인데 벌써 글씨를 잘 씁니다.",
-  "빨간 우산을 쓰고 파란 대문 앞에서 기다렸어요.",
-  "숫자를 세어 볼게요. 하나, 둘, 셋, 넷, 다섯, 여섯.",
-  "봄에는 벚꽃, 여름에는 수박, 가을에는 단풍이 좋지요.",
-  "동네 병원에 다녀오는 길에 약국도 들렀습니다.",
-  "따뜻한 커피 한 잔 마시며 라디오를 들었어요.",
+  "안녕하세요. 오늘은 날씨가 맑고 바람도 선선해서 기분이 참 좋습니다. 아침에는 미역국에 밥을 말아 먹고, 동네 한 바퀴 산책을 다녀왔어요. 우리 손주가 벌써 여덟 살인데, 학교에서 받아쓰기를 백 점 맞았다고 자랑하더라고요. 숫자도 세어 볼까요. 하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열. 빨간 우산, 파란 대문, 노란 은행잎이 참 예쁜 계절이네요. 건강하게 잘 지내시길 바랍니다. 고맙습니다.",
+  "요즘은 저녁마다 라디오를 들으면서 지냅니다. 점심에는 김치찌개를 끓일까 된장찌개를 끓일까 즐거운 고민을 했어요. 젊었을 때는 시장에서 장사를 하느라 새벽부터 부지런히 움직였지요. 봄에는 벚꽃, 여름에는 수박, 가을에는 단풍, 겨울에는 따뜻한 군고구마가 최고입니다. 창밖으로 참새 세 마리가 짹짹 지저귀며 날아갑니다. 오늘도 좋은 하루 보내세요.",
+  "우리 동네 앞에는 큰 은행나무가 한 그루 서 있습니다. 매일 아침 그 아래를 지나 병원과 약국에 다녀오곤 해요. 어릴 적에는 강가에서 물고기도 잡고 연도 날리며 뛰어놀았습니다. 밥은 꼭 챙겨 드시고, 물도 자주 드시고, 무리하지 마세요. 열, 아홉, 여덟, 일곱, 여섯, 다섯, 넷, 셋, 둘, 하나. 오늘 이야기를 들어주셔서 정말 감사합니다.",
 ];
 
 function Inner() {
@@ -105,7 +100,7 @@ function Inner() {
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "등록 실패");
       setSampleCount(d.sampleCount ?? sampleCount + 1);
-      setMsg(`표본 ${d.sampleCount}개 등록됨${d.sampleCount >= RECOMMEND_SAMPLES ? " — 충분해요! 이제 확인 테스트를 해보세요." : ` — ${RECOMMEND_SAMPLES}개 이상 권장`}`);
+      setMsg(`목소리 등록 완료! (표본 ${d.sampleCount}개) 이제 아래에서 확인 테스트를 해보세요.`);
     } catch (e) { setMsg(`오류: ${(e as Error).message}`); }
     finally { setBusy(false); setPhase("idle"); setMode(null); }
   };
@@ -178,22 +173,22 @@ function Inner() {
         <section className="rounded-2xl bg-white p-5 shadow-sm dark:bg-zinc-900">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold">① 목소리 등록</h2>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${sampleCount >= RECOMMEND_SAMPLES ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"}`}>
-              표본 {sampleCount} / {RECOMMEND_SAMPLES}
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${enrolled ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"}`}>
+              {enrolled ? `등록됨 (표본 ${sampleCount})` : "미등록"}
             </span>
           </div>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            지문 등록처럼 <b>여러 번 녹음할수록 정확</b>해져요. 매번 <b>다른 문장</b>을 8초씩 읽어 주세요. (5개 이상 권장)
+            아래 문장을 <b>30초 동안 편하게</b> 읽어 주세요. 한 번이면 충분하고, 더 하면 조금 더 정확해져요.
           </p>
           {/* 진행 바 */}
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-            <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (sampleCount / RECOMMEND_SAMPLES) * 100)}%` }} />
+            <div className="h-full bg-green-500 transition-all" style={{ width: `${enrolled ? 100 : 0}%` }} />
           </div>
-          <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-4 text-center text-base font-medium leading-relaxed text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+          <div className="mt-3 max-h-40 overflow-y-auto rounded-xl bg-zinc-50 px-4 py-4 text-base font-medium leading-relaxed text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
             “{sentence}”
           </div>
           <button onClick={doEnroll} disabled={busy} className="mt-4 w-full rounded-full bg-[#28a745] px-6 py-4 text-lg font-bold text-white shadow disabled:opacity-50">
-            🎙 {enrolled ? `표본 추가하기 (${sampleCount + 1}번째, 8초)` : "등록 시작 (8초)"}
+            🎙 {enrolled ? `한 번 더 등록하기 (30초)` : "등록 시작 (30초)"}
           </button>
           {enrolled && (
             <button onClick={doReset} disabled={busy} className="mt-2 w-full text-center text-xs text-zinc-400 underline hover:text-zinc-600 dark:hover:text-zinc-300">
