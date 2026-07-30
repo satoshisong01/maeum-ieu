@@ -158,7 +158,7 @@ async function fetchMemories(userId: string, query: string): Promise<string> {
 async function fetchRecentHistory(conversationId: string): Promise<{ role: string; content: string; createdAt?: string }[]> {
   try {
     const rows = await prisma.message.findMany({
-      where: { conversationId },
+      where: { conversationId, NOT: { content: { startsWith: "[관찰]" } } }, // 상시 감시 로그는 대화 컨텍스트에서 제외
       orderBy: { createdAt: "desc" },
       take: 80,
       select: { role: true, content: true, createdAt: true },
