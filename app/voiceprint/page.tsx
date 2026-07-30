@@ -150,7 +150,7 @@ function Inner() {
 
       <main className="mx-auto max-w-lg space-y-5 px-4 py-6">
         {phase !== "idle" && (
-          <div className="rounded-2xl bg-[#007bff] px-6 py-6 text-center text-white shadow-lg">
+          <div className="sticky top-2 z-20 rounded-2xl bg-[#007bff] px-6 py-6 text-center text-white shadow-xl ring-4 ring-blue-300/40">
             {phase === "recording" ? (
               <>
                 <p className="text-lg font-bold">🔴 녹음 중… {remain}초</p>
@@ -184,8 +184,15 @@ function Inner() {
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
             <div className="h-full bg-green-500 transition-all" style={{ width: `${enrolled ? 100 : 0}%` }} />
           </div>
-          <div className="mt-3 max-h-40 overflow-y-auto rounded-xl bg-zinc-50 px-4 py-4 text-base font-medium leading-relaxed text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-            “{sentence}”
+          <div className="relative mt-3">
+            <div className="max-h-40 overflow-y-auto rounded-xl bg-zinc-50 px-4 py-4 pr-9 text-base font-medium leading-relaxed text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+              “{sentence}”
+            </div>
+            {/* 스크롤 가능 힌트 */}
+            <div className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400">
+              <span className="text-lg">⇕</span>
+            </div>
+            <p className="mt-1 text-center text-xs text-zinc-400">↕ 문장이 길면 위아래로 넘겨 보세요</p>
           </div>
           <button onClick={doEnroll} disabled={busy} className="mt-4 w-full rounded-full bg-[#28a745] px-6 py-4 text-lg font-bold text-white shadow disabled:opacity-50">
             🎙 {enrolled ? `한 번 더 등록하기 (30초)` : "등록 시작 (30초)"}
@@ -212,8 +219,8 @@ function Inner() {
               </button>
             ))}
           </div>
-          <button onClick={doTest} disabled={busy || !enrolled} className="mt-3 w-full rounded-full bg-[#007bff] px-6 py-4 text-lg font-bold text-white shadow disabled:opacity-50">
-            {enrolled ? `🎙 "${testLabel}" 목소리로 확인 (5초)` : "먼저 등록해 주세요"}
+          <button onClick={doTest} disabled={busy || !enrolled} className="mt-3 w-full whitespace-nowrap rounded-full bg-[#007bff] px-4 py-4 text-base font-bold text-white shadow disabled:opacity-50">
+            {enrolled ? `🎙 ${testLabel} 목소리로 확인` : "먼저 등록해 주세요"}
           </button>
           {result && (
             <div className="mt-4 rounded-xl border p-4 text-center dark:border-zinc-700">
