@@ -10,7 +10,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { LogoutButton } from "../LogoutButton";
+import { LogoutButton, LogoutIcon } from "../LogoutButton";
 import { VoiceMonitor } from "@/lib/voiceprint/monitor";
 import { extractVoiceprintRobust, cosineSim, float32ToWavBase64, warmupVoiceprint } from "@/lib/voiceprint/client";
 
@@ -106,7 +106,7 @@ export default function ObservePage() {
         <nav className="flex shrink-0 items-center gap-1">
           <Link href="/live" title="음성 대화로" className="rounded-lg px-2 py-1.5 text-lg text-zinc-400 hover:bg-zinc-800">🎤</Link>
           <Link href="/mypage" title="설정" className="rounded-lg px-2 py-1.5 text-lg text-zinc-400 hover:bg-zinc-800">⚙️</Link>
-          <LogoutButton title="로그아웃" className="rounded-lg px-2 py-1.5 text-lg text-zinc-400 hover:bg-zinc-800">⏻</LogoutButton>
+          <LogoutButton title="로그아웃" className="rounded-lg px-2 py-1.5 text-zinc-400 hover:bg-zinc-800"><LogoutIcon className="h-5 w-5" /></LogoutButton>
         </nav>
       </header>
 

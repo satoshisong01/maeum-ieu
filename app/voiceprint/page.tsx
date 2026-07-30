@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { LogoutButton } from "../LogoutButton";
+import { LogoutButton, LogoutIcon } from "../LogoutButton";
 import { VoiceRecorder } from "@/lib/voiceprint/recorder";
 import { extractVoiceprintRobust, warmupVoiceprint, VOICEPRINT_THRESHOLD } from "@/lib/voiceprint/client";
 
@@ -144,7 +144,7 @@ function Inner() {
         <h1 className="shrink-0 whitespace-nowrap text-base font-bold">🎙 목소리 등록·확인</h1>
         <nav className="flex shrink-0 items-center gap-1">
           <Link href="/chat" title="대화 화면" className="rounded-lg px-2 py-1.5 text-lg text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">💬</Link>
-          <LogoutButton title="로그아웃" className="rounded-lg px-2 py-1.5 text-lg text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">🚪</LogoutButton>
+          <LogoutButton title="로그아웃" className="rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"><LogoutIcon className="h-5 w-5" /></LogoutButton>
         </nav>
       </header>
 
