@@ -21,23 +21,35 @@ jobs:
   full-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DB_URL: ${{ secrets.DATABASE_URL }}  # 없으면(백업 저장소 등) DB 검사 graceful skip
 
     steps:
+      # DATABASE_URL secret이 없는 저장소(백업 미러 등)에서는 DB 검사를 건너뛴다.
+      #   secret 부재로 매일 밤 실패 메일이 오던 것을 방지. secret이 있는 주 저장소는 정상 수행.
+      - name: DB secret 확인
+        if: ${{ env.DB_URL == '' }}
+        run: echo "::notice::DATABASE_URL secret 미설정 — DB 대조 검사 건너뜀(이 저장소는 미러/보조). regex-only 검사는 CI에서 이미 수행."
+
       - uses: actions/checkout@v4
+        if: ${{ env.DB_URL != '' }}
       - uses: actions/setup-node@v4
+        if: ${{ env.DB_URL != '' }}
         with:
           node-version: '20'
           cache: 'npm'
 
       - run: npm ci
+        if: ${{ env.DB_URL != '' }}
 
       - name: Prompt-leak full (DB cross-check)
+        if: ${{ env.DB_URL != '' }}
         run: npx tsx scripts/check-prompt-leak.ts
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ env.DB_URL }}
 
       - name: Notify on failure
-        if: failure()
+        if: ${{ failure() && env.DB_URL != '' }}
         run: |
           echo "::error::Prompt-leak detected! User-specific data may be embedded in prompts."
           echo "Run locally: npx tsx scripts/check-prompt-leak.ts"
