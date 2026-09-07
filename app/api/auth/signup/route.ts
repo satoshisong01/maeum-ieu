@@ -85,7 +85,8 @@ export async function POST(req: Request) {
         companionName: companionName?.trim().slice(0, 20) || undefined,
         companionRelation: companionRelation?.trim().slice(0, 20) || undefined,
         userHonorific: userHonorific?.trim().slice(0, 20) || null,
-        screeningMode: screeningMode === "pro" ? "pro" : "user", // 계정 역할. 일반인(general)은 이번 단계 범위 제외 — user로 처리(하반기 재개)
+        // 계정 역할 4종 화이트리스트. user=어르신 / pro=의사·전문가 / guardian=보호자·가족 / general=일반인. 그 외 값은 user로.
+        screeningMode: screeningMode === "pro" || screeningMode === "guardian" || screeningMode === "general" ? screeningMode : "user",
       },
     });
 

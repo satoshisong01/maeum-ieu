@@ -3,6 +3,7 @@ import type { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { normalizeMode } from "@/lib/roles";
 import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
@@ -45,7 +46,7 @@ export const authOptions: NextAuthOptions = {
         });
         if (dbUser) {
           token.name = dbUser.name;
-          token.screeningMode = dbUser.screeningMode === "pro" ? "pro" : dbUser.screeningMode === "general" ? "general" : "user";
+          token.screeningMode = normalizeMode(dbUser.screeningMode);
         }
       }
       return token;
