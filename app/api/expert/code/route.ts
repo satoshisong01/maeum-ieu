@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth";
 import { randomBytes } from "crypto";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveViewerRole } from "@/lib/roles";
 
 // 혼동 문자(0/O, 1/I/L) 제외 — 어르신 보호자가 입력하기 쉬운 코드
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -20,8 +21,9 @@ function generateCode(): string {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  if (session.user.screeningMode !== "pro") {
-    return NextResponse.json({ error: "전문가 계정 전용 기능입니다." }, { status: 403 });
+  // 의사(pro)·보호자(guardian) 모두 어르신을 연결하려면 초대 코드가 필요
+  if (!resolveViewerRole(session.user.screeningMode)) {
+    return NextResponse.json({ error: "의사·보호자 계정 전용 기능입니다." }, { status: 403 });
   }
 
   const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { expertCode: true } });

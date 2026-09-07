@@ -18,6 +18,7 @@ interface ExamSession {
   trend: null | { direction: string; deltaPct: number };
 }
 interface Detail {
+  viewerRole?: "pro" | "guardian";
   patient: { name: string; age: number | null; gender: string | null };
   examDisclaimer?: string;
   examSessions?: ExamSession[];
@@ -45,6 +46,15 @@ export default function ExamReportPage() {
 
   if (error) return <div className="p-8 text-sm text-red-600">{error}</div>;
   if (!data) return <div className="p-8 text-sm text-zinc-500">결과지를 준비 중…</div>;
+  if (data.viewerRole === "guardian") {
+    return (
+      <div className="mx-auto max-w-md p-8 text-center">
+        <p className="text-lg font-bold text-zinc-800 dark:text-zinc-100">🩺 검진 결과지는 담당 의사 전용입니다</p>
+        <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">문항별 채점·평가 기준 등 상세 검진 내역은 담당 의사만 볼 수 있어요. 보호자에게는 상태 요약과 위급 알림만 제공됩니다.</p>
+        <a href={`/expert/patients/${params?.id}`} className="mt-5 inline-block rounded-full bg-zinc-800 px-6 py-3 text-sm font-semibold text-white dark:bg-zinc-200 dark:text-zinc-900">← 상태 요약으로</a>
+      </div>
+    );
+  }
 
   const sessions = data.examSessions ?? [];
   const latest = sessions.find((e) => e.totalScore != null) ?? sessions[0];

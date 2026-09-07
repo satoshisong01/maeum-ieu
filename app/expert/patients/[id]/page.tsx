@@ -15,6 +15,7 @@ interface DomainRow { domain: string; label: string; recentAvg: number | null; r
 interface WeekRow { weekStart: string; avg: number; count: number }
 interface EventRow { date: string; domain: string; score: number; note: string | null; evidence: string | null }
 interface Detail {
+  viewerRole?: "pro" | "guardian";
   patient: { name: string; age: number | null; gender: string | null };
   overallAvg: number | null; tier: string; tierText: string;
   reliability?: { reliable: boolean; provisional: boolean; showLevel: boolean };
@@ -28,6 +29,9 @@ interface Detail {
   examSessions?: ExamSession[];
   examTrend?: { direction: string; label: string; detail: string } | null;
   examTrendPoints?: { round: number; date: string; score: number; max: number; band: string | null }[];
+  // 보호자(guardian) 요약 전용 — 상세(domains/weekly/events/examSessions)는 서버가 보내지 않음
+  statusLine?: string; needsCare?: boolean; advice?: string;
+  emergency?: { count: number; lastAt: string | null; notifiedCount: number };
 }
 interface ExamSession {
   id: string; startedAt: string; endedAt: string | null; doctorComment: string;
@@ -68,6 +72,64 @@ const TIER_STYLE: Record<string, string> = {
   "평가전": "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
 };
 const scoreColor = (v: number | null) => v === null ? "bg-zinc-200 dark:bg-zinc-700" : v >= 1.5 ? "bg-red-400" : v >= 0.8 ? "bg-orange-400" : v >= 0.3 ? "bg-amber-400" : "bg-emerald-400";
+
+/** 보호자(guardian) 요약 뷰 — 결과 문구 + 위급 여부 + 복약 이행률만. 문항·점수·근거 등 상세는 담지 않는다. */
+function GuardianSummary({ d }: { d: Detail }) {
+  const care = !!d.needsCare;
+  const fmt = (s: string | null | undefined) => s ? new Date(s).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+  const comp = d.medication?.weekCompliance;
+  const compPct = comp && comp.expected > 0 ? Math.round((comp.confirmed / comp.expected) * 100) : null;
+  return (
+    <>
+      {/* 핵심 상태 — 크게 */}
+      <section className={`mb-5 rounded-2xl border p-6 ${care ? "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-900/20" : "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-900/20"}`}>
+        <div className="flex items-center gap-3">
+          <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{d.patient.name}</span>
+          <span className="text-sm text-zinc-500">{d.patient.age ? `${d.patient.age}세` : ""} {d.patient.gender === "male" ? "남" : d.patient.gender === "female" ? "여" : ""}</span>
+          <span className={`ml-auto rounded-full px-3 py-1 text-sm font-bold ${care ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}`}>{care ? "🩺 진료 권장" : "양호"}</span>
+        </div>
+        <p className={`mt-4 text-lg font-bold leading-relaxed ${care ? "text-red-800 dark:text-red-200" : "text-zinc-800 dark:text-zinc-100"}`}>{d.statusLine}</p>
+        {d.advice && <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{d.advice}</p>}
+        {d.trend && d.trend !== "자료부족" && d.trendText && (
+          <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200">{d.trendText}</p>
+        )}
+      </section>
+
+      {/* 위급 이력 */}
+      <section className="mb-5 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">🚨 위급 감지 이력</h2>
+        {d.emergency && d.emergency.count > 0 ? (
+          <p className="text-sm text-zinc-700 dark:text-zinc-200">
+            지금까지 <b className="text-red-600 dark:text-red-400">{d.emergency.count}건</b>의 위급 징후가 감지되었어요.
+            {d.emergency.lastAt && <> 가장 최근은 <b>{fmt(d.emergency.lastAt)}</b>입니다.</>}
+            {d.emergency.notifiedCount > 0 && <> 이 중 {d.emergency.notifiedCount}건은 보호자에게 알림이 발송되었습니다.</>}
+          </p>
+        ) : (
+          <p className="text-sm text-zinc-500">감지된 위급 징후가 없습니다.</p>
+        )}
+      </section>
+
+      {/* 복약 이행 */}
+      {compPct !== null && (
+        <section className="mb-5 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">💊 최근 7일 복약 이행</h2>
+          <div className="flex items-center gap-3">
+            <div className="h-3 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+              <div className={`h-full ${compPct >= 80 ? "bg-emerald-400" : compPct >= 50 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${compPct}%` }} />
+            </div>
+            <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200">{compPct}%</span>
+          </div>
+          <p className="mt-1 text-xs text-zinc-400">{comp!.confirmed}회 복용 확인 / 예정 {comp!.expected}회</p>
+        </section>
+      )}
+
+      <p className="rounded-xl bg-zinc-100 px-4 py-3 text-xs leading-relaxed text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+        질문 내역·문항별 점수·평가 기준 등 상세 평가내역은 담당 <b>의사</b>만 열람할 수 있어요. 보호자에게는 결과 요약과 위급 알림만 제공됩니다.
+        어르신 본인에게는 결과가 보이지 않으며, 일상 대화 내용도 공개되지 않습니다.
+      </p>
+    </>
+  );
+}
 
 export default function PatientDetailPage() {
   const { status } = useSession();
@@ -111,21 +173,21 @@ export default function PatientDetailPage() {
       .catch(() => setError("불러오지 못했습니다. 새로고침해 주세요."));
   }, [status, params, router]);
 
-  const maxWeekly = data ? Math.max(0.5, ...data.weekly.map((w) => w.avg)) : 1;
+  const maxWeekly = data && Array.isArray(data.weekly) ? Math.max(0.5, ...data.weekly.map((w) => w.avg)) : 1;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">🩺 환자 리포트</h1>
+          <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{data?.viewerRole === "guardian" ? "👨‍👩‍👧 상태 요약" : "🩺 환자 리포트"}</h1>
           <div className="flex items-center gap-3">
-            {params?.id && (
+            {params?.id && data?.viewerRole !== "guardian" && (
               <Link href={`/chat?patient=${params.id}`} className="rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-700">
                 🩺 검사 시작
               </Link>
             )}
             <ThemeToggle />
-            <Link href="/expert" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">← 환자 목록</Link>
+            <Link href="/expert" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">← {data?.viewerRole === "guardian" ? "목록" : "환자 목록"}</Link>
             <LogoutButton />
           </div>
         </div>
@@ -134,7 +196,8 @@ export default function PatientDetailPage() {
       <main className="mx-auto max-w-4xl px-6 py-8">
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">{error}</p>}
         {!error && !data && <p className="text-sm text-zinc-500">불러오는 중…</p>}
-        {data && (
+        {data && data.viewerRole === "guardian" && <GuardianSummary d={data} />}
+        {data && data.viewerRole !== "guardian" && (
           <>
             <section className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-center gap-3">

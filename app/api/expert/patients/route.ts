@@ -7,15 +7,17 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fetchDomainStats } from "@/lib/health/cognitive-alert";
-import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, guardianStatusLine } from "@/lib/health/severity";
 import { classifyProvisional } from "@/lib/screening/exam-eval";
+import { resolveViewerRole } from "@/lib/roles";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  if (session.user.screeningMode !== "pro") {
-    return NextResponse.json({ error: "전문가 계정 전용 기능입니다." }, { status: 403 });
-  }
+  // 의사(pro)=상세 지표, 보호자(guardian)=요약만. 그 외 계정은 차단.
+  const role = resolveViewerRole(session.user.screeningMode);
+  if (!role) return NextResponse.json({ error: "의사·보호자 계정 전용 기능입니다." }, { status: 403 });
+  const isDoctor = role === "pro";
 
   const links = await prisma.expertPatient.findMany({
     where: { expertUserId: session.user.id, status: "active" },
@@ -57,6 +59,28 @@ export async function GET() {
       baselineAvg: computeOverallAvg(baseline),
       baselineCount: baseline.reduce((s, d) => s + d.count, 0),
     });
+    // 표시 등급 — 표본 부족이면 '평가전'으로 낮춰 과대판정 방지
+    const shownTier = reliability.showLevel ? tier.tier : "평가전";
+
+    // 보호자(guardian): 상세 점수·이상징후 건수·검진 점수 비공개. 등급→평이한 문구 + 진료 권고만.
+    if (!isDoctor) {
+      const status = guardianStatusLine(shownTier);
+      const needsCare = status.needsCare || trend.status === "급성악화" || trend.status === "악화" || examLatest?.band === "저하의심";
+      return {
+        id: p.id,
+        name: p.name ?? "이름 미설정",
+        age: p.age,
+        gender: p.gender,
+        linkedAt: link.createdAt,
+        tier: shownTier,
+        statusLine: status.headline,
+        needsCare,
+        examBand: examLatest?.band ?? null,   // 라벨만(점수 비공개)
+        lastActiveAt: lastMsg?.createdAt ?? null,
+      };
+    }
+
+    // 의사(pro): 채점·요약 지표 전체
     return {
       id: p.id,
       name: p.name ?? "이름 미설정",
@@ -81,5 +105,5 @@ export async function GET() {
     `eal_${Date.now()}_${session.user.id.slice(0, 8)}`, session.user.id,
   ).catch(() => {});
 
-  return NextResponse.json({ patients });
+  return NextResponse.json({ patients, viewerRole: role });
 }

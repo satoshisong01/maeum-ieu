@@ -7,10 +7,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, type DomainStat } from "@/lib/health/severity";
+import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, guardianStatusLine, type DomainStat } from "@/lib/health/severity";
 import { classifyProvisional, classifyFormal, compareSessions, summarizeExamTrend, EXAM_DISCLAIMER, type ExamTrend } from "@/lib/screening/exam-eval";
 import { itemLabel } from "@/lib/screening/cist-bank";
 import { toKstDateString } from "@/lib/chat/time";
+import { resolveViewerRole } from "@/lib/roles";
 
 interface DomainRow extends DomainStat { domain: string }
 interface WeekRow { week_start: string; avg_score: number; count: number }
@@ -39,9 +40,10 @@ const EMERGENCY_KO: Record<string, string> = {
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  if (session.user.screeningMode !== "pro") {
-    return NextResponse.json({ error: "전문가 계정 전용 기능입니다." }, { status: 403 });
-  }
+  // 의사(pro)=상세 평가내역 전체, 보호자(guardian)=결과 요약만. 그 외 계정은 차단.
+  const role = resolveViewerRole(session.user.screeningMode);
+  if (!role) return NextResponse.json({ error: "의사·보호자 계정 전용 기능입니다." }, { status: 403 });
+  const isDoctor = role === "pro";
   const { id: patientId } = await params;
 
   // 연결 관계 검증 — 미연결 환자 접근 차단
@@ -133,6 +135,39 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const dailyDoses = medications.filter((m) => m.enabled).reduce((s, m) => s + m.times.length, 0);
     medWeek = { confirmed: wRows[0]?.c ?? 0, expected: dailyDoses * 7 };
   } catch { /* medication_log 미생성 환경 방어 */ }
+
+  // ── 보호자(guardian) 요약 응답 ──
+  //   상세 평가내역(문항별 채점·문답 원문·임상 근거·응급 발화 원문)은 조회도 반환도 하지 않는다.
+  //   결과 요약(등급 문구) + 위급 발생 건수 + 복약 이행률만. 상세는 의사(pro)만.
+  if (!isDoctor) {
+    const shownTier = reliability.showLevel ? tier.tier : "평가전";
+    const status = guardianStatusLine(shownTier);
+    const [emgAgg, emgNotified] = await Promise.all([
+      prisma.message.aggregate({
+        where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user" },
+        _count: { _all: true }, _max: { createdAt: true },
+      }),
+      prisma.message.count({
+        where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user", notifiedAt: { not: null } },
+      }),
+    ]);
+    prisma.$executeRawUnsafe(
+      `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, 'summary')`,
+      `eal_${Date.now()}_${session.user.id.slice(0, 8)}`, session.user.id, patientId,
+    ).catch(() => {});
+    return NextResponse.json({
+      viewerRole: "guardian",
+      patient: { name: patient.name ?? "이름 미설정", age: patient.age, gender: patient.gender, joinedAt: patient.createdAt },
+      tier: shownTier,
+      statusLine: status.headline,
+      needsCare: status.needsCare || trend.status === "급성악화" || trend.status === "악화",
+      advice: reliability.showLevel ? tier.text : "",   // severity.ts 등급별 권고(단일 출처)
+      trend: trend.status, trendText: trend.text,
+      reliability,
+      emergency: { count: emgAgg._count._all, lastAt: emgAgg._max.createdAt, notifiedCount: emgNotified },
+      medication: { weekCompliance: medWeek },
+    });
+  }
 
   // 회차별 분석 — 검사일(session_date)별로 묶어 회차로 비교(주기적 검사: 월 1회 등)
   const sessionRows = await prisma.$queryRawUnsafe<{ date: string; domain: string; avg: number; cnt: number }[]>(
@@ -252,6 +287,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     `eal_${Date.now()}_${session.user.id.slice(0, 8)}`, session.user.id, patientId,
   ).catch(() => {});
   return NextResponse.json({
+    viewerRole: "pro",
     patient: { name: patient.name ?? "이름 미설정", age: patient.age, gender: patient.gender, joinedAt: patient.createdAt },
     overallAvg: recentAvg < 0 ? null : Number(recentAvg.toFixed(2)),
     tier: tier.tier, tierText: tier.text, reliability,
