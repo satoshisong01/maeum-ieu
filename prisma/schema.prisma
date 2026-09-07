@@ -26,7 +26,7 @@ model User {
   companionName     String?  @default("민지") // AI 동반자 이름
   companionRelation String?  @default("손녀") // AI 동반자 관계 (손녀/손자/딸/아들/며느리/친구 등)
   userHonorific     String?                   // 사용자 호칭 override (null이면 성별 자동 추론)
-  screeningMode     String   @default("user")  // 계정 역할: user=일상 대화형 선별 / pro=전문가 표준검사 시행
+  screeningMode     String   @default("user")  // 계정 역할: user=어르신(대화만) / pro=의사(상세 열람) / guardian=보호자(요약·알림만) / general=일반인(자가점검)
   expertCode        String?  @unique           // 전문가 초대 코드 (pro 계정이 환자 연결용으로 발급)
   consentedAt       DateTime?                   // 건강정보 수집·이용 동의 시각 (null=미동의)
   consentVersion    String?                     // 동의한 약관 버전

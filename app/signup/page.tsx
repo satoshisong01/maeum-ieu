@@ -22,8 +22,8 @@ export default function SignupPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
-  // 일반인(general) 모드는 이번 단계 범위 제외(하반기 예정) — 가입에서 숨김. user/pro만.
-  const [screeningMode, setScreeningMode] = useState<"user" | "pro">("user");
+  // 계정 유형 4종. user=어르신 / pro=의사·전문가 / guardian=보호자·가족 / general=일반인
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro" | "guardian" | "general">("user");
   const [medicationDrafts, setMedicationDrafts] = useState<MedicationDraft[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -88,22 +88,42 @@ export default function SignupPage() {
                 onClick={() => setScreeningMode("user")}
                 className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "user" ? "border-[#007bff] bg-blue-50 dark:bg-blue-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
               >
-                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👵 사용자</span>
-                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">어르신 본인 · 대화만</span>
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👵 어르신</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">본인 · 대화만</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreeningMode("guardian")}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "guardian" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+              >
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">👨‍👩‍👧 보호자·가족</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">결과 요약 · 알림</span>
               </button>
               <button
                 type="button"
                 onClick={() => setScreeningMode("pro")}
                 className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
               >
-                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 전문가·보호자</span>
-                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">의사·가족 · 결과 열람</span>
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🩺 의사·전문가</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">검진 · 상세 열람</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreeningMode("general")}
+                className={`rounded-xl border px-3 py-2.5 text-left transition ${screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+              >
+                <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">🧠 일반인</span>
+                <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">마음 건강 자가점검</span>
               </button>
             </div>
             <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               {screeningMode === "user"
-                ? "어르신은 대화만 하시고, 인지 결과는 본인에게 보이지 않아요. 결과는 가입한 보호자·전문가가 연결 후 열람합니다."
-                : "가입 후 발급되는 코드를 어르신께 전달해 연결하면, 어르신의 인지 결과·복약을 열람할 수 있어요."}
+                ? "어르신은 대화만 하시고, 인지 결과는 본인에게 보이지 않아요. 결과는 연결된 보호자·의사가 열람합니다."
+                : screeningMode === "guardian"
+                ? "가입 후 발급되는 코드를 어르신께 전달해 연결하면, 어르신 상태의 결과 요약과 위급 알림을 받을 수 있어요. (질문 내역·점수 등 상세 평가는 의사만 열람)"
+                : screeningMode === "pro"
+                ? "가입 후 발급되는 코드를 어르신께 전달해 연결하면, 검진 시행과 문항별 채점·평가 기준 등 상세 내역까지 열람할 수 있어요."
+                : "본인의 마음 건강을 스스로 점검하고, 결과 요약을 확인하는 계정이에요."}
             </p>
           </div>
           <input
@@ -139,8 +159,8 @@ export default function SignupPage() {
             required
             minLength={8}
           />
-          {/* 환자(어르신) 전용 정보 — 전문가·보호자 계정은 본인이 검진 대상이 아니므로 입력 불필요 */}
-          {screeningMode !== "pro" && (<>
+          {/* 환자(어르신) 전용 정보 — 의사·보호자·일반인 계정은 본인이 검진 대상이 아니므로 입력 불필요 */}
+          {screeningMode === "user" && (<>
           <div className="flex gap-2">
             <input
               type="number"

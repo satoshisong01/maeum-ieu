@@ -42,7 +42,7 @@ export default function MyPage() {
   const [companionName, setCompanionName] = useState("");
   const [companionRelation, setCompanionRelation] = useState("");
   const [userHonorific, setUserHonorific] = useState("");
-  const [screeningMode, setScreeningMode] = useState<"user" | "pro" | "general">("user");
+  const [screeningMode, setScreeningMode] = useState<"user" | "pro" | "guardian" | "general">("user");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
@@ -137,7 +137,7 @@ export default function MyPage() {
           setCompanionName(data.companionName ?? "");
           setCompanionRelation(data.companionRelation ?? "");
           setUserHonorific(data.userHonorific ?? "");
-          setScreeningMode(data.screeningMode === "pro" ? "pro" : data.screeningMode === "general" ? "general" : "user");
+          setScreeningMode(data.screeningMode === "pro" || data.screeningMode === "guardian" || data.screeningMode === "general" ? data.screeningMode : "user");
         })
         .catch(() => setError("프로필을 불러올 수 없습니다."));
     }
@@ -250,18 +250,18 @@ export default function MyPage() {
             {/* 계정 유형(모드) — 가입 시 고정, 변경 불가(권한 상승·검사 모드 스푸핑 악용 차단) */}
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">계정 유형</label>
-              <div className={`rounded-xl border px-3 py-2.5 ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-[#007bff] bg-blue-50 dark:bg-blue-900/30"}`}>
+              <div className={`rounded-xl border px-3 py-2.5 ${screeningMode === "pro" ? "border-teal-600 bg-teal-50 dark:bg-teal-900/30" : screeningMode === "guardian" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/30" : screeningMode === "general" ? "border-violet-600 bg-violet-50 dark:bg-violet-900/30" : "border-[#007bff] bg-blue-50 dark:bg-blue-900/30"}`}>
                 <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-                  {screeningMode === "pro" ? "🩺 전문가·보호자" : screeningMode === "general" ? "🧠 일반인" : "👵 사용자"}
+                  {screeningMode === "pro" ? "🩺 의사·전문가" : screeningMode === "guardian" ? "👨‍👩‍👧 보호자·가족" : screeningMode === "general" ? "🧠 일반인" : "👵 어르신"}
                 </span>
                 <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {screeningMode === "pro" ? "검진 시행·가족 모니터링" : screeningMode === "general" ? "마음 건강 자가점검" : "일상 대화형 선별"}
+                  {screeningMode === "pro" ? "검진 시행·상세 열람" : screeningMode === "guardian" ? "결과 요약·위급 알림" : screeningMode === "general" ? "마음 건강 자가점검" : "일상 대화형 선별"}
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-zinc-400">계정 유형은 가입 시 정해지며 변경할 수 없어요. 바꾸려면 새 계정으로 가입해 주세요.</p>
-              {screeningMode === "pro" && (
-                <Link href="/expert" className="mt-2 block rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-center text-sm font-semibold text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-200">
-                  🩺 환자 관리 페이지 열기 →
+              {(screeningMode === "pro" || screeningMode === "guardian") && (
+                <Link href="/expert" className={`mt-2 block rounded-xl border px-3 py-2 text-center text-sm font-semibold ${screeningMode === "guardian" ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200" : "border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-200"}`}>
+                  {screeningMode === "guardian" ? "👨‍👩‍👧 가족 상태 보기 →" : "🩺 환자 관리 페이지 열기 →"}
                 </Link>
               )}
               {/* 목소리 등록(화자식별) — 베타. 본인/보호자 계정에서 진입 */}
