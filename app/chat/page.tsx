@@ -142,8 +142,9 @@ export default function ChatPage() {
   const [paramsReady, setParamsReady] = useState(false); // URL 파라미터 읽기 완료 — 대화 로드 레이스 방지
   const examMode = !!proxyPatientId; // 전문가 대리 검진 모드 — 음성 전용 + '검진 시작' 버튼으로 시작
   // 모드는 토글이 아니라 로그인 계정의 역할로 결정 (user=대화형 선별 / pro=표준검사 시행 / general=마음 건강 자가점검)
+  //   보호자(guardian)는 본인이 대화 주체가 아님 — pro와 동일하게 처리해 self-chat 진입 시 /expert로 리다이렉트.
   const screeningMode: "user" | "pro" | "general" =
-    session?.user?.screeningMode === "pro" ? "pro"
+    session?.user?.screeningMode === "pro" || session?.user?.screeningMode === "guardian" ? "pro"
     : session?.user?.screeningMode === "general" ? "general"
     : "user";
   const [loading, setLoading] = useState(false);

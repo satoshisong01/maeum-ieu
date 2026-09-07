@@ -70,6 +70,20 @@ export function classifySeverity(overallAvg: number): { tier: SeverityTier; text
 }
 
 /**
+ * 보호자용 한 줄 상태 문구 — 등급 기반. 상세 점수·평가 기준 노출 없이 '결과치 + 권고'만 전달한다.
+ *   (의사만 문항별 채점·문답 원문 등 상세 열람. 보호자는 이 요약과 위급 알림만.)
+ */
+export function guardianStatusLine(tier: SeverityTier): { headline: string; needsCare: boolean } {
+  switch (tier) {
+    case "정상": return { headline: "현재 특별한 이상 신호는 보이지 않습니다.", needsCare: false };
+    case "경증": return { headline: "가벼운 인지 변화가 관찰됩니다. 계속 지켜봐 주세요.", needsCare: false };
+    case "중증": return { headline: "판단이 흐려진 것으로 보입니다. 의사 진료를 권장합니다.", needsCare: true };
+    case "고위험": return { headline: "인지 저하가 뚜렷합니다. 빠른 의사 진료가 필요합니다.", needsCare: true };
+    default: return { headline: "아직 상태를 판단할 만큼 대화가 쌓이지 않았습니다.", needsCare: false };
+  }
+}
+
+/**
  * 표본 신뢰도 — 소표본 과대판정(예: 7턴에 '중증') 방지. 대시보드·전문가 뷰 공통 단일 출처.
  * reliable: 충분(10회+ & 3영역+). provisional: 잠정(5회+ & 2영역+). showLevel: 등급 표시 가능 여부.
  * evaluatedDomains는 각 2회 이상 평가된 영역 수.

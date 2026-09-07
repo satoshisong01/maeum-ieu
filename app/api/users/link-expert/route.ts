@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { resolveViewerRole } from "@/lib/roles";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -31,8 +32,9 @@ export async function POST(req: Request) {
     where: { expertCode: code },
     select: { id: true, name: true, screeningMode: true },
   });
-  if (!expert || expert.screeningMode !== "pro") {
-    return NextResponse.json({ error: "유효하지 않은 전문가 코드입니다." }, { status: 404 });
+  // 의사(pro)·보호자(guardian) 코드 모두 허용 — 둘 다 어르신을 연결해 모니터링
+  if (!expert || !resolveViewerRole(expert.screeningMode)) {
+    return NextResponse.json({ error: "유효하지 않은 코드입니다." }, { status: 404 });
   }
   if (expert.id === session.user.id) {
     return NextResponse.json({ error: "본인 계정에는 연결할 수 없습니다." }, { status: 400 });
