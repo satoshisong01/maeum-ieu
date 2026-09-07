@@ -1961,20 +1961,22 @@ export default function ChatPage() {
             ) : (
             /* 모드 선택 화면 */
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
-                className="w-full rounded-full bg-[#007bff] py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
-              >
-                🎤 음성으로 대화하기
-              </button>
-              <button
-                type="button"
-                onClick={startTextMode}
-                className="w-full rounded-full bg-zinc-200 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
-              >
-                ⌨️ 글씨로 대화하기
-              </button>
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
+                  className="flex-1 rounded-full bg-[#007bff] px-3 py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
+                >
+                  🎤 음성으로 대화하기
+                </button>
+                <button
+                  type="button"
+                  onClick={startTextMode}
+                  className="flex-1 rounded-full bg-zinc-200 px-3 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+                >
+                  ⌨️ 글씨로 대화하기
+                </button>
+              </div>
               {micDenied && (
                 <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
                   <p className="mb-1 font-semibold text-red-700">마이크를 사용할 수 없어요</p>
