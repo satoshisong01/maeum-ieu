@@ -236,7 +236,7 @@ function LiveInner() {
         </nav>
       </header>
 
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-2 px-4 py-4">
+      <main className="mx-auto flex w-full min-h-0 max-w-2xl flex-1 flex-col gap-2 px-4 py-4">
         {emergency && (
           <p className="rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white">
             🚨 응급 징후가 감지되었어요. 지금 바로 119에 전화해 주세요. 보호자에게도 알려드렸어요.
@@ -244,7 +244,7 @@ function LiveInner() {
         )}
         {error && <p className="rounded-xl bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">{error}</p>}
 
-        <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {historyLoaded && bubbles.length === 0 && (
             <p className="pt-16 text-center text-base text-zinc-500 dark:text-zinc-400">
               아래 [대화 시작하기]를 누르면
