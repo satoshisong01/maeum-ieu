@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AudioVisualizer } from "./AudioVisualizer";
-import { ThemeToggle } from "../theme-toggle";
 import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
 import { hasJongseong } from "@/lib/chat/korean-particle";
@@ -1708,25 +1707,7 @@ export default function ChatPage() {
           마음<br />이음
         </h1>
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* 계정 역할 표기(읽기전용) — 전환은 계정으로 결정됨 */}
-          <span
-            className={`rounded-lg px-2 py-1 text-[10px] font-semibold leading-tight sm:text-xs ${screeningMode === "pro" ? "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" : screeningMode === "general" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"}`}
-            title={screeningMode === "pro" ? "전문가 계정 — 표준 인지선별 검사 시행" : screeningMode === "general" ? "일반인 계정 — 마음 건강 자가점검" : "사용자 계정 — 일상 대화형 선별"}
-          >
-            {screeningMode === "pro" ? "🩺 전문가" : screeningMode === "general" ? "🧠 일반인" : "👵 사용자"}
-          </span>
-          <ThemeToggle />
-          {/* 라이브 베타(/live)는 응급 감지·보호자 알림·LLM 백스톱을 우회하는 실험 경로(2026-07-07 감사) —
-              안전망이 연결되기 전까지 어르신 화면에서 숨김. 개발 확인은 NEXT_PUBLIC_SHOW_LIVE_BETA=1로만 노출. */}
-          {process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1" && (
-            <Link
-              href="/live"
-              className="rounded-lg bg-violet-50 px-2 py-1 text-[10px] font-medium leading-tight text-violet-600 hover:bg-violet-100 sm:px-2.5 sm:py-1.5 sm:text-xs dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
-              title="라이브 음성 대화 (베타) — 첫 응답 1.4초"
-            >
-              🎙 라이브<br />베타
-            </Link>
-          )}
+          {/* 계정 역할 표기·다크모드·라이브베타는 헤더에서 제거하고 설정(마이페이지)으로 통합(2026-09-08). 헤더는 최소화. */}
           {/* 결과 열람 링크 — 모드별. 사용자(어르신) 본인은 결과 비공개라 링크 없음(A안). */}
           {screeningMode === "pro" ? (
             <Link
@@ -1747,9 +1728,14 @@ export default function ChatPage() {
           ) : null}
           <Link
             href="/mypage"
-            className="max-w-[60px] truncate text-[10px] text-zinc-500 hover:text-[#007bff] hover:underline sm:max-w-none sm:text-xs dark:text-zinc-400 dark:hover:text-blue-400"
+            title="설정 — 다크모드·계정·복약·연결"
+            className="flex items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-200 hover:text-[#007bff] sm:text-xs dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-blue-400"
           >
-            {session.user?.name ?? "사용자"}님
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            <span className="max-w-[64px] truncate">{session.user?.name ?? "설정"}님</span>
           </Link>
           <button
             type="button"
