@@ -4,6 +4,7 @@ import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import { BrandLogo, CompanyLogo } from "../BrandLogo";
 import { LATEST_APP_VERSION, isOlderVersion } from "@/lib/app-version";
 
 export default function LoginPage() {
@@ -70,8 +71,8 @@ export default function LoginPage() {
         <ThemeToggle />
       </div>
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg dark:bg-zinc-900 dark:shadow-black/40">
-        <h1 className="text-center text-2xl font-semibold text-zinc-800 dark:text-zinc-100">마음이음</h1>
-        <p className="mt-2 text-center text-base text-zinc-600 dark:text-zinc-300">로그인</p>
+        <div className="flex justify-center"><BrandLogo size="lg" /></div>
+        <p className="mt-3 text-center text-base text-zinc-600 dark:text-zinc-300">로그인</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           <input
             type="email"
@@ -136,6 +137,7 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
+      <div className="mt-6"><CompanyLogo /></div>
     </div>
   );
 }
