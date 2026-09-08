@@ -2003,13 +2003,15 @@ export default function ChatPage() {
                 >
                   🎤 음성으로 대화하기
                 </button>
-                <button
-                  type="button"
-                  onClick={startTextMode}
-                  className="flex-1 rounded-full bg-zinc-200 px-3 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
-                >
-                  ⌨️ 글씨로 대화하기
-                </button>
+                {screeningMode !== "user" && (
+                  <button
+                    type="button"
+                    onClick={startTextMode}
+                    className="flex-1 rounded-full bg-zinc-200 px-3 py-3 text-base font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+                  >
+                    ⌨️ 글씨로 대화하기
+                  </button>
+                )}
               </div>
               {micDenied && (
                 <div className="mt-2 rounded-xl bg-red-50 p-3 text-sm">
@@ -2215,13 +2217,15 @@ export default function ChatPage() {
                   </svg>
                 </button>
               </form>
-              <button
-                type="button"
-                onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } setTtsActive(false); resetBargeCapture(); if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; } /* 스트림 중이면 finally에서 회수(인터리브 방지), 아니면 즉시 해제(고아 방지) — 2026-07-10 리뷰 */ setTextOnly(true); }}
-                className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-              >
-                ⌨️ 글씨 대화로 전환
-              </button>
+              {screeningMode !== "user" && (
+                <button
+                  type="button"
+                  onClick={() => { setAlwaysOn(false); alwaysOnRef.current = false; wakeArmedRef.current = false; setWakeArmed(false); sessionActiveRef.current = false; setSessionActive(false); stopRecording({ discard: true }); speakGenRef.current++; try { audioElRef.current?.pause(); } catch { /* 재생 없음 */ } try { window.speechSynthesis?.cancel(); } catch { /* 미지원 */ } setTtsActive(false); resetBargeCapture(); if (loading) { ttsCancelledTurnRef.current = true; } else { turnLockRef.current = false; } /* 스트림 중이면 finally에서 회수(인터리브 방지), 아니면 즉시 해제(고아 방지) — 2026-07-10 리뷰 */ setTextOnly(true); }}
+                  className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+                >
+                  ⌨️ 글씨 대화로 전환
+                </button>
+              )}
             </div>
           )}
         </div>
