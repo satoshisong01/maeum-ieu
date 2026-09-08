@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ThemeToggle } from "../theme-toggle";
+import { BrandLogo, CompanyLogo } from "../BrandLogo";
 import MedicationEditor from "../components/MedicationEditor";
 
 interface MedicationDraft { label: string; times: string[]; enabled: boolean }
@@ -76,8 +77,8 @@ export default function SignupPage() {
         <ThemeToggle />
       </div>
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg dark:bg-zinc-900 dark:shadow-black/40">
-        <h1 className="text-center text-2xl font-semibold text-zinc-800 dark:text-zinc-100">마음이음</h1>
-        <p className="mt-2 text-center text-sm text-zinc-500 dark:text-zinc-400">회원가입</p>
+        <div className="flex justify-center"><BrandLogo size="lg" /></div>
+        <p className="mt-3 text-center text-sm text-zinc-500 dark:text-zinc-400">회원가입</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           {/* 계정 유형 — 가입 후 변경 불가에 가까운 핵심 선택 */}
           <div>
@@ -283,6 +284,7 @@ export default function SignupPage() {
           </Link>
         </p>
       </div>
+      <div className="mt-6"><CompanyLogo /></div>
     </div>
   );
 }
