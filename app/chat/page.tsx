@@ -1706,8 +1706,6 @@ export default function ChatPage() {
 
   // 어르신 음성 모드 — 대화 transcript 대신 큰 음파 + 마지막 한 마디만(통화 화면처럼). 글씨·검진·일반인은 기존 유지.
   const voiceFirst = screeningMode === "user" && modeSelected && !textOnly && !examMode;
-  const lastAiMsg = voiceFirst ? [...messages].reverse().find((m) => m.role !== "user") : undefined;
-  const lastUserMsg = voiceFirst ? [...messages].reverse().find((m) => m.role === "user") : undefined;
   // 어르신 모드선택 화면(음성 시작 전) — 여기서도 지난 대화기록은 숨기고 깔끔한 인트로만.
   const elderIntro = !voiceFirst && screeningMode === "user" && !textOnly && !examMode;
 
@@ -1894,15 +1892,20 @@ export default function ChatPage() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
         {voiceFirst ? (
-          /* 어르신 음성 모드 — 통화 화면: 큰 음파 + 상태 + 방금 나눈 한 마디(스크롤 대화창 없음) */
-          <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-6 text-center">
-            <AudioVisualizer
-              stream={streamRef.current}
-              active={listening || aiSpeaking || (alwaysOn && wakeListening)}
-              aiSpeaking={aiSpeaking}
-              size={200}
-            />
-            <p className={`text-xl font-bold ${listening ? "text-red-500" : aiSpeaking ? "text-[#007bff]" : "text-amber-600 dark:text-amber-400"}`}>
+          /* 어르신 음성 모드 — 통화 화면: 큰 음파 + 펄스 애니메이션 + 상태만(대화 텍스트 없음) */
+          <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-6 text-center">
+            <div className="relative flex items-center justify-center">
+              {(listening || aiSpeaking) && (
+                <span className={`absolute h-56 w-56 animate-ping rounded-full ${listening ? "bg-red-400/15" : "bg-[#007bff]/15"}`} />
+              )}
+              <AudioVisualizer
+                stream={streamRef.current}
+                active={listening || aiSpeaking || (alwaysOn && wakeListening)}
+                aiSpeaking={aiSpeaking}
+                size={260}
+              />
+            </div>
+            <p className={`text-2xl font-bold ${listening ? "text-red-500" : aiSpeaking ? "text-[#007bff]" : "text-amber-600 dark:text-amber-400"}`}>
               {listening ? "듣고 있어요…"
                 : aiSpeaking ? `${companionName}가 말하고 있어요…`
                 : loading ? "생각하고 있어요…"
@@ -1910,12 +1913,6 @@ export default function ChatPage() {
                 : sessionActive ? "말씀하세요"
                 : `“${wakeCall}” 하고 불러주세요`}
             </p>
-            {lastAiMsg && (
-              <div className="max-w-md space-y-1.5">
-                {lastUserMsg && <p className="line-clamp-1 text-base text-zinc-400 dark:text-zinc-500">나: {displayMessageContent(lastUserMsg.content)}</p>}
-                <p className="line-clamp-4 text-2xl font-semibold leading-relaxed text-zinc-800 dark:text-zinc-100">{companionName}: “{displayMessageContent(lastAiMsg.content)}”</p>
-              </div>
-            )}
             {voicePaused && !listening && !aiSpeaking && (
               <button type="button" onClick={resumeVoiceFromPause} className="rounded-full bg-[#007bff] px-8 py-4 text-lg font-bold text-white shadow-md transition hover:bg-[#0069d9]">
                 🎤 다시 대화하기
