@@ -224,9 +224,6 @@ function LiveInner() {
           <Link href="/observe" title="상시 감시 모드" className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-amber-100 px-2.5 py-1.5 font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200">
             <span className="text-base">👂</span><span className="text-sm">상시 감시</span>
           </Link>
-          <Link href="/chat" title="글자로 대화" aria-label="글자로 대화" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-            <span className="text-lg">💬</span>
-          </Link>
           <Link href="/mypage" title="설정" aria-label="설정" className="whitespace-nowrap rounded-lg px-2 py-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
             <span className="text-lg">⚙️</span>
           </Link>
@@ -244,18 +241,27 @@ function LiveInner() {
         )}
         {error && <p className="rounded-xl bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">{error}</p>}
 
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-          {historyLoaded && bubbles.length === 0 && (
-            <p className="pt-16 text-center text-base text-zinc-500 dark:text-zinc-400">
-              아래 [대화 시작하기]를 누르면
-              <br />전화 통화하듯 편하게 이야기할 수 있어요.
-            </p>
-          )}
-          {bubbles.map((b, i) => (
-            <div key={i} className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[16px] leading-relaxed ${b.role === "user" ? "ml-auto bg-[#007bff] text-white" : "bg-white shadow-sm dark:bg-zinc-800"}`}>
-              {b.text}
+        {/* 통화 화면 — 상태 오브 + 펄스 애니메이션만. 대화 텍스트는 표시하지 않음(기록은 서버에 저장). */}
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 text-center">
+          <div className="relative flex items-center justify-center">
+            {(state === "listening" || state === "speaking") && (
+              <span className={`absolute h-56 w-56 animate-ping rounded-full ${state === "listening" ? "bg-emerald-400/20" : "bg-[#007bff]/20"}`} />
+            )}
+            <div className={`flex h-44 w-44 items-center justify-center rounded-full text-6xl text-white shadow-xl transition-colors ${
+              state === "listening" ? "bg-gradient-to-br from-emerald-400 to-emerald-600"
+                : state === "speaking" ? "animate-pulse bg-gradient-to-br from-[#007bff] to-[#33a9d6]"
+                : state === "connecting" ? "animate-pulse bg-gradient-to-br from-amber-300 to-amber-500"
+                : "bg-gradient-to-br from-zinc-300 to-zinc-400 dark:from-zinc-600 dark:to-zinc-700"
+            }`}>
+              {state === "listening" ? "🎙" : state === "speaking" ? "🔊" : "📞"}
             </div>
-          ))}
+          </div>
+          <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-200">
+            {active ? (stateLabel[state] || "…")
+              : state === "stopped" ? "대화를 마쳤어요"
+              : historyLoaded ? "아래 버튼을 눌러 대화를 시작하세요"
+              : "준비 중…"}
+          </p>
         </div>
 
         <div className="flex shrink-0 flex-col items-center gap-2 py-3">
