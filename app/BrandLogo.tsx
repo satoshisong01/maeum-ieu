@@ -28,13 +28,13 @@ export function BrandLogo({ size = "md", className = "" }: { size?: keyof typeof
   );
 }
 
-/** 회사 로고 — 하단 크레딧용(제공: FIRST C&D). 가로형 배너라 작은 높이로. */
-export function CompanyLogo({ className = "", label = true }: { className?: string; label?: boolean }) {
+/** 회사 로고 — 하단 크레딧(제공: FIRST C&D) 또는 헤더용. 가로형 배너라 작은 높이로. */
+export function CompanyLogo({ className = "", label = true, imgClassName = "h-5" }: { className?: string; label?: boolean; imgClassName?: string }) {
   return (
     <span className={`inline-flex items-center gap-2 ${className}`}>
       {label && <span className="text-[11px] text-zinc-400 dark:text-zinc-500">제공</span>}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/first-cnd-logo.png" alt="FIRST C&D" className="h-5 w-auto opacity-80 dark:opacity-90" />
+      <img src="/first-cnd-logo.png" alt="FIRST C&D" className={`w-auto opacity-80 dark:opacity-90 ${imgClassName}`} />
     </span>
   );
 }
