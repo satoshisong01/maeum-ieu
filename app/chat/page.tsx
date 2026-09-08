@@ -4,7 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BrandLogo } from "../BrandLogo";
+import { BrandLogo, CompanyLogo } from "../BrandLogo";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
@@ -147,6 +147,9 @@ export default function ChatPage() {
     session?.user?.screeningMode === "pro" || session?.user?.screeningMode === "guardian" ? "pro"
     : session?.user?.screeningMode === "general" ? "general"
     : "user";
+  // 헤더 닉네임 — 10자 넘으면 …으로 축약(회사 로고 자리 확보)
+  const rawName = session?.user?.name ?? "설정";
+  const displayName = rawName.length > 10 ? rawName.slice(0, 10) + "…" : rawName;
   const [loading, setLoading] = useState(false);
   const loadingRef = useRef(false); // barge-in 등 비동기 콜백에서 최신 loading 참조(stale 클로저 방지)
   loadingRef.current = loading;
@@ -1725,16 +1728,18 @@ export default function ChatPage() {
               마음<br />기록
             </Link>
           ) : null}
+          {/* 회사 로고(FIRST C&D) — 설정 옆 */}
+          <CompanyLogo label={false} imgClassName="h-4" className="shrink-0" />
           <Link
             href="/mypage"
             title="설정 — 다크모드·계정·복약·연결"
-            className="flex items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-200 hover:text-[#007bff] sm:text-xs dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-blue-400"
+            className="flex shrink-0 items-center gap-1 rounded-lg bg-zinc-100 px-2 py-1.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-200 hover:text-[#007bff] sm:text-xs dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-blue-400"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            <span className="max-w-[64px] truncate">{session.user?.name ?? "설정"}님</span>
+            <span className="max-w-[80px] truncate">{displayName}님</span>
           </Link>
           <button
             type="button"
