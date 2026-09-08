@@ -268,6 +268,12 @@ export default function MyPage() {
               <Link href="/voiceprint" className="mt-2 block rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
                 🎙 목소리 등록·확인 (베타) →
               </Link>
+              {/* 라이브 음성 대화(베타) — 헤더에서 설정으로 통합(2026-09-08). 어르신 계정 + 노출 플래그일 때만 */}
+              {screeningMode === "user" && process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1" && (
+                <Link href="/live" className="mt-2 block rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-center text-sm font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                  🎙 라이브 음성 대화 (베타) →
+                </Link>
+              )}
             </div>
 
             {/* 마음 건강 체크 — T3 본인용 결과 (일반인 계정 전용 — 모드 간 플로우 비혼합) */}

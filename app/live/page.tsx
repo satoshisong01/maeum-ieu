@@ -217,8 +217,8 @@ function LiveInner() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f0f2f5] text-zinc-900 dark:bg-[#0b0d10] dark:text-zinc-100">
-      <header className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f0f2f5] text-zinc-900 dark:bg-[#0b0d10] dark:text-zinc-100">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="shrink-0 whitespace-nowrap text-base font-bold">🎤 음성 대화</h1>
         <nav className="flex shrink-0 items-center gap-1">
           <Link href="/observe" title="상시 감시 모드" className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-amber-100 px-2.5 py-1.5 font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200">
@@ -258,7 +258,7 @@ function LiveInner() {
           ))}
         </div>
 
-        <div className="flex flex-col items-center gap-2 py-3">
+        <div className="flex shrink-0 flex-col items-center gap-2 py-3">
           {active && <p className="text-base font-semibold text-[#007bff] dark:text-blue-400">{stateLabel[state]}</p>}
           {!active ? (
             <button onClick={start} className="w-full max-w-sm rounded-full bg-[#28a745] px-8 py-5 text-xl font-bold text-white shadow-lg transition hover:bg-[#218838]">
