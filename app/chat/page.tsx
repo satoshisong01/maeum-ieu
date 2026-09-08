@@ -1704,6 +1704,11 @@ export default function ChatPage() {
     return null;
   }
 
+  // 어르신 음성 모드 — 대화 transcript 대신 큰 음파 + 마지막 한 마디만(통화 화면처럼). 글씨·검진·일반인은 기존 유지.
+  const voiceFirst = screeningMode === "user" && modeSelected && !textOnly && !examMode;
+  const lastAiMsg = voiceFirst ? [...messages].reverse().find((m) => m.role !== "user") : undefined;
+  const lastUserMsg = voiceFirst ? [...messages].reverse().find((m) => m.role === "user") : undefined;
+
   return (
     <div className={`flex h-screen flex-col overflow-hidden border-t-4 ${screeningMode === "pro" ? "border-teal-500 bg-[#e6f0f1] dark:border-teal-700 dark:bg-[#0a1315]" : screeningMode === "general" ? "border-violet-400 bg-[#f3f0f7] dark:border-violet-800 dark:bg-[#0e0b13]" : "border-blue-400 bg-[#f0f2f5] dark:border-blue-800 dark:bg-[#0b0d10]"}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-2 py-2 sm:px-3 dark:border-zinc-700 dark:bg-zinc-900">
@@ -1845,8 +1850,9 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 파동 + 상태 텍스트: 헤더 아래 고정. wake 대기 중에도 시각화 표시 */}
-      {micAllowed && (alwaysOn || listening || aiSpeaking) && (
+      {/* 파동 + 상태 텍스트: 헤더 아래 고정. wake 대기 중에도 시각화 표시.
+          어르신 음성 모드(voiceFirst)는 아래 중앙에 큰 음파를 따로 그리므로 여기선 숨김. */}
+      {micAllowed && (alwaysOn || listening || aiSpeaking) && !voiceFirst && (
         <div className="flex shrink-0 flex-col items-center gap-2 border-b border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
           <AudioVisualizer
             stream={streamRef.current}
@@ -1885,6 +1891,36 @@ export default function ChatPage() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
+        {voiceFirst ? (
+          /* 어르신 음성 모드 — 통화 화면: 큰 음파 + 상태 + 방금 나눈 한 마디(스크롤 대화창 없음) */
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-6 text-center">
+            <AudioVisualizer
+              stream={streamRef.current}
+              active={listening || aiSpeaking || (alwaysOn && wakeListening)}
+              aiSpeaking={aiSpeaking}
+              size={200}
+            />
+            <p className={`text-xl font-bold ${listening ? "text-red-500" : aiSpeaking ? "text-[#007bff]" : "text-amber-600 dark:text-amber-400"}`}>
+              {listening ? "듣고 있어요…"
+                : aiSpeaking ? `${companionName}가 말하고 있어요…`
+                : loading ? "생각하고 있어요…"
+                : voicePaused ? "잠시 멈췄어요"
+                : sessionActive ? "말씀하세요"
+                : `“${wakeCall}” 하고 불러주세요`}
+            </p>
+            {lastAiMsg && (
+              <div className="max-w-md space-y-1.5">
+                {lastUserMsg && <p className="line-clamp-1 text-base text-zinc-400 dark:text-zinc-500">나: {displayMessageContent(lastUserMsg.content)}</p>}
+                <p className="line-clamp-4 text-2xl font-semibold leading-relaxed text-zinc-800 dark:text-zinc-100">{companionName}: “{displayMessageContent(lastAiMsg.content)}”</p>
+              </div>
+            )}
+            {voicePaused && !listening && !aiSpeaking && (
+              <button type="button" onClick={resumeVoiceFromPause} className="rounded-full bg-[#007bff] px-8 py-4 text-lg font-bold text-white shadow-md transition hover:bg-[#0069d9]">
+                🎤 다시 대화하기
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {/* 초기 안내 (모드 미선택 시) */}
           {!modeSelected && (
@@ -1926,6 +1962,7 @@ export default function ChatPage() {
           )}
           <div ref={bottomRef} />
         </div>
+        )}
 
         <div className="shrink-0 border-t border-zinc-200 px-3 py-3 dark:border-zinc-700">
           {!modeSelected ? (
