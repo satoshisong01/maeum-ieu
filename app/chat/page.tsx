@@ -1708,6 +1708,8 @@ export default function ChatPage() {
   const voiceFirst = screeningMode === "user" && modeSelected && !textOnly && !examMode;
   const lastAiMsg = voiceFirst ? [...messages].reverse().find((m) => m.role !== "user") : undefined;
   const lastUserMsg = voiceFirst ? [...messages].reverse().find((m) => m.role === "user") : undefined;
+  // 어르신 모드선택 화면(음성 시작 전) — 여기서도 지난 대화기록은 숨기고 깔끔한 인트로만.
+  const elderIntro = !voiceFirst && screeningMode === "user" && !textOnly && !examMode;
 
   return (
     <div className={`flex h-screen flex-col overflow-hidden border-t-4 ${screeningMode === "pro" ? "border-teal-500 bg-[#e6f0f1] dark:border-teal-700 dark:bg-[#0a1315]" : screeningMode === "general" ? "border-violet-400 bg-[#f3f0f7] dark:border-violet-800 dark:bg-[#0e0b13]" : "border-blue-400 bg-[#f0f2f5] dark:border-blue-800 dark:bg-[#0b0d10]"}`}>
@@ -1919,6 +1921,14 @@ export default function ChatPage() {
                 🎤 다시 대화하기
               </button>
             )}
+          </div>
+        ) : elderIntro ? (
+          /* 어르신 — 음성 시작 전(모드선택) 인트로: 지난 대화기록 숨기고 깔끔하게 */
+          <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+            <AudioVisualizer stream={null} active={false} aiSpeaking={false} size={180} />
+            <p className="text-xl font-semibold leading-relaxed text-zinc-600 dark:text-zinc-300">
+              아래 <span className="text-[#007bff]">음성으로 대화하기</span>를 눌러<br />편하게 이야기 나눠요.
+            </p>
           </div>
         ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4">
