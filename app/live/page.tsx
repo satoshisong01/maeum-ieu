@@ -158,6 +158,18 @@ function LiveInner() {
 
   const stop = () => { engineRef.current?.stop(); setState("stopped"); };
 
+  // 홈 "대화하기"(?start=1)에서 넘어오면 자동 시작 — 클릭 제스처가 Next Link(같은 문서 SPA 이동)로
+  //   유지돼(transient activation) 브라우저 autoplay 정책에도 마이크·오디오가 열림. 앱(WebView)은 무제약.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (status !== "authenticated") return;
+    if (params.get("start") !== "1") return;
+    autoStartedRef.current = true;
+    void start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   const active = state === "listening" || state === "speaking" || state === "connecting";
 
   // 무발화 단계 대응 (15초 주기): 60초 재참여1 → 120초 재참여2 → 180초 자동 종료.

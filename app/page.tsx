@@ -45,6 +45,8 @@ export default async function Home() {
 
   // 어르신 홈 — 큼지막한 [대화하기] + 하단 작은 3개 (치매 의심 어르신도 쉽게)
   const name = session.user.name?.trim();
+  // 라이브베타 켜져 있으면 음성 동선은 /live로 바로(중간 /chat 선택화면 스킵). ?start=1로 도착 즉시 자동 시작.
+  const talkHref = process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1" ? "/live?start=1" : "/chat?start=1";
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-sky-50 to-[#eef2f7] px-5 pb-6 pt-5 dark:from-[#0b1220] dark:to-[#0b0d10]">
       {/* 상단 브랜드 + 로그아웃 */}
@@ -62,7 +64,7 @@ export default async function Home() {
       {/* 대화하기 — 화면의 대부분을 차지하는 초대형 버튼 */}
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 pt-3">
         <Link
-          href="/chat?start=1"
+          href={talkHref}
           className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[2rem] bg-[#007bff] px-6 py-12 text-white shadow-xl shadow-blue-500/20 transition active:scale-[0.99] hover:bg-[#0069d9]"
         >
           <span className="text-7xl leading-none">📞</span>
