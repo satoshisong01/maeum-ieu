@@ -1930,7 +1930,7 @@ export default function ChatPage() {
               className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full bg-white text-[#1a4e7a] shadow-xl shadow-blue-500/30 transition active:scale-95 hover:bg-blue-50"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/talk.png" alt="" className="h-28 w-28 object-contain" />
+              <img src="/talk.png" alt="" className="h-[6.3rem] w-[6.3rem] object-contain" />
               <span className="text-2xl font-bold">대화 시작</span>
             </button>
             <p className="text-lg text-zinc-500 dark:text-zinc-400">버튼을 눌러 편하게 이야기 나눠요.</p>

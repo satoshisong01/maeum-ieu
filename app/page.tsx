@@ -67,7 +67,7 @@ export default async function Home() {
           href={talkHref}
           className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[2rem] bg-[#007bff] px-6 py-12 text-white shadow-xl shadow-blue-500/20 transition active:scale-[0.99] hover:bg-[#0069d9]"
         >
-          <TalkBadge className="h-48 w-48" />
+          <TalkBadge className="h-[10.8rem] w-[10.8rem]" />
           <span className="text-4xl font-extrabold tracking-tight">대화하기</span>
           <span className="text-lg font-medium text-blue-50/90">터치하고 편하게 말씀하세요</span>
         </Link>
