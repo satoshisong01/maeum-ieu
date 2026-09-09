@@ -267,7 +267,7 @@ function LiveInner() {
                 : "bg-white"
             }`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {state === "listening" ? "🎙" : state === "speaking" ? "🔊" : <img src="/talk.png" alt="대화" className="h-24 w-24 object-contain" />}
+              {state === "listening" ? "🎙" : state === "speaking" ? "🔊" : <img src="/talk.png" alt="대화" className="h-36 w-36 object-contain" />}
             </div>
           </div>
           <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-200">
