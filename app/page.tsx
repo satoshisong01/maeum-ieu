@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { normalizeMode } from "@/lib/roles";
 import { LogoutButton } from "./LogoutButton";
-import { BrandLogo, CompanyLogo } from "./BrandLogo";
+import { BrandLogo, CompanyLogo, TalkIcon } from "./BrandLogo";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
@@ -67,7 +67,7 @@ export default async function Home() {
           href={talkHref}
           className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[2rem] bg-[#007bff] px-6 py-12 text-white shadow-xl shadow-blue-500/20 transition active:scale-[0.99] hover:bg-[#0069d9]"
         >
-          <span className="text-7xl leading-none">📞</span>
+          <TalkIcon className="h-24 w-24" />
           <span className="text-4xl font-extrabold tracking-tight">대화하기</span>
           <span className="text-lg font-medium text-blue-50/90">터치하고 편하게 말씀하세요</span>
         </Link>
