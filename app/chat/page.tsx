@@ -4,7 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BrandLogo, CompanyLogo, TalkIcon } from "../BrandLogo";
+import { BrandLogo, CompanyLogo } from "../BrandLogo";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
@@ -1927,9 +1927,10 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
-              className="flex h-48 w-48 flex-col items-center justify-center gap-2 rounded-full bg-[#007bff] text-white shadow-xl shadow-blue-500/30 transition active:scale-95 hover:bg-[#0069d9]"
+              className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full bg-white text-[#1a4e7a] shadow-xl shadow-blue-500/30 transition active:scale-95 hover:bg-blue-50"
             >
-              <TalkIcon className="h-16 w-16" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/talk.png" alt="" className="h-20 w-20 object-contain" />
               <span className="text-2xl font-bold">대화 시작</span>
             </button>
             <p className="text-lg text-zinc-500 dark:text-zinc-400">버튼을 눌러 편하게 이야기 나눠요.</p>

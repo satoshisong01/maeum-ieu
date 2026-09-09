@@ -46,6 +46,17 @@ export function TalkIcon({ className = "h-8 w-8" }: { className?: string }) {
   );
 }
 
+/** 대화 배지 — 두 사람이 대화하는 이미지(남색)를 흰 원 안에 넣어 대비 확보. '대화하기' 버튼용.
+ *  size는 className으로(h-32 w-32 등). 이미지는 배지의 78% 크기로 여백 확보. */
+export function TalkBadge({ className = "h-24 w-24" }: { className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center rounded-full bg-white shadow-sm ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/talk.png" alt="대화" className="h-[78%] w-[78%] object-contain" />
+    </span>
+  );
+}
+
 /** 회사 로고 — 하단 크레딧(제공: FIRST C&D) 또는 헤더용. 가로형 배너라 작은 높이로. */
 export function CompanyLogo({ className = "", label = true, imgClassName = "h-5" }: { className?: string; label?: boolean; imgClassName?: string }) {
   return (

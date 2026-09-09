@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, Suspense } from "react";
 import { LiveVoiceEngine } from "../chat/live-voice";
 import { LogoutButton, LogoutIcon } from "../LogoutButton";
-import { TalkIcon } from "../BrandLogo";
+import { TalkBadge } from "../BrandLogo";
 import { isSessionEndUtterance } from "@/lib/chat/session-end";
 import { classifyMedReply } from "@/lib/chat/medication";
 
@@ -264,9 +264,10 @@ function LiveInner() {
               state === "listening" ? "bg-gradient-to-br from-emerald-400 to-emerald-600"
                 : state === "speaking" ? "animate-pulse bg-gradient-to-br from-[#007bff] to-[#33a9d6]"
                 : state === "connecting" ? "animate-pulse bg-gradient-to-br from-amber-300 to-amber-500"
-                : "bg-gradient-to-br from-zinc-300 to-zinc-400 dark:from-zinc-600 dark:to-zinc-700"
+                : "bg-white"
             }`}>
-              {state === "listening" ? "🎙" : state === "speaking" ? "🔊" : <TalkIcon className="h-16 w-16" />}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {state === "listening" ? "🎙" : state === "speaking" ? "🔊" : <img src="/talk.png" alt="대화" className="h-24 w-24 object-contain" />}
             </div>
           </div>
           <p className="text-2xl font-bold text-zinc-700 dark:text-zinc-200">
@@ -280,8 +281,8 @@ function LiveInner() {
         <div className="flex shrink-0 flex-col items-center gap-2 py-3">
           {active && <p className="text-base font-semibold text-[#007bff] dark:text-blue-400">{stateLabel[state]}</p>}
           {!active ? (
-            <button onClick={start} className="flex w-full max-w-sm items-center justify-center gap-2 rounded-full bg-[#28a745] px-8 py-5 text-xl font-bold text-white shadow-lg transition hover:bg-[#218838]">
-              <TalkIcon className="h-7 w-7" />{state === "stopped" ? "다시 대화하기" : "대화 시작하기"}
+            <button onClick={start} className="flex w-full max-w-sm items-center justify-center gap-2 rounded-full bg-[#28a745] px-8 py-4 text-xl font-bold text-white shadow-lg transition hover:bg-[#218838]">
+              <TalkBadge className="h-9 w-9" />{state === "stopped" ? "다시 대화하기" : "대화 시작하기"}
             </button>
           ) : (
             <button onClick={stop} className="w-full max-w-sm rounded-full bg-zinc-400 px-8 py-4 text-lg font-bold text-white shadow-md transition hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600">
