@@ -3,7 +3,7 @@ import Link from "next/link";
 /** 도움말 — 어르신용 간단 사용 안내(큰 글씨). 앱 홈의 [도움말] 버튼 대상. */
 export default function HelpPage() {
   const items: { icon: string; title: string; body: string }[] = [
-    { icon: "📞", title: "대화하기", body: "가운데 큰 파란 버튼을 누르고 편하게 말씀하세요. 마음이음이 대답하고, 가끔 먼저 말을 걸기도 해요. 약 드실 시간도 알려드려요." },
+    { icon: "💬", title: "대화하기", body: "가운데 큰 파란 버튼을 누르고 편하게 말씀하세요. 마음이음이 대답하고, 가끔 먼저 말을 걸기도 해요. 약 드실 시간도 알려드려요." },
     { icon: "👂", title: "상시 감시", body: "등록한 목소리를 조용히 지켜보다가, 위급한 상황으로 보이면 보호자에게 자동으로 알려드리는 기능이에요. (베타)" },
     { icon: "⚙️", title: "설정", body: "이름, 약 먹는 시간 알림, 보호자·의사 연결 코드를 여기서 정할 수 있어요." },
   ];
@@ -34,7 +34,7 @@ export default function HelpPage() {
         </div>
 
         <Link href="/chat" className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-[#007bff] px-6 py-5 text-xl font-bold text-white shadow-lg transition hover:bg-[#0069d9]">
-          📞 지금 대화하기
+          💬 지금 대화하기
         </Link>
       </div>
     </div>

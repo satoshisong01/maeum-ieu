@@ -28,6 +28,24 @@ export function BrandLogo({ size = "md", className = "" }: { size?: keyof typeof
   );
 }
 
+/** 대화 아이콘 — 마주보는 두 말풍선(서로 대화). 전화 수화기(📞) 대신 '대화하기' 버튼에 사용. */
+export function TalkIcon({ className = "h-8 w-8" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      {/* 뒤쪽 말풍선(왼쪽·연하게) */}
+      <g opacity="0.55">
+        <rect x="2" y="3.5" width="13" height="9" rx="2.6" />
+        <path d="M5 11.5 L5 15.5 L8.8 11.5 Z" />
+      </g>
+      {/* 앞쪽 말풍선(오른쪽·진하게) */}
+      <g>
+        <rect x="9" y="9" width="13" height="9" rx="2.6" />
+        <path d="M19 17 L19 21 L15.2 17 Z" />
+      </g>
+    </svg>
+  );
+}
+
 /** 회사 로고 — 하단 크레딧(제공: FIRST C&D) 또는 헤더용. 가로형 배너라 작은 높이로. */
 export function CompanyLogo({ className = "", label = true, imgClassName = "h-5" }: { className?: string; label?: boolean; imgClassName?: string }) {
   return (
