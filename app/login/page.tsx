@@ -136,6 +136,9 @@ export default function LoginPage() {
             회원가입
           </Link>
         </p>
+        <p className="mt-3 text-center text-xs text-zinc-400">
+          <Link href="/privacy" className="hover:underline">개인정보처리방침</Link>
+        </p>
       </div>
       <div className="mt-6"><CompanyLogo /></div>
     </div>
