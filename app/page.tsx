@@ -62,7 +62,7 @@ export default async function Home() {
       {/* 대화하기 — 화면의 대부분을 차지하는 초대형 버튼 */}
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 pt-3">
         <Link
-          href="/chat"
+          href="/chat?start=1"
           className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[2rem] bg-[#007bff] px-6 py-12 text-white shadow-xl shadow-blue-500/20 transition active:scale-[0.99] hover:bg-[#0069d9]"
         >
           <span className="text-7xl leading-none">📞</span>

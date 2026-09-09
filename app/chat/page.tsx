@@ -1050,11 +1050,13 @@ export default function ChatPage() {
   useEffect(() => {
     if (autoVoiceTriedRef.current) return;
     if (status !== "authenticated" || screeningMode !== "user" || examMode || modeSelected) return;
-    // 앱(WebView)에서만 자동 시작(2026-07-08 리뷰) — 일반 브라우저는 사용자 제스처 없는 자동 시작 시
-    //   autoplay 정책으로 모든 TTS가 무음이 되고, 마이크 없는 PC에선 매 로그인 오류 박스로 시작함.
-    //   브라우저는 기존 [음성으로 대화하기] 버튼(제스처 확보)을 유지.
+    // 자동 시작 조건: 앱(WebView) 또는 홈 "대화하기"에서 넘어온 경우(?start=1).
+    //   후자는 홈 버튼 클릭 제스처가 Next Link(같은 문서 SPA 이동)로 유지돼(transient activation)
+    //   브라우저 autoplay 정책에도 마이크·TTS가 정상 동작. 반면 직접 방문/새로고침엔 자동시작 안 함
+    //   (무제스처 시작 시 TTS 무음·마이크없는 PC 오류박스 방지 — 2026-07-08 리뷰).
     const isApp = typeof window !== "undefined" && Boolean((window as unknown as { MAEUM_APP_VERSION?: string }).MAEUM_APP_VERSION);
-    if (!isApp) return;
+    const startIntent = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("start") === "1";
+    if (!isApp && !startIntent) return;
     autoVoiceTriedRef.current = true;
     // 라이브 음성(Gemini Live)이 켜져 있으면 어르신 음성 동선은 /live가 기본(2026-07-20 전환).
     //   /live도 마이크·오디오는 [대화 시작하기] 탭(제스처)에서 열므로 autoplay 정책과 무관.
@@ -1920,12 +1922,20 @@ export default function ChatPage() {
             )}
           </div>
         ) : elderIntro ? (
-          /* 어르신 — 음성 시작 전(모드선택) 인트로: 지난 대화기록 숨기고 깔끔하게 */
-          <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
-            <AudioVisualizer stream={null} active={false} aiSpeaking={false} size={180} />
-            <p className="text-xl font-semibold leading-relaxed text-zinc-600 dark:text-zinc-300">
-              아래 <span className="text-[#007bff]">음성으로 대화하기</span>를 눌러<br />편하게 이야기 나눠요.
-            </p>
+          /* 어르신 — 음성 시작 전: 큰 시작 버튼만(정적 원 제거). 홈 "대화하기"·앱에선 자동 시작돼 이 화면은 대부분 스킵. */
+          <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
+            <button
+              type="button"
+              onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
+              className="flex h-48 w-48 flex-col items-center justify-center gap-2 rounded-full bg-[#007bff] text-white shadow-xl shadow-blue-500/30 transition active:scale-95 hover:bg-[#0069d9]"
+            >
+              <span className="text-6xl leading-none">📞</span>
+              <span className="text-2xl font-bold">대화 시작</span>
+            </button>
+            <p className="text-lg text-zinc-500 dark:text-zinc-400">버튼을 눌러 편하게 이야기 나눠요.</p>
+            {micDenied && (
+              <p className="text-sm text-red-500">마이크를 사용할 수 없어요 — 권한을 허용한 뒤 다시 눌러주세요.</p>
+            )}
           </div>
         ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -1971,6 +1981,7 @@ export default function ChatPage() {
         </div>
         )}
 
+        {!elderIntro && (
         <div className="shrink-0 border-t border-zinc-200 px-3 py-3 dark:border-zinc-700">
           {!modeSelected ? (
             examMode ? (
@@ -2229,6 +2240,7 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
