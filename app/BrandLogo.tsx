@@ -52,7 +52,7 @@ export function TalkBadge({ className = "h-24 w-24" }: { className?: string }) {
   return (
     <span className={`inline-flex shrink-0 items-center justify-center rounded-full bg-white shadow-sm ${className}`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/talk.png" alt="대화" className="h-[88%] w-[88%] object-contain" />
+      <img src="/talk.png" alt="대화" className="h-[74%] w-[74%] object-contain" />
     </span>
   );
 }
