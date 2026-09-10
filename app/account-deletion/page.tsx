@@ -6,7 +6,8 @@ import Link from "next/link";
  */
 export const metadata = { title: "계정 삭제 · 마음이음" };
 
-const CONTACT = "jongwoo.first@gmail.com";
+const CONTACT = "jongwoo@firstcorea.com";
+const CONTACT2 = "kyungsuk@firstcorea.com";
 
 export default function AccountDeletionPage() {
   return (
@@ -26,8 +27,10 @@ export default function AccountDeletionPage() {
             가입에 사용한 이메일 주소를 적어
             {" "}
             <a href={`mailto:${CONTACT}?subject=마음이음 계정 삭제 요청`} className="font-medium text-[#007bff] hover:underline">{CONTACT}</a>
+            {" "}또는{" "}
+            <a href={`mailto:${CONTACT2}?subject=마음이음 계정 삭제 요청`} className="font-medium text-[#007bff] hover:underline">{CONTACT2}</a>
             {" "}
-            으로 &ldquo;계정 삭제 요청&rdquo;이라고 보내주세요. 본인 확인 후 <b>7일 이내</b>에 계정과 데이터를 삭제해 드립니다.
+            로 &ldquo;계정 삭제 요청&rdquo;이라고 보내주세요. 본인 확인 후 <b>7일 이내</b>에 계정과 데이터를 삭제해 드립니다.
           </p>
         </Section>
 
@@ -47,6 +50,8 @@ export default function AccountDeletionPage() {
         <Section title="문의">
           <p className="leading-relaxed">
             <a href={`mailto:${CONTACT}`} className="text-[#007bff] hover:underline">{CONTACT}</a>
+            {" · "}
+            <a href={`mailto:${CONTACT2}`} className="text-[#007bff] hover:underline">{CONTACT2}</a>
           </p>
         </Section>
 

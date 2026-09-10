@@ -7,7 +7,8 @@ import Link from "next/link";
 export const metadata = { title: "개인정보처리방침 · 마음이음" };
 
 const UPDATED = "2026년 9월 10일";
-const CONTACT = "jongwoo.first@gmail.com";
+const CONTACT = "jongwoo@firstcorea.com";
+const CONTACT2 = "kyungsuk@firstcorea.com";
 
 export default function PrivacyPage() {
   return (
@@ -100,6 +101,8 @@ export default function PrivacyPage() {
         <Section title="10. 문의처">
           <p className="leading-relaxed">
             개인정보 관련 문의: <a href={`mailto:${CONTACT}`} className="text-[#007bff] hover:underline">{CONTACT}</a>
+            {" · "}
+            <a href={`mailto:${CONTACT2}`} className="text-[#007bff] hover:underline">{CONTACT2}</a>
           </p>
         </Section>
 
