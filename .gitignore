@@ -64,3 +64,6 @@ docs/reports/
 
 # 파일럿 일일 점검 로그(PII 포함 가능 — 로컬 전용)
 .pilot-logs/
+
+# Play 업로드 산출물(대용량 바이너리 — git 제외)
+docs/playstore/*.aab
