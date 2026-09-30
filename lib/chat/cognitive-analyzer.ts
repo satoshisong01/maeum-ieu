@@ -474,7 +474,7 @@ const RESPONSE_SCHEMA: Schema = {
 };
 
 // 분석기 모델 — 기본 3.5(정밀 채점). 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
-const ANALYZER_PRIMARY_MODEL = "gemini-3.5-flash";
+const ANALYZER_PRIMARY_MODEL = process.env.COGNITIVE_MODEL || "gemini-3.5-flash";
 // 2단 라우팅 1차 모델 — 수다 턴(인지 질문 없는 턴)은 2.5로 1차 채점, 의심 시에만 3.5 재채점.
 const ANALYZER_LITE_MODEL = "gemini-2.5-flash";
 
