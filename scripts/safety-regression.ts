@@ -489,5 +489,98 @@ console.log("\n[med-reply] 복약 응답 분류(자동캡처)");
   check("'오늘 날씨 좋네' → unclear", classifyMedReply("오늘 날씨 좋네") === "unclear");
 }
 
+// ── #26: 인지 질문 감지 게이트 — 실제 동반자 발화 형태를 놓치면 probe 라우팅·영역기록이 빠짐 (2026-09-30) ──
+//   라이브 대화에서 관측된 미탐 3종(오늘 없는 '며칠', '연도가 어떻게', '어느 철')을 회귀 고정.
+console.log("\n[probe-detect] 인지 질문 감지(운영 게이트)");
+{
+  const { detectCognitiveQuestions } = require("../lib/chat/cognitive-analyzer");
+  const has = (s: string, d: string) => detectCognitiveQuestions(s).includes(d);
+  check("'날짜를 적어두려는데 며칠이라 쓸까요?' → 시간", has("항아리에 담근 날을 적어두려고요. 며칠이라 쓸까요?", "orientation_time"));
+  check("'올해 연도가 어떻게 됐더라요?' → 시간", has("택배에 적을 올해 연도가 어떻게 됐더라요?", "orientation_time"));
+  check("'지금 어느 철쯤이에요?' → 시간", has("그 무렵이 지금 어느 철쯤이에요?", "orientation_time"));
+  check("'무슨 요일이었죠?'(오늘 없이) → 시간", has("달력 보기가 번거로운데 무슨 요일이었죠?", "orientation_time"));
+  check("기존 '오늘이 며칠인지' 유지", has("오늘이 며칠인지 아세요?", "orientation_time"));
+  check("기존 '올해가 몇 년도' 유지", has("올해가 몇 년도인지 알려주실 수 있으세요?", "orientation_time"));
+  check("'지금이 몇 월이에요?' → 시간", has("적금 만기가 다가온다 싶으면 달력부터 보죠. 그 김에, 지금이 몇 월이에요?", "orientation_time"));
+  check("'이달이 몇 월이었어요?' → 시간", has("안내에서 말한 이달이 몇 월이었어요?", "orientation_time"));
+  // 오탐 방지 — 과거/기간 표현은 질문이 아니므로 감지 금지
+  check("'며칠 전에 비가 왔어요' → 미감지", !has("며칠 전에 비가 왔어요", "orientation_time"));
+  check("'며칠 동안 쉬셨어요' → 미감지", !has("며칠 동안 쉬셨어요", "orientation_time"));
+  check("'몇 월에 이사 오셨어요'(과거 회상) → 미감지", !has("몇 월에 이사 오셨어요?", "orientation_time"));
+}
+
+// ── #27: 즉시기억 과제 채점 보존 — 출제된 단어 등록 과제 실패가 안전망에 삭제되던 결함 (2026-09-30) ──
+//   가드는 '앵무새 자발 반복' 오탐을 막으려 직전 발화와 80% 미만 유사하면 채점을 지웠다.
+//   단어 3개 등록 과제의 답변은 직전 발화와 당연히 다르므로 실패(2/3 회상)가 통째로 사라졌다.
+console.log("\n[probe-memory] 즉시기억 과제 채점 보존");
+{
+  const { validateMemoryImmediate } = require("../lib/chat/cognitive-analyzer");
+  const base = (score: number) => ({
+    isAnomaly: score >= 2,
+    analysisNote: "3단어 중 2개만 회상 — 즉시 기억 저하",
+    cognitiveChecks: [{ domain: "memory_immediate", score, confidence: 0.9, evidence: "2/3", note: "" }],
+  });
+  const hist = "AI: 단어 셋만 따라 해보실래요? 황새, 항아리, 빨랫줄\n사용자: 응 해볼게";
+  const answer = "황새... 항아리... 그리고 뭐였지. 두개밖에 생각이 안나네";
+
+  const kept = validateMemoryImmediate(base(1), answer, hist, true);
+  check("과제 답변 턴 → 채점 보존", kept.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
+
+  const stripped = validateMemoryImmediate(base(1), answer, hist, false);
+  check("일반 턴(유사도 낮음) → 기존대로 삭제(오탐 방지 유지)",
+    !stripped.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
+
+  // 앵무새 자발 반복은 과제 턴이 아니어도 유사도 높아 보존되어야 함
+  const parrotHist = "사용자: 오늘 장에 가서 고등어를 두마리 샀어\nAI: 저녁 반찬이 든든하시겠어요.";
+  const parrot = "오늘 장에 가서 고등어를 두마리 샀어";
+  const kept2 = validateMemoryImmediate(base(1), parrot, parrotHist, false);
+  check("동일 문장 반복 → 보존(유사도 높음)", kept2.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
+}
+
+// ── #28: 어지러움 + 기동 불능 — 부정이 동사 뒤에 오는 활용형 미탐 (2026-09-30) ──
+//   '못 일어나'는 잡았으나 '일어나지 못해'·'일어날 수가 없어'를 놓쳤다(정규식 L0 → LLM 백스톱 의존).
+//   ⚠ '못 일어나'를 어지러움 전치 없이 넓히면 "아침에 못 일어나"(수면)가 오탐되므로 오탐 가드를 함께 고정한다.
+console.log("\n[emergency-dizzy] 어지러움 + 기동 불능 활용형");
+{
+  const { detectEmergency } = require("../lib/chat/emergency");
+  const hit = (s: string) => detectEmergency(s).level >= 2;
+  check("'어지러워서 일어나지 못해' → L2+", hit("어지러워서 일어나지 못해"));
+  check("'어지러워서 일어날 수가 없어' → L2+", hit("어지러워서 일어날 수가 없어"));
+  check("'어지럽고 걷지를 못하겠어' → L2+", hit("어지럽고 걷지를 못하겠어"));
+  check("'어지럼증이 나서 못 일어나' → L2+", hit("어지럼증이 나서 못 일어나"));
+  check("'혼자 일어나지 못해' → L2+", hit("혼자 일어나지 못해"));
+  check("기존 '어지러워서 못 일어나' 유지", hit("어지러워서 못 일어나"));
+  // 오탐 방지 — 수면 문맥은 응급이 아니다
+  check("'아침에 못 일어나서 늦잠 잤어' → 미감지", detectEmergency("아침에 못 일어나서 늦잠 잤어").level === 0);
+  check("'요새 일찍 일어나지 못해' → 미감지", detectEmergency("요새 일찍 일어나지 못해").level === 0);
+  check("'아침에 일어날 수가 없어서 알람을 두 개 맞췄어' → 미감지", detectEmergency("아침에 일어날 수가 없어서 알람을 두 개 맞췄어").level === 0);
+  check("'어지러운 세상이야' → 미감지", detectEmergency("어지러운 세상이야 뉴스 보면").level === 0);
+}
+
+// ── #29: 자살 표현 + 부정 응답 — PHQ-9 9번 부정 답변이 L3로 오탐되던 결함 (2026-09-30) ──
+//   9번 문항이 "죽고 싶다거나…"를 문항 자체로 제시하므로 어르신이 부정으로 답해도 L3에 걸렸다.
+//   결과: ① 본인 동의 없는 보호자 알림 ② 정신건강 검진 중단 ③ 9번 점수 미기록.
+//   ⚠ 진짜 위기 신호는 반드시 유지돼야 하므로 양방향(부정=L0 / 위기=L3)을 함께 고정한다.
+console.log("\n[suicidal-negation] 자살 표현 부정 응답");
+{
+  const { detectEmergency: det } = require("../lib/chat/emergency");
+  const { detectInappropriate: mod } = require("../lib/chat/moderation");
+  const neg = [
+    "죽고 싶다는 생각은 없었어요", "죽고 싶다는 생각 안 해봤어", "아니요 죽고 싶다는 건 아니에요",
+    "죽고 싶을 만큼은 아니고요", "죽고 싶지 않아", "죽고 싶다는 생각 한 적 없어",
+    "살기 싫다는 생각은 없어요",
+  ];
+  for (const t of neg) check(`부정 "${t.slice(0, 16)}" → L0`, det(t).level === 0, `L${det(t).level}`);
+  for (const t of neg.slice(0, 4)) check(`모더레이션 부정 "${t.slice(0, 12)}" → ok`, mod(t).category !== "self_harm");
+
+  const pos = [
+    "그냥 죽고 싶어", "죽고 싶다는 생각이 며칠 있었어요", "이제 죽고 싶다", "죽고 싶어 죽겠어",
+    "죽고 싶어도 죽지 못해", "요즘 자꾸 죽고 싶은 생각이 들어", "지금도 죽고 싶어 마음이 안 편해",
+    "다 끝내고 싶어", "목을 매달고 싶어",
+  ];
+  for (const t of pos) check(`위기 "${t.slice(0, 16)}" → L3 유지`, det(t).level >= 3, `L${det(t).level}`);
+  for (const t of pos.slice(0, 4)) check(`모더레이션 위기 "${t.slice(0, 12)}" → self_harm 유지`, mod(t).category === "self_harm");
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 process.exit(fail ? 1 : 0);

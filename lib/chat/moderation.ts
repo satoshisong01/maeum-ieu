@@ -71,11 +71,30 @@ export interface ModerationResult {
   matched?: string;
 }
 
+/**
+ * 자해 표현 뒤에 부정이 붙으면 위기 아님 — emergency.ts와 같은 규칙 (2026-09-30).
+ *
+ * 배경: PHQ-9 9번 문항이 "죽고 싶다거나…"를 문항으로 제시하므로 **부정으로 답해도**
+ *   ("죽고 싶다는 생각은 없었어요") self_harm으로 잡혀 109 안내가 나가고 대화가 끊겼다.
+ *   일상 대화에서도 "죽고 싶다는 생각은 없어"는 위기가 아니다.
+ * ⚠ 창을 12자로 짧게 두고 지속 표지가 있으면 적용하지 않는다(진짜 신호 보존).
+ */
+function isNegatedSelfHarm(text: string, m: RegExpMatchArray | null): boolean {
+  if (!m || m.index === undefined) return false;
+  const after = text.slice(m.index + m[0].length, m.index + m[0].length + 12);
+  const NEGATED = /(?:은|는|이|가|도)?\s*없(?:었|어|다|습니|네|고|을)|안\s*(?:해|했|드|들)|아니(?:에|야|다|라|고|)|지\s*않|(?:한|그런)\s*적\s*(?:은|도)?\s*없/;
+  const STILL_DISTRESSED = /지금도|아직도|여전히|자꾸|계속|또\s*죽|다시\s*죽/;
+  return NEGATED.test(after) && !STILL_DISTRESSED.test(text);
+}
+
 /** 입력 발화 검사. 매칭되면 카테고리 반환. */
 export function detectInappropriate(userText: string): ModerationResult {
   if (!userText) return { category: "ok" };
   const text = userText.trim();
-  for (const p of SELF_HARM) if (p.test(text)) return { category: "self_harm", matched: text.match(p)?.[0] };
+  for (const p of SELF_HARM) {
+    const m = text.match(p);
+    if (m && !isNegatedSelfHarm(text, m)) return { category: "self_harm", matched: m[0] };
+  }
   for (const p of SEXUAL_EXPLICIT) if (p.test(text)) return { category: "sexual", matched: text.match(p)?.[0] };
   for (const p of STRONG_PROFANITY) if (p.test(text)) return { category: "profanity", matched: text.match(p)?.[0] };
   return { category: "ok" };

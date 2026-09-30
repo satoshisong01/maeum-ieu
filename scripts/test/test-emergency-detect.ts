@@ -17,9 +17,10 @@ const cases: Case[] = [
 
   // ─── L2 주의 ────────────────────────────────────────────────
   { text: "허리가 너무 아파 잠을 못 잤어", level: 2, category: "severe_pain", label: "L2 — 심한 통증" },
-  { text: "어지러워서 못 일어나겠어", level: 2, category: "dizziness_help", label: "L2 — 어지러움+못일어남" },
+  // L3 규칙(fall_injury: '못 일어나겠')이 먼저 평가되어 더 안전한 즉시응급으로 올라간다 — 의도된 동작(2026-09-30 확인)
+  { text: "어지러워서 못 일어나겠어", level: 3, category: "fall_injury", label: "L3 — 어지러움+못일어남(즉시응급 승격)" },
   { text: "눈앞이 캄캄해", level: 2, category: "dizziness_help", label: "L2 — 시야 캄캄" },
-  { text: "아무나 좀 도와줘 혼자 못 일어나겠어", level: 2, category: "dizziness_help", label: "L2 — 도움 호소" },
+  { text: "아무나 좀 도와줘 혼자 못 일어나겠어", level: 3, category: "fall_injury", label: "L3 — 도움 호소(즉시응급 승격)" },
   { text: "열이 펄펄 나고 계속 토해", level: 2, category: "medical_acute", label: "L2 — 발열 구토" },
 
   // ─── L1 관찰 ────────────────────────────────────────────────

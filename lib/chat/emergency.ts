@@ -90,10 +90,12 @@ const L2_RULES: PatternRule[] = [
   { level: 2, category: "severe_pain", pattern: /(?:가슴|배|머리|허리|등|허벅지|무릎)(?:이|가)?\s*(?:너무|진짜|정말|많이|굉장히)\s*아파/ },
   { level: 2, category: "severe_pain", pattern: /머리가\s*(?:깨질\s*것|쪼개질|어질|핑\s*돌)/ },
   // 어지러움 + 도움 호소
-  { level: 2, category: "dizziness_help", pattern: /(?:어지러워|핑\s*돌아)\s*서?\s*(?:못\s*(?:일어|걷|서)|쓰러질|넘어질)/ },
+  //   부정이 동사 뒤에 오는 활용형("일어나지 못해", "일어날 수가 없어")까지 포착 — '못 일어나' 형태만 잡던 미탐.
+  //   ⚠ '못 일어나'를 어지러움 전치 없이 넓히면 "아침에 못 일어나"(수면) 오탐이 생기므로 반드시 어지러움 뒤에서만 확장.
+  { level: 2, category: "dizziness_help", pattern: /(?:어지러워|어지럽|어지럼|핑\s*돌아)[가-힣\s]{0,6}?(?:못\s*(?:일어|걷|서)|일어나지\s*(?:를\s*)?못|일어서지\s*(?:를\s*)?못|일어날\s*수가?\s*없|걷지\s*(?:를\s*)?못|쓰러질|넘어질)/ },
   { level: 2, category: "dizziness_help", pattern: /눈앞이[\s\S]{0,6}(?:캄캄|아득|핑\s*돌)/ },
   // 직접적 도움 요청 (응급 맥락)
-  { level: 2, category: "dizziness_help", pattern: /(?:누구\s*좀|아무나|진짜)\s*도와줘|혼자\s*(?:못\s*일어|일어날\s*수\s*없)/ },
+  { level: 2, category: "dizziness_help", pattern: /(?:누구\s*좀|아무나|진짜)\s*도와줘|혼자\s*(?:못\s*일어|일어나지\s*(?:를\s*)?못|일어날\s*수가?\s*없)/ },
   // 구토·발열 강도
   { level: 2, category: "medical_acute", pattern: /계속\s*토(?:해|하고)|토할\s*것\s*같아\s*계속|열이\s*(?:너무|많이|펄펄)/ },
 ];
@@ -150,6 +152,20 @@ export function detectEmergency(userText: string): EmergencyResult {
           return { level: 2, evidence: m[0], category: rule.category };
         }
         continue;
+      }
+      // 부정 응답 가드 — 매칭 직후 짧은 창에서 부정이 그 표현에 붙으면 위기 아님 (2026-09-30)
+      //   배경: PHQ-9 9번 문항이 "죽고 싶다거나…"를 문항 자체로 제시하므로, 어르신이 **부정으로 답해도**
+      //   ("죽고 싶다는 생각은 없었어요") L3로 잡혀 ① 본인 동의 없는 보호자 알림 ② 검진 중단
+      //   ③ 9번 점수 미기록이 발생했다. 일상 대화에서도 "죽고 싶다는 생각은 없어"는 위기가 아니다.
+      //   ⚠ 창을 12자로 짧게 두고, 현재 고통 표지가 있으면 가드를 적용하지 않아 진짜 신호를 죽이지 않는다.
+      //   ⚠ 바른 '못'은 부정 목록에서 제외 — "죽고 싶어도 죽지 못해"는 진짜 신호다.
+      if (rule.category === "suicidal" && m.index !== undefined) {
+        const after = text.slice(m.index + m[0].length, m.index + m[0].length + 12);
+        const NEGATED = /(?:은|는|이|가|도)?\s*없(?:었|어|다|습니|네|고|을)|안\s*(?:해|했|드|들)|아니(?:에|야|다|라|고|)|지\s*않|(?:한|그런)\s*적\s*(?:은|도)?\s*없/;
+        // ⚠ 여기엔 '지속'을 뜻하는 표지만 넣는다. 자살 표현 자체(살기 싫다 등)를 넣으면
+        //   "살기 싫다는 생각은 없어요" 같은 부정 응답에서 가드가 스스로 무력화된다.
+        const STILL_DISTRESSED = /지금도|아직도|여전히|자꾸|계속|또\s*죽|다시\s*죽/;
+        if (NEGATED.test(after) && !STILL_DISTRESSED.test(text)) continue;
       }
       if (isFigurative && rule.category !== "suicidal" && rule.category !== "medication_error") {
         // 비유 — L2로 강등
