@@ -15,10 +15,14 @@ export async function runCognitiveAnalysis(params: {
   historyText: string;
   envBlock: string;
   honorific?: string;
+  /** 서버 확정 '확인 턴' 여부 — 분석기 정밀 채점 라우팅용(prompt.ts의 probeTurn || prevProbeTurn) */
+  probeContext?: boolean;
+  /** 직전 턴이 확인 턴이라 이번 발화가 그 답변인가(prompt.ts의 prevProbeTurn) — 즉시기억 과제 채점 보존용 */
+  answeringProbe?: boolean;
 }): Promise<void> {
-  const { userId, conversationId, userMsgId, userMessage, assistantResponse, historyText, envBlock, honorific } = params;
+  const { userId, conversationId, userMsgId, userMessage, assistantResponse, historyText, envBlock, honorific, probeContext, answeringProbe } = params;
   try {
-    const analysis = await analyzeCognitive({ userMessage, assistantResponse, historyText, envBlock });
+    const analysis = await analyzeCognitive({ userMessage, assistantResponse, historyText, envBlock, probeContext, answeringProbe });
 
     // Gemini가 isAnomaly: false를 줘도, "신뢰할 만한" score >= 2 check가 있으면 강제 이상징후 판정.
     //   명시적 저신뢰(confidence < 0.6) score 2만 제외(오경보 방지). confidence는 스키마 required이며,

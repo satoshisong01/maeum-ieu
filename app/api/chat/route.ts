@@ -528,8 +528,14 @@ async function handleAudioMessage(params: {
   clientTimeIso?: string;
   timings?: Record<string, number>;
   mode: "user" | "pro" | "general";
+  /** 이번 턴에 인지 질문을 던져야 하는가 — 동반자 모델 상향 판단용 */
+  probeTurn: boolean;
+  /** 이번 턴 또는 직전 턴이 확인 턴인가 — 분석기 정밀 채점 라우팅용 */
+  probeContext: boolean;
+  /** 직전 턴이 확인 턴 — 즉시기억 과제 채점 보존용 */
+  answeringProbe: boolean;
 }) {
-  const { systemPrompt, stablePrompt, turnBlock, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings, mode } = params;
+  const { systemPrompt, stablePrompt, turnBlock, envBlock, honorific, companionName, userId, conversationId, sttPromise, historyText, messages, profile, clientTimeIso, timings, mode, probeTurn, probeContext, answeringProbe } = params;
 
   // 1단계: 음성 → 텍스트 변환 — POST 초입에서 이미 시작됨(프롬프트 빌드와 병렬). 여기선 대기만.
   const transcription0 = await sttPromise;
@@ -624,8 +630,9 @@ async function handleAudioMessage(params: {
   const intent = classifyIntent(transcription);
   const useSearch = intent.intents.includes("info_request");
   // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
-  const prefixCache = useSearch ? null : await getPrefixCache(userId, stablePrompt);
-  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch);
+  //   확인 턴은 캐시 우회 — Gemini 캐시는 생성 모델(2.5)에 종속이라 상향 모델과 함께 쓸 수 없음.
+  const prefixCache = useSearch || probeTurn ? null : await getPrefixCache(userId, stablePrompt);
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
@@ -689,7 +696,7 @@ async function handleAudioMessage(params: {
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
       // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
+      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
       if (transcription) {
         extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
         maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
@@ -839,8 +846,12 @@ async function handleTextMessage(params: {
   profile: FullProfile;
   timings?: Record<string, number>;
   mode: "user" | "pro" | "general";
+  probeTurn: boolean;
+  probeContext: boolean;
+  /** 직전 턴이 확인 턴 — 즉시기억 과제 채점 보존용 */
+  answeringProbe: boolean;
 }) {
-  const { systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings, mode } = params;
+  const { systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent, historyText, memories, messages, companionName, honorific, profile, timings, mode, probeTurn, probeContext, answeringProbe } = params;
 
   // 응급 발화 감지 — moderation보다 먼저
   const emergency = await evaluateEmergency({ userContent, conversationId });
@@ -879,8 +890,9 @@ async function handleTextMessage(params: {
   const intent = classifyIntent(userContent);
   const useSearch = intent.intents.includes("info_request");
   // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
-  const prefixCache = useSearch ? null : await getPrefixCache(userId, stablePrompt);
-  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch);
+  //   확인 턴은 캐시 우회 — Gemini 캐시는 생성 모델(2.5)에 종속이라 상향 모델과 함께 쓸 수 없음.
+  const prefixCache = useSearch || probeTurn ? null : await getPrefixCache(userId, stablePrompt);
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
 
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);
@@ -957,7 +969,7 @@ async function handleTextMessage(params: {
       // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
       // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
       // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific }).catch((e) => console.error("[bg-cognitive]", e));
+      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
       extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
       maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
     },
@@ -1071,9 +1083,12 @@ export async function POST(req: Request) {
     // DB 이력이 있으면 그것이 ground truth (클라이언트 slice 50·미저장 경합 시에만 폴백)
     const history = dbHistory.length > 0 ? dbHistory : (messages ?? []);
     _m = performance.now();
-    const { systemPrompt, stablePrompt, turnBlock, envBlock, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
+    const { systemPrompt, stablePrompt, turnBlock, envBlock, probeTurn, prevProbeTurn, userName, honorific, companionName, companionRelation, profile } = await buildSystemPrompt({
       userId, conversationId, timeCtx, weather: weatherCtx, mode,
     });
+    // 이번 턴에 인지 질문을 던지거나, 직전 턴 질문에 지금 답하는 턴 → 분석기 정밀 채점(lite 우회)
+    const probeContext = probeTurn || prevProbeTurn;
+    const answeringProbe = prevProbeTurn;
     _t.promptMs = Math.round(performance.now() - _m);
 
     // 검진 시작(대리 검사) — 자동 인사 대신 표준 문항 시행 시작
@@ -1107,11 +1122,11 @@ export async function POST(req: Request) {
       return handleAudioMessage({
         systemPrompt, stablePrompt, turnBlock, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
         sttPromise, historyText, messages: history, profile,
-        clientTimeIso: ctx?.currentTime, timings: _t, mode,
+        clientTimeIso: ctx?.currentTime, timings: _t, mode, probeTurn, probeContext, answeringProbe,
       });
     }
 
-    return handleTextMessage({ systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode });
+    return handleTextMessage({ systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode, probeTurn, probeContext, answeringProbe });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });

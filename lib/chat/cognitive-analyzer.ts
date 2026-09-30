@@ -32,7 +32,10 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - ⚠️ **근소한 날짜 오차는 이상 아님(score 0)**: 실제 날짜와 **며칠(약 1주) 이내** 차이, 또는 **월말↔월초·계절 경계** 수준의 작은 어긋남은 정상으로 보세요. 예: 실제 6월 1일인데 "5월 말이지"(3일 차이), 실제 3월 1일인데 "아직 겨울 끝물이지" → **score 0**. score 2(주의)는 **연도·계절이 명백히 틀리거나 여러 달/년 어긋난 경우**에만. (노인 화법상 날짜를 대략 말하는 건 정상)
    - ⚠️ 직전 AI 발화가 잘못된 날짜를 제시했고 사용자가 그걸 따라 말한 경우, 사용자의 인지 오류가 아니라 AI 오류이므로 이상으로 채점하지 마세요(score 0).
    - ⚠️ **음력(陰曆) 날짜는 시간 오류가 아닙니다(score 0)**: 어르신은 생일·명절·제사를 음력으로 말하는 게 자연스럽습니다. "음력"을 명시하거나 음력 명절(정월대보름·초파일·단오·칠석·동지·음력설 등)·음력 날짜로 말해 양력 환경날짜와 달라도 → score 0. 양력 기준으로 "틀렸다"고 채점하지 마세요.
-   - ⚠️ **명시적 회상·자기불확실 표현이 같은 발화에 동반되면 한 단계 낮춰 score 1**: "옛날에/예전에/어릴 때/그때/젊었을 때", "~생각이 나서/나네", "헷갈리네/가물가물", "잘 모르겠네" 같은 **과거 회상 또는 본인이 헷갈려함을 명시**한 표현이 함께 있을 때만 score 2 → 1로 강등.
+   - ⚠️ **명시적 과거 회상 표현이 같은 발화에 동반되면 한 단계 낮춰 score 1**: "옛날에/예전에/어릴 때/그때/젊었을 때", "~생각이 나서/나네" 같은 **과거를 떠올리는 맥락**임이 명시된 표현이 함께 있을 때만 score 2 → 1로 강등.
+     ⛔ **자기불확실 표현만 있고 위의 과거 회상 맥락이 없으면 강등하지 마세요(score 2 유지)**: "헷갈리네/가물가물/잘 모르겠네/정신이 오락가락해" 같은 **본인이 헷갈려함의 표현이나 의문형("1998년인가?")은 그 자체로 강등 사유가 아닙니다** — 스스로 헷갈림을 아는 것(병식)이 지남력 저하를 덜어주지 않습니다.
+       · 예(강등 O, score 1): "2010년쯤인가? **옛날 생각이 자꾸 나서** 헷갈리네" ← 과거 회상에 귀인
+       · 예(강등 X, score 2): "내가 요즘 정신이 오락가락해. 올해가 몇년이더라, **천구백구십팔년인가?**" ← 회상 맥락 없이 현재 연도를 크게 오인
      ⛔ 단순 꼬리표 의문("~이지?", "~맞지?", "~인가?")만으로는 강등하지 마세요 — 이는 확신에 찬 단정의 어투일 뿐 불확실이 아닙니다. 예: "오늘 2003년 3월이지?"는 확신 오답 → **score 2 유지**.
    - ⚠️ **머뭇거리다 스스로 정정해 최종적으로 정답에 도달하면 score 0(정상)**: 틀린 답에서 시작해도 같은 발화 안에서 정답으로 자가정정하면 정상적 인출 과정입니다. 예: 오늘이 수요일인데 "화요일… 아니 수요일이지" → 최종 정답 도달 → score 0. (최종 답이 여전히 틀리면 위 규칙대로 채점)
    - 예: "올해가 한 2010년인가? 아 옛날 생각이 자꾸 나서 헷갈리네" → 틀린 연도 + 명시적 회상·불확실("옛날 생각", "헷갈리네") → score 1
@@ -90,7 +93,9 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
 
 6. 언어 유창성 (language):
    - "그거", "저기", "뭐시기" 과다 사용, 단어 찾기 어려움 → score 2
-   - AI가 "1분 안에 동물 이름 최대한" 요청(의미 유창성) → 사용자가 5개 미만 → score 2, 5~8개 → score 1
+   - AI가 "1분 안에 동물 이름 최대한" 요청(의미 유창성) → **반드시 사용자가 댄 개수를 하나씩 세어** 채점: 5개 미만 → score 2, 5~8개 → score 1, 9개 이상 → score 0.
+     · ⚠️ 건강한 성인은 1분에 15~20개를 댑니다. **8개 이하는 "충분히 말했다"고 보지 말고 반드시 이상으로 채점**하세요(의미 유창성 저하는 가장 이른 치매 징후 중 하나).
+     · 예: "사자, 호랑이, 토끼, 강아지, 고양이, 곰… 음 이 정도?" → 6개 → **score 1**(0점 금지)
    - AI가 "'ㅁ'으로 시작하는 단어" 요청(음소 유창성) → 사용자가 3개 미만 → score 2
    - AI가 따라말하기 요청("간장 공장 공장장…") → 절반 이하 정확도 → score 2
    - AI가 속담/은유 의미 질문("백문이 불여일견 무슨 뜻?") → 사용자가 글자 그대로 해석하거나 모르겠다고 함 → score 1 (단, 학력 낮으면 정상일 수 있어 신중)
@@ -210,13 +215,24 @@ function extractPrevUserMessage(historyText: string): string {
   return "";
 }
 
-function validateMemoryImmediate(
+export function validateMemoryImmediate(
   result: CognitiveAnalysisResult,
   userMessage: string,
   historyText: string,
+  /**
+   * 직전 턴이 '인지 확인' 턴이었나(서버 확정값) — 즉 사용자가 지금 그 과제에 **답하는** 턴인가.
+   * true면 아래 유사도 가드를 건너뛴다.
+   *
+   * 이 가드는 '앵무새처럼 같은 문장을 되풀이하는' 자발적 반복의 오탐을 막으려 만든 것이다.
+   * 그런데 단어 3개 등록(MMSE식) 과제의 답변은 직전 사용자 발화와 당연히 다르므로,
+   * 과제를 실제로 실패했는데도(2/3만 회상) 채점이 통째로 삭제되어 기록에서 사라졌다(2026-09-30 라이브 발견).
+   * '따라 해보실래요' 같은 요청 문구를 정규식으로 잡는 방식은 미탐이 남아 서버 확정값을 쓴다.
+   */
+  answeringProbe = false,
 ): CognitiveAnalysisResult {
   const memCheck = result.cognitiveChecks.find((c) => c.domain === "memory_immediate");
   if (!memCheck || memCheck.score === 0) return result;
+  if (answeringProbe) return result;   // 출제된 과제에 답한 턴 — 자발적 반복이 아니므로 보존
 
   const prevUser = extractPrevUserMessage(historyText);
   // 직전 사용자 발화를 못 찾으면 유사도 판정 불가 → LLM 판정을 무조건 제거하지 않고 보존(거짓음성 방어).
@@ -264,14 +280,22 @@ const COGNITIVE_QUESTION_PATTERNS: Array<{ domain: string; pattern: RegExp }> = 
   { domain: "attention_calculation", pattern: /100\s*에서\s*7\s*씩|삼천리강산.*거꾸로|만원\s*내(?:면|고).*거스름/ },
   // 시간 지남력 — 조사 붙은 형태("오늘이 몇 월쯤") 허용: probe 게이트가 이 패턴에 의존(2026-06-10)
   { domain: "orientation_time", pattern: /오늘(?:이|은)?\s*(?:무슨\s*요일|며칠|몇\s*월|날짜)|지금\s*몇\s*시|올해(?:가|는)?\s*몇\s*년|지금이\s*(?:몇년|몇\s*년)/ },
-  { domain: "orientation_time", pattern: /요즘\s*무슨\s*계절|지금(?:이|은)?\s*무슨\s*계절/ },
+  // '오늘' 없이 날짜만 묻는 형태("날짜를 적어두려는데 며칠이라 쓸까요?") — 조사·종결어미까지 받아야 게이트가 열림
+  { domain: "orientation_time", pattern: /며칠(?:이라|인지|이죠|이에요|이세요|일까|이야|이었)/ },
+  { domain: "orientation_time", pattern: /무슨\s*요일(?:이라|인지|이죠|이에요|이세요|일까|이야|이었)/ },
+  // 월을 '오늘' 없이 묻는 형태("지금이 몇 월이에요?", "이달이 몇 월이었어요?")
+  { domain: "orientation_time", pattern: /(?:지금|이달|이번\s*달|금월)(?:이|은)?\s*(?:몇\s*월|무슨\s*달)/ },
+  { domain: "orientation_time", pattern: /몇\s*월(?:이라|인지|이죠|이에요|이세요|일까|이었|인가)/ },
+  // 연도를 '몇 년' 이외 표현으로 묻는 형태("올해 연도가 어떻게 됐더라?")
+  { domain: "orientation_time", pattern: /(?:올해|금년)\s*(?:연도|년도)|(?:연도|년도)(?:가|는)?\s*(?:어떻게|뭐|무엇|몇)/ },
+  { domain: "orientation_time", pattern: /요즘\s*무슨\s*계절|지금(?:이|은)?\s*무슨\s*계절|(?:어느|무슨)\s*철(?:쯤|이|인지|이에요|일까)/ },
   // 장소 지남력
   { domain: "orientation_place", pattern: /(?:지금|할아버지|할머니)\s*(?:어디|어느\s*곳).*계세|여기(?:가)?\s*어디/ },
   // 판단력
   { domain: "judgment", pattern: /(?:길에서\s*지갑(?:을|를)?\s*주우면|불이\s*났을\s*때|화재.*어떻게|약을\s*잘못\s*드시면)/ },
 ];
 
-function detectCognitiveQuestions(aiResponse: string): string[] {
+export function detectCognitiveQuestions(aiResponse: string): string[] {
   const out = new Set<string>();
   for (const { domain, pattern } of COGNITIVE_QUESTION_PATTERNS) {
     if (pattern.test(aiResponse)) out.add(domain);
@@ -473,8 +497,11 @@ const RESPONSE_SCHEMA: Schema = {
   required: ["isAnomaly", "cognitiveChecks"],
 };
 
-// 분석기 모델 — 기본 3.5(정밀 채점). 모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
-const ANALYZER_PRIMARY_MODEL = process.env.COGNITIVE_MODEL || "gemini-3.5-flash";
+// 분석기 정밀 채점 모델 — 3.8-flash.
+//   근거(2026-09-30, matrix-verify 54케이스 동일 루브릭): 3.8-flash 54/54(100%) vs 3.5-flash 52/54(96.3%),
+//   단가는 절반($0.75/$3.75 vs $1.50/$9.00). 즉 더 정확하고 더 싸서 교체 근거가 명확.
+//   모델 비교용으로 COGNITIVE_MODEL env로 오버라이드 가능.
+const ANALYZER_PRIMARY_MODEL = process.env.COGNITIVE_MODEL || "gemini-3.8-flash";
 // 2단 라우팅 1차 모델 — 수다 턴(인지 질문 없는 턴)은 2.5로 1차 채점, 의심 시에만 3.5 재채점.
 const ANALYZER_LITE_MODEL = "gemini-2.5-flash";
 
@@ -539,6 +566,10 @@ export async function analyzeCognitive(params: {
   assistantResponse: string;
   historyText: string;
   envBlock: string;
+  /** 서버가 확정한 '확인 턴' 여부(이번 턴 또는 직전 턴). 주면 정규식 추측보다 우선 — 미탐으로 lite에 새는 것 방지 */
+  probeContext?: boolean;
+  /** 직전 턴이 확인 턴이라 이번 발화가 그 '답변'인가 — 즉시기억 과제 채점이 안전망에 삭제되지 않게 함 */
+  answeringProbe?: boolean;
 }): Promise<CognitiveAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
@@ -571,7 +602,10 @@ export async function analyzeCognitive(params: {
     //   수다 턴은 lite로 1차 채점 → 이상 의심(isAnomaly 또는 score≥1)일 때만 primary 재채점.
     //   사망인물 등 명시 이상은 아래 injectJudgmentSafetyNet(정규식)이 모델과 무관하게 잡는다.
     const lastAiQuestion = extractLastAiMessage(recentHistory);
-    const isProbeTurn = detectCognitiveQuestions(params.assistantResponse).length > 0
+    //   서버 확정값(probeContext)을 최우선 — 질문 풀이 우회 표현이라 정규식만으론 미탐이 남는다(2026-09-30).
+    //   정규식 감지는 probeContext가 없는 경로(스크립트·구 호출부)의 폴백으로 유지.
+    const isProbeTurn = params.probeContext === true
+      || detectCognitiveQuestions(params.assistantResponse).length > 0
       || (lastAiQuestion ? detectCognitiveQuestions(lastAiQuestion).length > 0 : false);
     const twoStage = process.env.COGNITIVE_TWO_STAGE !== "0" && primaryModelName !== ANALYZER_LITE_MODEL;
 
@@ -601,7 +635,7 @@ export async function analyzeCognitive(params: {
       raw = parseResult((res.text ?? "").trim());
     }
 
-    const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory);
+    const memValidated = validateMemoryImmediate(raw, userForAnalysis, recentHistory, params.answeringProbe === true);
     const calcReclassified = reclassifyCalculation(memValidated, userForAnalysis, recentHistory);
     const safetyNetted = injectJudgmentSafetyNet(calcReclassified, userForAnalysis);
     const persevChecked = injectPerseverationCheck(safetyNetted, userForAnalysis, recentHistory);

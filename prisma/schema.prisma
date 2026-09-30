@@ -136,6 +136,11 @@ model Message {
   createdAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// 대화 이력 조회는 매 턴 (conversationId, createdAt DESC)로 돈다. PostgreSQL은 관계만으로
+  /// 인덱스를 만들지 않아 실측상 Seq Scan이었다(13,934행 전수 스캔, 2026-09-30 EXPLAIN 확인).
+  /// ⚠️ 적용은 `prisma db push` 금지(raw SQL 테이블 drop 사고 이력) — scripts/ops-create-message-index.ts 사용.
+  @@index([conversationId, createdAt])
 }
 
 // 참고: cognitive_assessments 테이블은 Prisma 외부 (raw SQL)로 관리

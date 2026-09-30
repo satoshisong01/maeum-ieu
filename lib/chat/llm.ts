@@ -15,6 +15,30 @@ export function getApiKey(): string {
   return key;
 }
 
+/**
+ * LLM 호출 타임아웃 — 용도별 상한(ms). env로 조정 가능.
+ *
+ * 왜 필요한가(2026-09-30 감사): 코드베이스 전체에 abortSignal이 웹훅 1곳뿐이라, Gemini가 응답을
+ * 끊지 않고 매달리면 서버 함수가 플랫폼 상한까지 대기하고 어르신 화면은 스피너에 멈춘다. 이후
+ * 스트림이 데이터 없이 끝나면 오류 메시지도 TTS도 없이 **완전한 침묵**이 된다.
+ * 무응답보다 폴백 문구가 낫다 — 상한을 넘기면 취소하고 폴백 경로로 보낸다.
+ */
+export const LLM_TIMEOUT_MS = {
+  /** 동반자 응답 — 어르신이 기다리는 구간이라 가장 짧게 */
+  companion: Number(process.env.LLM_TIMEOUT_COMPANION_MS) || 20_000,
+  /** 응급 LLM 백스톱 — 응답 전 블로킹이라 더 짧게(놓쳐도 정규식이 남음) */
+  emergency: Number(process.env.LLM_TIMEOUT_EMERGENCY_MS) || 8_000,
+  /** 음성 전사 — 오디오 길이에 비례해 조금 여유 */
+  stt: Number(process.env.LLM_TIMEOUT_STT_MS) || 15_000,
+  /** 배경 작업(분석기·요약·검진 채점) — 응답을 막지 않으므로 여유 */
+  background: Number(process.env.LLM_TIMEOUT_BACKGROUND_MS) || 30_000,
+} as const;
+
+/** 타임아웃 시그널 — Node 18+ 표준. 미지원 런타임이면 undefined(기존 무제한 동작 유지). */
+export function timeoutSignal(ms: number): AbortSignal | undefined {
+  try { return AbortSignal.timeout(ms); } catch { return undefined; }
+}
+
 // 신 SDK 클라이언트 싱글톤 — 모델명은 호출 시점에 전달하는 구조라 하나면 충분.
 let _genAI: GoogleGenAI | null = null;
 export function getGenAI(): GoogleGenAI {
@@ -62,8 +86,14 @@ export function logUsage(label: string, res: any): void {
   }
 }
 
-/** 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수) */
-export function getTextModel(systemInstruction: string, enableSearch: boolean = true, cachedContent?: string) {
+/**
+ * 텍스트 응답용 — Gemini API + googleSearch (실시간 날짜/뉴스 필수)
+ * @param probeTurn 이번 턴이 '인지 확인' 턴인가. true면 지시 준수력이 높은 모델로 올린다.
+ *   근거(2026-09-30 실측, 고정 맥락 6회): 확인 턴 지시 준수 2.5-flash 4/6 · 3.5-flash-lite 4/6 ·
+ *   3.8-flash 6/6 · 3.5-flash 6/6. 2.5는 주입된 인지 질문을 수다 질문으로 바꿔버려 선별이 0건이 되는
+ *   '조용한 실패'가 있었음. 3.8이 3.5와 같은 100%를 절반 가격에 내므로 확인 턴만 3.8로 올린다.
+ */
+export function getTextModel(systemInstruction: string, enableSearch: boolean = true, cachedContent?: string, probeTurn: boolean = false) {
   // googleSearch는 실시간 정보(info_request: 뉴스·날씨·사실조회)에만 필요.
   // 일상 대화·공감·인지 응답엔 불필요하므로 그 턴엔 비활성해 지연·검색 비용 절감.
   const tools = enableSearch ? [{ googleSearch: {} }] : undefined;
@@ -73,8 +103,11 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
   const parsed = parseInt(process.env.COMPANION_THINKING_BUDGET || "512", 10);
   const THINKING_BUDGET = Number.isFinite(parsed) && parsed >= 64 ? parsed : 512;
   const ai = getGenAI();
-  // 비용 최적화: 동반자(대화)는 2.5로 — 3.5는 측정상 품질 이득 없이 비용·지연만 컸음(분석기만 3.5 유지).
-  const model = "gemini-2.5-flash";
+  // 비용 최적화: 수다 턴(≈80%)은 2.5로 — 품질 차이 없이 저렴. 확인 턴(≈20%)만 지시 준수를 위해 상향.
+  // COMPANION_MODEL / COMPANION_PROBE_MODEL로 오버라이드 가능(A/B 측정용).
+  const model = probeTurn
+    ? (process.env.COMPANION_PROBE_MODEL || "gemini-3.8-flash")
+    : (process.env.COMPANION_MODEL || "gemini-2.5-flash");
   // 명시적 캐시 사용 시 systemInstruction은 캐시에 포함됨 → 호출 config엔 cachedContent만(둘 다 지정 불가).
   const config = cachedContent
     ? {
@@ -93,14 +126,17 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
         safetySettings: COMPANION_SAFETY_SETTINGS,
         tools,
       };
+  // 타임아웃 — 매 호출마다 새 시그널(재사용하면 두 번째 호출이 즉시 취소됨).
+  //   상한을 넘기면 취소 → 호출부의 폴백 문구 경로로 흐른다(무응답 방지).
+  const withTimeout = () => ({ ...config, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.companion) });
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generateContent: (p: any) => ai.models.generateContent({ model, contents: normalizeContents(p), config }),
+    generateContent: (p: any) => ai.models.generateContent({ model, contents: normalizeContents(p), config: withTimeout() }),
     // 구 SDK 모양({stream, response}) 어댑터 — route.ts 스트리밍 문장 안전망이 그대로 동작.
     // chunk.text는 신 SDK에서 getter 프로퍼티 — 함수 모양으로 감싸 호출부 호환 유지.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generateContentStream: async (p: any) => {
-      const gen = await ai.models.generateContentStream({ model, contents: normalizeContents(p), config });
+      const gen = await ai.models.generateContentStream({ model, contents: normalizeContents(p), config: withTimeout() });
       let last: GenerateContentResponse | undefined;
       const stream = (async function* () {
         for await (const chunk of gen) {

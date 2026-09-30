@@ -1,7 +1,7 @@
 /** 프롬프트 조립 */
 
 import type { TimeContext, WeatherContext, ScreeningMode } from "./types";
-import { renderSystemPrompt, COMPANION_DEFAULTS } from "./constants";
+import { sliceProtocolForDomain, renderSystemPrompt, COMPANION_DEFAULTS } from "./constants";
 import { prisma } from "@/lib/prisma";
 import { toKstDateString } from "./time";
 import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./profile";
@@ -89,6 +89,10 @@ export interface PromptParts {
   stablePrompt: string;  // 캐시 대상 안정 프리픽스(base+user+profile+summary)
   turnBlock: string;     // 턴별 동적부(protocol?+guide+adaptation+env+date) — 캐시 시 contents로
   envBlock: string;
+  /** 이번 턴이 '인지 확인' 턴인가 — 분석기 정밀 채점 라우팅에 사용(정규식 추측 대신 서버 확정값) */
+  probeTurn: boolean;
+  /** 직전 턴이 '인지 확인' 턴이었나 — 사용자가 지금 그 질문에 답하는 턴이라 채점이 결정적 */
+  prevProbeTurn: boolean;
   userName: string;
   honorific: string;
   companionName: string;
@@ -188,6 +192,10 @@ export async function buildSystemPrompt(params: {
   //   · 전문가 모드: proGuideBlock이 표준 문항·정답 비노출 규칙을 자체 포함하며, 프로토콜의 "자연스러운 수다" 지시와 충돌
   //   (회상 정답 노출 방어는 턴 단위 hint(buildRecallVerificationHint) + 후처리(stripRecallAnswerLeak)가 별도 담당)
   let includeProtocol = false;
+  // 확인 턴 여부는 턴 인덱스 산술로 확정 — 분석기가 AI 발화를 정규식으로 추측하던 게이트를 대체.
+  //   질문 풀(3,888개)이 일부러 우회 표현이라 정규식은 구조적으로 미탐이 남음(2026-09-30 라이브 측정).
+  let prevProbeTurn = false;
+  let probeDomainForTurn = "";
   if (mode === "pro") {
     guideBlock = buildProGuideBlock(companionName, completedKo, remainingKo, remaining.length);
   } else if (mode === "general") {
@@ -216,6 +224,8 @@ export async function buildSystemPrompt(params: {
     // 인지 확인 턴: 약 5턴에 1번(3, 8, 13, …) + 아직 확인 안 한 영역이 남았을 때만.
     const isProbeTurn = remaining.length > 0 && userTurnIndex % 5 === 3;
     includeProtocol = isProbeTurn;
+    // 직전 턴(userTurnIndex-1)이 확인 턴이었으면 이번 발화가 그 답 — 정밀 채점 필요
+    prevProbeTurn = userTurnIndex > 1 && (userTurnIndex - 1) % 5 === 3;
 
     if (!isProbeTurn) {
       // 수다 턴 (≈80%) — 인지 질문 없음
@@ -233,14 +243,17 @@ export async function buildSystemPrompt(params: {
       const weakInRemaining = remaining.filter((d) => weakDomains.includes(d));
       const probePool = weakInRemaining.length > 0 ? weakInRemaining : remaining;
       const probeDomain = probePool[probeOrdinal % probePool.length];
+      probeDomainForTurn = probeDomain;
       const probeQs = bankReady ? sampleQuestionsForDomain(probeDomain, 3).map((q) => q.text) : [];
       const probeBlock = probeQs.length
         ? `\n[이번에 슬쩍 확인할 영역: ${DOMAIN_KO[probeDomain] || probeDomain} — 아래 중 하나를 골라 대화에 녹이기]\n${probeQs.map((t) => "· " + t).join("\n")}`
         : `\n[이번에 슬쩍 확인할 영역: ${DOMAIN_KO[probeDomain] || probeDomain}]`;
       guideBlock = `\n[사용자 모드 — 지금은 '인지 확인을 슬쩍' 끼우는 턴]
-먼저 어르신 말씀에 **공감/호응 1~2문장**을 한 뒤, 아래 영역 질문을 **딱 하나만** 대화에 자연스럽게 녹여 던지세요.
-검사하듯 또박또박 묻지 말고, 수다 중에 문득 궁금해서 묻듯이. "확인하려 한다"는 인상 절대 금지.
-**이미 확인한 영역은 다시 묻지 마세요**: ${completedKo.length ? completedKo.join(", ") : "없음"}${probeBlock}${chitchatBlock}`;
+먼저 어르신 말씀에 **공감/호응 1~2문장**을 한 뒤, 아래 '확인할 영역'의 질문을 **반드시 하나 던지세요**. 이번 응답의 질문은 그것 하나여야 합니다.
+- "검사/시험/평가"라는 말은 쓰지 말고, 수다 중에 문득 궁금해서 묻듯이 또는 **가벼운 놀이처럼** 건네세요.
+- 단어 외우기·따라 말하기처럼 부탁이 필요한 항목은 "심심풀이로 하나 해볼까요?" 정도로 가볍게 운을 떼고 **그대로 진행하세요** — 어색할까 봐 생략하면 안 됩니다.
+- ⛔ 질문을 빼먹거나, 식사·날씨·취미·도구 같은 일상 수다 질문으로 **대체하지 마세요**(그런 질문은 다음 턴에 하시면 됩니다).
+**이미 확인한 영역은 다시 묻지 마세요**: ${completedKo.length ? completedKo.join(", ") : "없음"}${probeBlock}`;
     }
   }
 
@@ -259,8 +272,8 @@ export async function buildSystemPrompt(params: {
   // 명시적 캐싱용 분리: 안정 프리픽스(세션 내 불변 — 캐시 대상) vs 턴별 동적부(매 턴 변동 — contents로).
   //   암묵 캐시는 이 계정/모델에서 미작동 확정(2026-06-17 실측) → 명시적 캐시(prompt-cache.ts)에서 stablePrompt 사용.
   const stablePrompt = [systemPromptBase, userBlock, profileBlock, summaryBlock].filter(Boolean).join("\n\n");
-  const turnBlock = [includeProtocol ? cognitiveProtocol : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
+  const turnBlock = [includeProtocol ? (probeDomainForTurn ? sliceProtocolForDomain(cognitiveProtocol, probeDomainForTurn) : cognitiveProtocol) : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
   const systemPrompt = [stablePrompt, turnBlock].filter(Boolean).join("\n\n");
 
-  return { systemPrompt, stablePrompt, turnBlock, envBlock: `${userBlock}\n${envBlock}`, userName, honorific, companionName, companionRelation, profile };
+  return { systemPrompt, stablePrompt, turnBlock, envBlock: `${userBlock}\n${envBlock}`, probeTurn: includeProtocol, prevProbeTurn, userName, honorific, companionName, companionRelation, profile };
 }
