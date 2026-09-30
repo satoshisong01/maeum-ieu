@@ -67,3 +67,7 @@ docs/reports/
 
 # Play 업로드 산출물(대용량 바이너리 — git 제외)
 docs/playstore/*.aab
+docs/.chat-session.json
+
+# 학습데이터 — 운영 DB에서 추출한 실제 대화 원문이 들어감. 절대 커밋 금지 (2026-10-01 데이터 사고)
+training-data/
