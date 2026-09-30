@@ -74,5 +74,30 @@ for (const t of regionTests) {
   else { console.log(`✗ region "${t.input}" → expected ${t.expected}, got [${Array.from(regions).join(",")}]`); fail++; }
 }
 
+
+// ── 경계 보호 회귀 (2026-10-01) ─────────────────────────────────────────────
+//   치환이 무조건 substring 교체여서 "고마워"→"그만워", "마이크"→"많이크",
+//   "야들야들"→"야들이 아이들" 로 정상 발화가 손상됐다. 더 심각한 것은 이 손상 문자열이
+//   인지 분석기 입력으로 채택되어 비문을 언어 장애로 오채점할 수 있었다는 점이다.
+const ck = (name: string, ok: boolean, extra = "") => {
+  if (ok) { console.log(`✓ ${name}`); pass++; }
+  else { console.log(`✗ ${name} ${extra}`); fail++; }
+};
+
+console.log("\n[경계 보호] 표준어 단어를 깨뜨리지 않는가");
+for (const t of ["민지야 고마워", "고마운 마음뿐이야", "마이크 잡고", "마이너스 통장이야",
+                 "겁나서 못 갔어", "겁났다가 괜찮아졌어", "고기가 야들야들하네", "야들하게 삶았어",
+                 "고들빼기 김치 담갔어", "허영심만 남았지", "고맙습니다"]) {
+  const r = normalizeDialect(t);
+  ck(`유지 "${t}"`, r.normalized === t && r.changes.length === 0, `→ ${r.normalized}`);
+}
+
+console.log("\n[경계 보호] 진짜 사투리는 그대로 변환되는가");
+for (const [t, exp] of [["고마 해라", "그만"], ["마이 먹었나", "많이"], ["겁나 좋다", "엄청"],
+                        ["야들 밥 먹었나", "이 아이들"], ["단디 챙겨라", "단단히"]] as Array<[string, string]>) {
+  const r = normalizeDialect(t);
+  ck(`변환 "${t}" → ${exp}`, r.normalized.includes(exp), `→ ${r.normalized}`);
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail > 0 ? 1 : 0);

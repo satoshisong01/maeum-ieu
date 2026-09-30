@@ -22,6 +22,16 @@ interface DialectEntry {
   s: string;
   /** 지역 태그 (디버깅용) */
   r: "gs" | "jl" | "jj" | "cc" | "common";
+  /**
+   * 치환 금지 후행 문자 — 표준어 단어 내부를 깨뜨리지 않기 위한 경계 보호.
+   *
+   * 실제 결함(2026-10-01 확증): 치환이 무조건 substring 교체여서
+   *   "민지야 고마워" → "민지야 그만워", "마이크 잡고" → "많이크 잡고",
+   *   "겁나서 못 갔어" → "엄청서 못 갔어" 로 정상 발화가 손상됐다.
+   * 더 심각한 것은 이 손상 문자열이 **인지 분석기 입력으로 채택**되어(changes가 있으면
+   *   normalized를 쓴다) 비문을 언어 장애로 오채점할 수 있었다는 점이다.
+   */
+  noFollow?: string;
 }
 
 // 빈도 높고 의미 충돌 적은 항목 위주. 의미가 다르거나 표준어와 발음 가까운 건 제외.
@@ -39,22 +49,22 @@ const ENTRIES: DialectEntry[] = [
   { d: "그라믄", s: "그러면", r: "gs" },
   { d: "그라이까", s: "그러니까", r: "gs" },
   { d: "그라이꺼네", s: "그러니까", r: "gs" },
-  { d: "마이", s: "많이", r: "gs" },
+  { d: "마이", s: "많이", r: "gs" , noFollow: "[크너니신]" /* 마이크·마이너스·마이신 */ },
   { d: "디기", s: "되게", r: "gs" },
   { d: "억수로", s: "엄청", r: "gs" },
   { d: "쪼매", s: "조금", r: "gs" },
   { d: "쪼맨한", s: "조그만한", r: "gs" },
   { d: "단디", s: "단단히", r: "gs" },
   { d: "퍼떡", s: "빨리", r: "gs" },
-  { d: "고마", s: "그만", r: "gs" },
+  { d: "고마", s: "그만", r: "gs" , noFollow: "[워웠운울움와웨웁]" /* 고마워·고마운·고마움 */ },
   { d: "겁나게", s: "엄청", r: "gs" },
   { d: "께 안", s: "그게 안", r: "gs" },
   { d: "내사", s: "나는", r: "gs" },
   { d: "니사", s: "너는", r: "gs" },
   // "지가"는 "아버지가", "동지가" 등 정상 어휘에 부분 매칭되어 제거.
   // 필요하면 lookahead/lookbehind로 경계 보호한 별도 패턴 처리.
-  { d: "야들", s: "이 아이들", r: "gs" },
-  { d: "고들", s: "그 아이들", r: "gs" },
+  { d: "야들", s: "이 아이들", r: "gs" , noFollow: "[야하]" /* 야들야들·야들하다(음식 질감) */ },
+  { d: "고들", s: "그 아이들", r: "gs" , noFollow: "[빼고]" /* 고들빼기·고들고들 */ },
   { d: "할매", s: "할머니", r: "gs" },
   { d: "할배", s: "할아버지", r: "gs" },
   { d: "엄니", s: "어머니", r: "common" },
@@ -70,7 +80,7 @@ const ENTRIES: DialectEntry[] = [
   { d: "그라제", s: "그렇지", r: "jl" },
   { d: "그라요", s: "그래요", r: "jl" },
   { d: "워매", s: "어머", r: "jl" },
-  { d: "겁나", s: "엄청", r: "jl" },
+  { d: "겁나", s: "엄청", r: "jl" , noFollow: "[서섰였는요니게]" /* 겁나서·겁났다(두렵다) */ },
   { d: "솔찬히", s: "꽤", r: "jl" },
   { d: "솔찬허다", s: "꽤 하다", r: "jl" },
   { d: "허벌나게", s: "엄청", r: "jl" },
@@ -92,7 +102,7 @@ const ENTRIES: DialectEntry[] = [
   { d: "감수꽈", s: "가세요", r: "jj" },
   { d: "이서마씀", s: "있어요", r: "jj" },
   // "마씀" 단독은 다른 어휘 substring 충돌 가능성 → 제거. "이서마씀" 전체 표현만 매핑.
-  { d: "허영", s: "해서", r: "jj" },
+  { d: "허영", s: "해서", r: "jj" , noFollow: "[심된]" /* 허영심 */ },
   { d: "혼저", s: "어서", r: "jj" },
 
   // ─── 충청 (Chungcheong, cc) — 느릿한 종결어미 ──────────────
@@ -108,7 +118,7 @@ const ENTRIES: DialectEntry[] = [
   { d: "지금사", s: "지금에야", r: "common" },
   { d: "그라고", s: "그리고", r: "common" },
   { d: "에이고", s: "아이고", r: "common" },
-  { d: "아따", s: "아", r: "common" },
+  { d: "아따", s: "아", r: "common" , noFollow: "[가나]" /* 아따가리 등 */ },
 ];
 
 // 길이 긴 항목을 먼저 매칭 (부분 매칭 충돌 방지)
@@ -134,7 +144,15 @@ export function normalizeDialect(text: string): DialectNormalizeResult {
 
   for (const e of SORTED_ENTRIES) {
     if (!out.includes(e.d)) continue;
-    out = out.split(e.d).join(e.s);
+    // 경계 보호 — noFollow가 있으면 그 문자가 뒤따르는 경우는 표준어 단어이므로 치환하지 않는다.
+    //   사투리 키(e.d)는 전부 한글이라 정규식 이스케이프가 필요 없다.
+    const next = e.noFollow
+      ? out.replace(new RegExp(`${e.d}(?!${e.noFollow})`, "g"), e.s)
+      : out.split(e.d).join(e.s);
+    // 가드에 막혀 실제 변경이 없으면 changes에 기록하지 않는다 —
+    //   changes가 비어야 분석기가 원문을 쓴다(손상 문자열 채택 방지).
+    if (next === out) continue;
+    out = next;
     changes.push({ from: e.d, to: e.s, region: e.r });
   }
 
