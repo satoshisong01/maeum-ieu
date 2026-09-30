@@ -63,7 +63,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    // 이메일 정규화 — 소문자로 통일해 저장·조회 (2026-10-01 권한 상승 결함 수정).
+    //   isAdminEmail은 대소문자를 무시해 비교하는데 여기서 정규화하지 않아, 관리자 이메일의
+    //   대문자 변형("Admin@x.com")으로 가입하면 Postgres unique(대소문자 구분)를 통과해
+    //   별도 계정이 생기고 그 계정이 관리자 권한을 얻었다.
+    //   유니코드 변형(K U+212A → toLowerCase() → k)도 같은 경로였다.
+    const emailNorm = email.trim().toLowerCase();
+
+    // 중복 검사도 정규화된 값으로 — 대문자 변형으로 우회되지 않게.
+    //   정규화 이전에 만들어진 대문자 계정과의 충돌도 함께 막는다.
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ email: emailNorm }, { email: email.trim() }] },
+      select: { id: true },
+    });
     if (existing) {
       return NextResponse.json(
         { error: "이미 사용 중인 이메일입니다." },
@@ -74,7 +86,7 @@ export async function POST(req: Request) {
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
-        email,
+        email: emailNorm,
         password: hashed,
         name: name?.trim().slice(0, 40) || null,
         age: age != null && Number.isInteger(age) && age >= 0 ? age : null,

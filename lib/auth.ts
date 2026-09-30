@@ -25,9 +25,17 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-        });
+        // 이메일 정규화 — 저장·조회를 소문자로 통일 (2026-10-01 권한 상승 결함 수정).
+        //   isAdminEmail은 대소문자를 무시해 비교하는데 가입·로그인은 정규화하지 않아,
+        //   관리자 이메일의 대문자 변형("Admin@x.com")으로 가입하면 Postgres unique(대소문자 구분)를
+        //   통과해 별도 계정이 만들어지고 그 계정이 관리자 권한을 얻었다.
+        //   부수 효과로 "Kim@x.com"으로 가입한 어르신이 "kim@x.com"으로 로그인하면 실패했다.
+        // ⚠ 정규화 이전에 만들어진 대문자 이메일 계정을 살리기 위해 원문으로 한 번 더 조회한다
+        //   (현 DB 317명에는 대문자 이메일이 없음을 확인했으나, 안전하게 폴백을 둔다).
+        const raw = credentials.email.trim();
+        const normalized = raw.toLowerCase();
+        const user = (await prisma.user.findUnique({ where: { email: normalized } }))
+          ?? (normalized !== raw ? await prisma.user.findUnique({ where: { email: raw } }) : null);
         if (!user?.password) return null;
         const ok = await bcrypt.compare(credentials.password, user.password);
         if (!ok) return null;
