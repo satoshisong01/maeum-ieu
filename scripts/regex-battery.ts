@@ -12,7 +12,7 @@ import { SOFT_SIGNAL } from "../lib/chat/emergency-llm";
 import { detectInappropriate } from "../lib/chat/moderation";
 import { normalizeDialect } from "../lib/chat/dialect-normalize";
 
-type Row = { t: string; want: "L0" | "L2+" | "L3"; note: string };
+type Row = { t: string; want: "L0" | "L1+" | "L2+" | "L3"; note: string };
 
 /** 오탐 후보 — 정상 발화가 응급/부적절로 잡히면 허위 보호자 알림 또는 대화 차단 */
 const FP: Row[] = [
@@ -48,7 +48,8 @@ const FN: Row[] = [
   { t: "앰뷸런스 불러줘", want: "L2+", note: "M14" },
   { t: "가슴이 좀 답답하고 식은땀이 줄줄 나", want: "L3", note: "H3 심근경색 조합" },
   { t: "머리가 너무 아프네", want: "L2+", note: "M1" },
-  { t: "사흘째 잠을 못 자", want: "L2+", note: "M15 L1 누적" },
+  // 수면 장애는 설계상 L1(관찰) — 3회 누적 시 L2로 승격되는 경로
+  { t: "사흘째 잠을 못 자", want: "L1+", note: "M15 L1 누적 경로" },
 ];
 
 /** 모더레이션 오탐 — 정상 대화가 차단되면 어르신 체감 피해 */
@@ -76,7 +77,7 @@ for (const r of FP) {
 console.log("\n── 응급 미탐(정규식 / SOFT_SIGNAL 백스톱 도달) ──");
 for (const r of FN) {
   const d = detectEmergency(r.t);
-  const want = r.want === "L3" ? 3 : 2;
+  const want = r.want === "L3" ? 3 : r.want === "L2+" ? 2 : 1;
   const soft = SOFT_SIGNAL.test(r.t);
   const ok = d.level >= want;
   // 정규식이 놓쳐도 백스톱이 도달하면 '부분 구제'
