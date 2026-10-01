@@ -7,6 +7,15 @@
  */
 export const LATEST_APP_VERSION = "1.0.3";
 
+/**
+ * 구독 결제(Play Billing)를 지원하는 최소 앱 버전.
+ *
+ * 왜 따로 두나: 이전 버전 앱은 PURCHASE_SUBSCRIPTION 메시지를 처리하지 못해 결제 버튼이
+ *   아무 반응 없이 멈춘 것처럼 보인다. 구매 버튼은 이 버전 이상에서만 노출한다.
+ *   ⚠️ 결제 기능이 포함된 APK/AAB를 올릴 때 이 값을 그 버전으로 맞출 것.
+ */
+export const MIN_BILLING_APP_VERSION = "1.1.0";
+
 /** a < b 인지(semver 단순 비교). 설치된 앱이 최신보다 낮을 때만 업데이트 안내. */
 export function isOlderVersion(a: string, b: string): boolean {
   const pa = a.split(".").map((n) => parseInt(n, 10) || 0);

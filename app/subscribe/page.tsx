@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { BILLING_UPDATED_EVENT } from "../RnBridge";
+import { MIN_BILLING_APP_VERSION, isOlderVersion } from "@/lib/app-version";
 
 interface Status {
   tier: "free" | "pro";
@@ -30,6 +31,10 @@ export default function SubscribePage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const inApp = typeof window !== "undefined" && !!window.ReactNativeWebView;
+  // 구버전 앱은 결제 메시지를 처리하지 못해 버튼이 멈춘 것처럼 보인다 — 업데이트를 안내한다.
+  const appVersion = typeof window !== "undefined"
+    ? (window as unknown as { MAEUM_APP_VERSION?: string }).MAEUM_APP_VERSION : undefined;
+  const appTooOld = inApp && (!appVersion || isOlderVersion(appVersion, MIN_BILLING_APP_VERSION));
 
   const load = useCallback(async () => {
     try {
@@ -134,7 +139,11 @@ export default function SubscribePage() {
 
         {/* 구매 */}
         {!isPro && (
-          inApp ? (
+          appTooOld ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+              구독 결제는 <b>최신 버전 앱</b>에서 이용할 수 있어요. Play 스토어에서 마음이음을 업데이트해 주세요.
+            </div>
+          ) : inApp ? (
             <button
               type="button"
               onClick={purchase}
