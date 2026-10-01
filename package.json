@@ -16,7 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "ci:safety": "npm run audit:prompt-leak:ci && npx tsc --noEmit && vitest run",
-    "ci:safety:all": "npm run audit:user-scope; npm run audit:prompt-leak:ci && npx tsc --noEmit"
+    "ci:safety:all": "npm run audit:user-scope; npm run audit:prompt-leak:ci && npx tsc --noEmit",
+    "check:env": "npx tsx scripts/check-env.ts",
+    "prebuild": "npx tsx scripts/check-env.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

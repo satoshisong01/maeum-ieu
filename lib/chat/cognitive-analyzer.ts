@@ -4,7 +4,7 @@
  */
 
 import { Type as SchemaType, type Schema } from "@google/genai";
-import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
@@ -519,7 +519,7 @@ function buildAnalyzerModel(_apiKey: string, modelName: string) {
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA, // 구조 강제 → truncation·파싱 실패로 인한 평가 유실 방지
         thinkingConfig: { thinkingBudget: 1024 },
-        safetySettings: COMPANION_SAFETY_SETTINGS, // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
+        safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.background), // 화투·약주 등 일상어 차단 방지(차단 시 그 턴 평가 유실)
       },
     }),
   };

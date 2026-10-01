@@ -13,7 +13,7 @@
  */
 
 import { Type as SchemaType, type Schema } from "@google/genai";
-import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI } from "@/lib/chat/llm";
+import { COMPANION_SAFETY_SETTINGS, logUsage, getGenAI, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { prisma } from "@/lib/prisma";
 
 const SUMMARY_MODEL = "gemini-2.5-flash"; // 비용 최적화: 요약은 단순 압축 — 3.5 불필요
@@ -113,7 +113,7 @@ export async function summarizeMessages(params: {
       model: SUMMARY_MODEL,
       contents: `${SUMMARY_PROMPT}\n\n[대화]\n${transcript}`,
       // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
-      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.background) },
     });
     logUsage("summarizer", res);
     const raw = (res.text ?? "").trim();
@@ -171,7 +171,7 @@ export async function rollupSummaries(params: {
       model: SUMMARY_MODEL,
       contents: `${META_SUMMARY_PROMPT}\n\n[하위 요약들]\n${transcript}`,
       // thinkingConfig로 thinking 예산 제한 — 안 하면 thinking(~2900)이 maxOutputTokens를 먹어 JSON이 잘림.
-      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+      config: { temperature: 0.2, maxOutputTokens: 3072, responseMimeType: "application/json", responseSchema: SUMMARY_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.background) },
     });
     logUsage("summarizer-rollup", res);
     const { summary, keyFacts } = parseLLMOutput((res.text ?? "").trim());

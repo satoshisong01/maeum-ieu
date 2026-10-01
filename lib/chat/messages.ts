@@ -1,6 +1,7 @@
 /** DB 메시지 저장 */
 
 import { prisma } from "@/lib/prisma";
+import { after } from "next/server";
 import { saveMessageEmbedding } from "@/lib/rag";
 import { getNowKst, toKstDateString } from "./time";
 import type { CognitiveCheck } from "./types";
@@ -70,11 +71,19 @@ export async function saveMessages(params: {
   });
 
   // RAG 임베딩 (응답 흐름은 막지 않되, 실패는 로깅 — 조용한 삼킴은 message↔vector 불일치를 은폐)
-  if (!skipUserEmbedding) {
-    saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
-  }
-  if (!skipAssistantEmbedding) {
-    saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch((e) => console.warn("[rag] assistant embed 실패:", (e as Error).message));
+  //   ⚠ after()로 실행 보장 — 부유 프라미스로 두면 서버리스가 응답 직후 인스턴스를 freeze할 때
+  //     유실되고, 그 유실은 로그에도 남지 않는다. Message는 있는데 embedding만 없는 상태가
+  //     누적되면 RAG 회상에 조용한 공백이 생긴다(이 프로젝트가 반복 수정해 온 증상).
+  const embedTasks = async () => {
+    if (!skipUserEmbedding) {
+      await saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
+    }
+    if (!skipAssistantEmbedding) {
+      await saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch((e) => console.warn("[rag] assistant embed 실패:", (e as Error).message));
+    }
+  };
+  if (!skipUserEmbedding || !skipAssistantEmbedding) {
+    try { after(embedTasks); } catch { embedTasks().catch(() => { /* 로깅은 내부에서 */ }); }
   }
 
   return { userMsgId: userMsg.id, assistantMsgId: assistantMsg.id };

@@ -16,7 +16,7 @@ import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRel
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { getPrefixCache } from "@/lib/chat/prompt-cache";
-import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
 import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
@@ -389,7 +389,7 @@ async function transcribeAudio(audioData: string, audioMimeType: string, hintsPr
     model: process.env.STT_MODEL || "gemini-2.5-flash", // 비용 최적화: 음성 전사 — 3.5 불필요
     contents: [{ role: "user", parts }],
     // STT가 음성 왕복의 56%(평균 3.7s) 병목 — 전사엔 추론 불필요해 thinking 최소화(0은 빈응답 유발 금지, 64 클램프)
-    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.stt) },
   });
   logUsage("stt", res);
   // isUserSpeech: STT 결과는 사용자 발화 — 동반자 출력용 보고체 필터(KO_REPORTIVE)를 적용하면
@@ -693,14 +693,25 @@ async function handleAudioMessage(params: {
         };
         try { after(sendL2Notify); } catch { await sendL2Notify(); }
       }
-      // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
-      // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
-      if (transcription) {
-        extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
-        maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
-      }
+      // 배경 작업 — 응답 스트림이 닫힌 뒤 수 초간 실행되므로 부유 프라미스로 두면
+      //   서버리스(Vercel)가 인스턴스를 freeze할 때 **조용히 유실**된다.
+      //   그러면 그 턴의 cognitive_assessments가 저장되지 않고, "이상 없음"과 "분석 안 됨"이
+      //   DB에서 구별되지 않아 의사 리포트에 조용한 공백이 생긴다.
+      //   같은 파일의 응급 알림(2026-07-07 감사)과 /api/live/turn은 이미 after()를 쓰는데
+      //   메인 대화 경로만 빠져 있었다(2026-10-01 감사). 동일 패턴으로 통일한다.
+      const bgTasks = async () => {
+        // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
+        // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
+        // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
+        if (mode !== "general") {
+          await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
+        }
+        if (transcription) {
+          await extractAndSaveProfile({ userId, userMessage: transcription, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract:audio]", e));
+          await maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger:audio]", e));
+        }
+      };
+      try { after(bgTasks); } catch { bgTasks().catch(() => {}); }
     },
   });
 }
@@ -966,12 +977,19 @@ async function handleTextMessage(params: {
         };
         try { after(sendL2Notify); } catch { await sendL2Notify(); }
       }
-      // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
-      // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
-      // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-      if (mode !== "general") runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
-      extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
-      maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
+      // 배경 작업 — 부유 프라미스로 두면 서버리스가 인스턴스를 freeze할 때 조용히 유실된다.
+      //   (오디오 경로·응급 알림·/api/live/turn과 동일한 after() 패턴으로 통일, 2026-10-01)
+      const bgTasks = async () => {
+        // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
+        // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
+        // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
+        if (mode !== "general") {
+          await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
+        }
+        await extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
+        await maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[bg-summary-trigger]", e));
+      };
+      try { after(bgTasks); } catch { bgTasks().catch(() => {}); }
     },
   });
 }

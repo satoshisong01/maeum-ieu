@@ -3,7 +3,7 @@
  * 진행은 영역 단위(한 번에 한 영역 배터리 질문), 채점은 항목 단위(정식 점수). 음성 미시행(시공간) 제외.
  */
 import { CIST_ITEMS, buildExamOrder, CIST_DOMAIN_ORDER, VOICE_MAX_POINTS, type CistItem } from "./cist-bank";
-import { getGenAI, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { getGenAI, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { Type as SchemaType, type Schema } from "@google/genai";
 
 const SCORER_MODEL = "gemini-2.5-flash";
@@ -114,7 +114,7 @@ JSON으로만: {"scores":[{"itemId":"...","score":N,"reason":"간단근거"}]}`;
     const res = await getGenAI().models.generateContent({
       model: SCORER_MODEL,
       contents: prompt,
-      config: { temperature: 0, maxOutputTokens: 1024, responseMimeType: "application/json", responseSchema: SCORE_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+      config: { temperature: 0, maxOutputTokens: 1024, responseMimeType: "application/json", responseSchema: SCORE_SCHEMA, thinkingConfig: { thinkingBudget: 512 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.background) },
     });
     logUsage("exam-scorer", res);
     const parsed = JSON.parse((res.text ?? "{}").trim()) as { scores?: { itemId: string; score: number; reason?: string }[] };

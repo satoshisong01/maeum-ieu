@@ -9,7 +9,7 @@
  * 배경: 라이브 사이클 + 적대적 검증에서 사투리·완곡어·어순 변형의 자살/과다복용 신호가
  *       정규식·moderation 양쪽을 빠져나가던 과소감지 발견(2026-06-25). 정규식 보강 + 본 백스톱 병행.
  */
-import { getGenAI, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { getGenAI, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { Type as SchemaType, type Schema } from "@google/genai";
 import type { EmergencyResult, EmergencyCategory } from "@/lib/chat/emergency";
 
@@ -76,7 +76,7 @@ JSON으로만: {"category":"...","level":N,"reason":"간단근거"}`;
         responseMimeType: "application/json",
         responseSchema: SCHEMA,
         thinkingConfig: { thinkingBudget: 256 },
-        safetySettings: COMPANION_SAFETY_SETTINGS,
+        safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.emergency),
       },
     });
     logUsage("emergency-llm", res);

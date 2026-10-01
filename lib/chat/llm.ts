@@ -46,6 +46,17 @@ export function getGenAI(): GoogleGenAI {
   return _genAI;
 }
 
+/**
+ * getTextModel이 반환하는 구 SDK 호환 어댑터 모양.
+ * 키 미설정 시 '항상 reject하는 stub'을 같은 모양으로 돌려주기 위해 타입을 명시한다.
+ */
+export interface TextModelAdapter {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  generateContent: (p: any) => Promise<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  generateContentStream: (p: any) => Promise<any>;
+}
+
 /** 구 SDK 호출부 호환 — string | Content[] | {contents} 모두 신 SDK contents로 정규화 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function normalizeContents(p: any): any {
@@ -102,7 +113,21 @@ export function getTextModel(systemInstruction: string, enableSearch: boolean = 
   //   responseDelay 측정으로 도입(2026-06-05). COMPANION_THINKING_BUDGET env로 A/B 튜닝 가능(2026-06-11).
   const parsed = parseInt(process.env.COMPANION_THINKING_BUDGET || "512", 10);
   const THINKING_BUDGET = Number.isFinite(parsed) && parsed >= 64 ? parsed : 512;
-  const ai = getGenAI();
+  // 키 미설정 시 **동기 throw 금지** — 호출부(route.ts)는 getTextModel을 폴백 try 블록 *바깥*에서
+  //   호출하므로, 여기서 throw하면 500이 되고 클라이언트는 아무것도 표시하지 않아
+  //   어르신이 인사도 오류도 없는 완전한 빈 화면을 본다(2026-10-01 감사).
+  //   대신 "항상 reject하는 stub"을 반환해 호출부의 폴백 문구 경로가 작동하게 한다.
+  let ai: GoogleGenAI;
+  try {
+    ai = getGenAI();
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error("GEMINI 초기화 실패");
+    console.error("[llm] 초기화 실패 — 폴백 경로로 전환:", err.message);
+    return {
+      generateContent: () => Promise.reject(err),
+      generateContentStream: () => Promise.reject(err),
+    } as unknown as TextModelAdapter;
+  }
   // 비용 최적화: 수다 턴(≈80%)은 2.5로 — 품질 차이 없이 저렴. 확인 턴(≈20%)만 지시 준수를 위해 상향.
   // COMPANION_MODEL / COMPANION_PROBE_MODEL로 오버라이드 가능(A/B 측정용).
   const model = probeTurn
