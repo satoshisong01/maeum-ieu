@@ -15,6 +15,7 @@ import * as path from "path";
 import { prisma } from "../lib/prisma";
 import { buildSystemPrompt } from "../lib/chat/prompt";
 import { getTextModel } from "../lib/chat/llm";
+import { getPrefixCache } from "../lib/chat/prompt-cache";
 import { getTimeContext } from "../lib/chat/time";
 import { analyzeCognitive } from "../lib/chat/cognitive-analyzer";
 import { postProcessReply } from "../lib/chat/postprocess";
@@ -178,9 +179,14 @@ async function main() {
   const probing = /인지 확인을 슬쩍/.test(p.systemPrompt);
 
   // 1) 동반자 응답 (앱과 동일: 2.5-flash, thinkingBudget 512, 검색 off)
+  //    PROMPT_CACHE=1이면 운영(route.ts:953)과 동일하게 명시적 프리픽스 캐시 경로를 탄다 —
+  //    stablePrompt는 캐시에 올리고 turnBlock은 contents 앞에 실어 보낸다. 안 그러면 A/B가 무의미.
   const cap = captureUsage();
-  const model = getTextModel(p.systemPrompt, false, undefined, p.probeTurn);
-  st.hist.push({ role: "user", parts: [{ text: utter }] });
+  const prefixCache = p.probeTurn ? null : await getPrefixCache(st.userId, p.stablePrompt);
+  const model = prefixCache
+    ? getTextModel("", false, prefixCache)
+    : getTextModel(p.systemPrompt, false, undefined, p.probeTurn);
+  st.hist.push({ role: "user", parts: [{ text: prefixCache && p.turnBlock ? `${p.turnBlock}\n\n${utter}` : utter }] });
   const res = await model.generateContent({ contents: st.hist });
   cap.restore();
   const raw = ((res as unknown as { text?: string }).text ?? "").trim();
