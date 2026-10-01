@@ -101,6 +101,7 @@ export default function ExpertPage() {
             {viewerRole === "pro" && (
               <Link href="/expert/protocol" className="text-sm text-teal-600 hover:text-teal-800 dark:text-teal-300 dark:hover:text-teal-200">검진 문항지</Link>
             )}
+            <Link href="/help" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">사용 안내</Link>
             <Link href="/mypage" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">마이페이지</Link>
             <LogoutButton />
           </div>
