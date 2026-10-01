@@ -21,6 +21,7 @@ import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text"
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
 import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
+import { getDailyUsage, buildDailyLimitReply, buildNearLimitPromptHint } from "@/lib/usage/daily-limit";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { randomUUID } from "crypto";
 import { buildExamPlan, renderDomainBattery, scoreDomainAnswer, isNonResponse, renderDomainReask, itemsForDomain } from "@/lib/screening/exam-runner";
@@ -1213,6 +1214,49 @@ export async function POST(req: Request) {
       if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId, emergency: examEmg, honorific });
     }
 
+    /**
+     * 일일 대화량 제한 — 어르신(user) 모드의 일상 대화에만 적용.
+     *
+     * 턴당 LLM 비용이 약 10원이고 전부 입력 토큰이 매 턴 재전송되는 구조라, 무제한이면
+     * 1인 월 비용이 사용량에 선형으로 늘어난다(하루 100턴 ≈ 월 31,000원). 가격 정책의 전제다.
+     *
+     * 제외 대상
+     *  - 검진(exam) 턴: 위에서 이미 분기해 여기 도달하지 않는다(대리 검사는 비용 주체가 다름)
+     *  - pro·general: 목적·과금 주체가 다르다
+     *  - 인사 턴: 앱을 열자마자 막히면 어르신이 고장으로 오해한다
+     *  - 응급 발화: 한도와 무관하게 항상 통과시킨다 — 안전이 비용보다 우선이다
+     */
+    let nearLimitRemaining = 0;
+    if (mode === "user" && conversationId && !isInitialGreeting && !isReturningGreeting && !isReEngage) {
+      const usage = await getDailyUsage(conversationId);
+      if (usage.nearLimit) nearLimitRemaining = usage.remaining;
+      if (usage.exceeded) {
+        // 응급 발화는 한도와 무관하게 통과시킨다 — 안전이 비용보다 우선.
+        //   실서비스는 음성 전용이라 이 지점에서 발화 내용을 모른다. 전사를 먼저 기다려야
+        //   "숨이 안 쉬어져"가 마무리 인사로 덮이지 않는다(이미 진행 중인 promise이고,
+        //   handleAudioMessage가 같은 promise를 다시 await해도 즉시 resolve된다).
+        const spoken = isAudio && sttPromise ? await sttPromise.catch(() => "") : (lastUserMessage ?? "");
+        const isEmergencyUtterance = spoken ? detectEmergency(spoken).level > 0 : false;
+        if (!isEmergencyUtterance) {
+          // 오류(429)가 아니라 **동반자가 말하는 마무리 인사**를 200으로 — 화면엔 평소 말풍선이 뜨고
+          //   TTS로 읽히므로 어르신이 "오늘은 그만"이라고 자연히 이해한다.
+          const text = buildDailyLimitReply(honorific, companionName);
+          await saveMessages({
+            conversationId, userId,
+            userContent: spoken || (isAudio ? "(음성 메시지)" : ""),
+            assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true,
+          }).catch((e) => console.warn("[daily-limit] 저장 실패:", e));
+          console.log(`[daily-limit] 한도 도달 — userId=${userId.slice(0, 8)} used=${usage.used}/${usage.limit}`);
+          return NextResponse.json({ text, role: "assistant", dailyLimitReached: true });
+        }
+        console.log(`[daily-limit] 한도 도달이지만 응급 발화 — 통과 userId=${userId.slice(0, 8)}`);
+      }
+    }
+
+    // 마무리 예고를 시스템 프롬프트에 주입 — 모델이 자기 말투로 녹인다(응답 후 문자열 결합 금지:
+    //   TTS 문장 분할·후처리 파이프라인과 어긋난다).
+    const sysPrompt = nearLimitRemaining > 0 ? systemPrompt + buildNearLimitPromptHint(nearLimitRemaining) : systemPrompt;
+
     const historyText = buildHistoryText(history);
 
     // 응급 신호(L1 이상)나 부적절 발언이 섞인 발화는 단락하지 않고 일반 경로로 —
@@ -1225,13 +1269,13 @@ export async function POST(req: Request) {
 
     if (isAudio && sttPromise) {
       return handleAudioMessage({
-        systemPrompt, stablePrompt, turnBlock, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
+        systemPrompt: sysPrompt, stablePrompt, turnBlock, envBlock, honorific, userName, companionName, companionRelation, userId, conversationId,
         sttPromise, historyText, messages: history, profile,
         clientTimeIso: ctx?.currentTime, timings: _t, mode, probeTurn, probeContext, answeringProbe,
       });
     }
 
-    return handleTextMessage({ systemPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode, probeTurn, probeContext, answeringProbe });
+    return handleTextMessage({ systemPrompt: sysPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode, probeTurn, probeContext, answeringProbe });
   } catch (e) {
     console.error("chat api error", e);
     return NextResponse.json({ error: toSafeError(e) }, { status: 500 });

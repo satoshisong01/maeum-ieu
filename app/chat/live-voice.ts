@@ -64,7 +64,16 @@ export class LiveVoiceEngine {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversationId: this.conversationId }),
     });
-    if (!tokRes.ok) throw new Error("토큰 발급 실패");
+    if (!tokRes.ok) {
+      // 일일 대화량 상한은 오류가 아니라 '하루를 닫는 인사' — 어르신에게 기술 문구를 보이지 않는다.
+      const body = await tokRes.json().catch(() => null) as { dailyLimitReached?: boolean; message?: string } | null;
+      if (body?.dailyLimitReached && body.message) {
+        const err = new Error(body.message) as Error & { dailyLimitReached?: boolean };
+        err.dailyLimitReached = true;
+        throw err;
+      }
+      throw new Error("토큰 발급 실패");
+    }
     const { token, model } = await tokRes.json();
 
     const { GoogleGenAI } = await import("@google/genai");
@@ -94,7 +103,12 @@ export class LiveVoiceEngine {
             this.session = null;
             this.userBuf = ""; this.aiBuf = "";
             this.resetPlayback();
-            this.connect().catch((err) => { this.cb.onError(String((err as Error)?.message || err)); this.cb.onState("error"); });
+            this.connect().catch((err) => {
+              // 대화량 상한이면 재연결을 멈춘다 — 그렇지 않으면 마무리 인사가 3번 반복된다.
+              if ((err as { dailyLimitReached?: boolean })?.dailyLimitReached) this.stopped = true;
+              this.cb.onError(String((err as Error)?.message || err));
+              this.cb.onState((err as { dailyLimitReached?: boolean })?.dailyLimitReached ? "stopped" : "error");
+            });
           } else {
             this.cb.onState("stopped");
           }

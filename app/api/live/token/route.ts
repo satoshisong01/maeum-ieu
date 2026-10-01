@@ -15,9 +15,11 @@ import { authOptions } from "@/lib/auth";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { buildSystemPrompt } from "@/lib/chat/prompt";
+import { buildSystemPrompt, getHonorific } from "@/lib/chat/prompt";
 import { getTimeContext } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
+import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
+import { getDailyUsage, buildDailyLimitReply } from "@/lib/usage/daily-limit";
 
 const LIVE_MODEL = process.env.LIVE_MODEL || "gemini-3.1-flash-live-preview";
 // 발급 검증된 상한(14k)에서 여유를 둔 캡 — 프로필·요약이 비대해도 토큰 발급이 막히지 않게
@@ -45,6 +47,30 @@ export async function POST(req: Request) {
   if (typeof body?.conversationId === "string") {
     const conv = await prisma.conversation.findUnique({ where: { id: body.conversationId.slice(0, 100) }, select: { userId: true } });
     if (conv && conv.userId === userId) conversationId = body.conversationId.slice(0, 100);
+  }
+
+  // 일일 대화량 제한 — /api/chat과 같은 상한을 적용한다. 세션 단위로 발급되는 경로라
+  //   여기서 막지 않으면 Live가 제한 우회로가 된다(Live는 턴당 비용이 더 크다).
+  //   Live는 세션 중간에 서버가 개입할 수 없으므로 **세션 시작 시점**에만 판정한다.
+  if (conversationId && session.user.screeningMode !== "general") {
+    const usage = await getDailyUsage(conversationId);
+    if (usage.exceeded) {
+      // 호칭·동반자 이름은 /api/chat과 같은 규칙으로 — 들리는 목소리가 달라지면 어르신이 혼란스럽다.
+      const u = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, age: true, gender: true, userHonorific: true, companionName: true },
+      }).catch(() => null);
+      const derived = getHonorific(u?.age ?? null, u?.gender ?? null);
+      const honorific = u?.userHonorific?.trim()
+        || (derived === "선생님" && u?.name?.trim() ? `${u.name.trim()}님` : derived);
+      // 403이지만 클라이언트는 error 대신 message를 읽어 평소 말풍선으로 띄운다 —
+      //   어르신에게 "토큰 발급 실패"를 보여주지 않는다.
+      return NextResponse.json({
+        error: "오늘 대화를 마쳤습니다.",
+        dailyLimitReached: true,
+        message: buildDailyLimitReply(honorific, u?.companionName?.trim() || COMPANION_DEFAULTS.name),
+      }, { status: 403 });
+    }
   }
 
   try {
