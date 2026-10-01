@@ -12,6 +12,8 @@ import { classifyProvisional, classifyFormal, compareSessions, summarizeExamTren
 import { itemLabel } from "@/lib/screening/cist-bank";
 import { toKstDateString } from "@/lib/chat/time";
 import { resolveViewerRole } from "@/lib/roles";
+import { BILLING_ENFORCE } from "@/lib/billing/plans";
+import { getEntitlement } from "@/lib/billing/entitlement";
 
 interface DomainRow extends DomainStat { domain: string }
 interface WeekRow { week_start: string; avg_score: number; count: number }
@@ -142,6 +144,42 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!isDoctor) {
     const shownTier = reliability.showLevel ? tier.tier : "평가전";
     const status = guardianStatusLine(shownTier);
+
+    /**
+     * 구독 게이트 — 인지 평가 요약(등급·추세·권고·복약 이행률)은 유료 기능이다.
+     *
+     * 🔒 위급 알림 이력은 **절대 막지 않는다**. 돈을 내지 않아 어르신의 응급 상황을
+     *   모르게 되는 설계는 허용하지 않는다. 그래서 emergency 블록은 그대로 내보내고
+     *   요약 지표만 가린다.
+     *
+     * BILLING_ENFORCE=0(기본)이면 아무것도 막지 않는다 — 가격이 확정되고 Play Console
+     *   상품이 준비된 뒤에 켠다(코드 변경 없이 전환).
+     */
+    if (BILLING_ENFORCE && !(await getEntitlement(session.user.id)).guardianFeatures) {
+      const [emgAgg, emgNotified] = await Promise.all([
+        prisma.message.aggregate({
+          where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user" },
+          _count: { _all: true }, _max: { createdAt: true },
+        }),
+        prisma.message.count({
+          where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user", notifiedAt: { not: null } },
+        }),
+      ]);
+      return NextResponse.json({
+        viewerRole: "guardian",
+        patient: { name: patient.name ?? "이름 미설정", age: patient.age, gender: patient.gender, joinedAt: patient.createdAt },
+        locked: true,
+        tier: "평가전",
+        statusLine: "상태 요약은 구독 후 확인할 수 있어요.",
+        needsCare: false,
+        advice: "",
+        trend: "", trendText: "",
+        reliability: { showLevel: false, reason: "구독이 필요합니다.", checkCount: 0 },
+        // 🔒 안전 경로 — 구독과 무관하게 항상 제공
+        emergency: { count: emgAgg._count._all, lastAt: emgAgg._max.createdAt, notifiedCount: emgNotified },
+        medication: null,
+      });
+    }
     const [emgAgg, emgNotified] = await Promise.all([
       prisma.message.aggregate({
         where: { conversation: { userId: patientId }, emergencyLevel: { gte: 2 }, role: "user" },

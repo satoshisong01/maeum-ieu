@@ -39,6 +39,8 @@ model User {
   medicationSchedules MedicationSchedule[]
   expertLinks   ExpertPatient[] @relation("ExpertLinks")
   patientLinks  ExpertPatient[] @relation("PatientLinks")
+  subscriptionsPaid     Subscription[] @relation("SubscriptionsPaid")
+  subscriptionsReceived Subscription[] @relation("SubscriptionsReceived")
 }
 
 /// 전문가(의사·간호사·보호사) ↔ 환자 연결. 환자 본인이 마이페이지에서 전문가 코드를 입력해 연결(=본인 동의).
@@ -141,6 +143,43 @@ model Message {
   /// 인덱스를 만들지 않아 실측상 Seq Scan이었다(13,934행 전수 스캔, 2026-09-30 EXPLAIN 확인).
   /// ⚠️ 적용은 `prisma db push` 금지(raw SQL 테이블 drop 사고 이력) — scripts/ops-create-message-index.ts 사용.
   @@index([conversationId, createdAt])
+}
+
+/// 구독(Google Play Billing) — 결제자와 혜택 대상을 분리한다.
+///
+/// 왜 분리하나: 70~90대 어르신이 Play 결제를 직접 하기는 어렵다. 보호자가 자기 Play 계정으로
+///   결제하고, 혜택은 **연결된 어르신 계정**에 적용되어야 한다(ExpertPatient active 링크 기준).
+///   purchaserUserId = 결제한 사람, beneficiaryUserId = 상한이 올라가는 사람(같을 수도 있다).
+///
+/// 신뢰 원천은 Google이다. purchaseToken을 Play Developer API로 검증한 결과만 기록하고,
+///   클라이언트가 보낸 상태는 절대 신뢰하지 않는다. 갱신·취소·환불은 RTDN(Pub/Sub)으로 반영한다.
+///
+/// ⚠️ 신규 테이블 생성은 prisma db push 금지(raw 테이블 drop 사고 이력)
+///    — scripts/ops-create-subscription.ts + prisma generate.
+model Subscription {
+  id                 String    @id @default(cuid())
+  purchaserUserId    String
+  beneficiaryUserId  String
+  productId          String // Play 구독 상품 ID
+  purchaseToken      String    @unique // Play 구매 토큰 — 검증·RTDN 조회 키
+  /// active | grace | on_hold | paused | canceled | expired | revoked
+  /// canceled = 해지 예약(만료일까지는 혜택 유지), expired/revoked = 혜택 종료
+  status             String    @default("active")
+  /// 혜택 만료 시각(Play expiryTime). 이 시각 전까지만 유료 티어.
+  expiresAt          DateTime?
+  /// 마지막으로 Google에 검증한 시각 — 오래된 상태를 신뢰하지 않기 위한 기준
+  verifiedAt         DateTime  @default(now())
+  /// 환불·강제 해지 시각(null=유효)
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  purchaser   User @relation("SubscriptionsPaid", fields: [purchaserUserId], references: [id], onDelete: Cascade)
+  beneficiary User @relation("SubscriptionsReceived", fields: [beneficiaryUserId], references: [id], onDelete: Cascade)
+
+  /// 혜택 판정은 매 턴 (beneficiaryUserId, status, expiresAt)로 돈다
+  @@index([beneficiaryUserId, status])
+  @@index([purchaserUserId])
 }
 
 // 참고: cognitive_assessments 테이블은 Prisma 외부 (raw SQL)로 관리

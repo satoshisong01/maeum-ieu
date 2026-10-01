@@ -58,7 +58,8 @@ export const ModelName = {
   Session: 'Session',
   VerificationToken: 'VerificationToken',
   Conversation: 'Conversation',
-  Message: 'Message'
+  Message: 'Message',
+  Subscription: 'Subscription'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -191,6 +192,23 @@ export const MessageScalarFieldEnum = {
 } as const
 
 export type MessageScalarFieldEnum = (typeof MessageScalarFieldEnum)[keyof typeof MessageScalarFieldEnum]
+
+
+export const SubscriptionScalarFieldEnum = {
+  id: 'id',
+  purchaserUserId: 'purchaserUserId',
+  beneficiaryUserId: 'beneficiaryUserId',
+  productId: 'productId',
+  purchaseToken: 'purchaseToken',
+  status: 'status',
+  expiresAt: 'expiresAt',
+  verifiedAt: 'verifiedAt',
+  revokedAt: 'revokedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type SubscriptionScalarFieldEnum = (typeof SubscriptionScalarFieldEnum)[keyof typeof SubscriptionScalarFieldEnum]
 
 
 export const SortOrder = {

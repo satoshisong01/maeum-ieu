@@ -1228,7 +1228,7 @@ export async function POST(req: Request) {
      */
     let nearLimitRemaining = 0;
     if (mode === "user" && conversationId && !isInitialGreeting && !isReturningGreeting && !isReEngage) {
-      const usage = await getDailyUsage(conversationId);
+      const usage = await getDailyUsage(conversationId, userId);
       if (usage.nearLimit) nearLimitRemaining = usage.remaining;
       if (usage.exceeded) {
         // 응급 발화는 한도와 무관하게 통과시킨다 — 안전이 비용보다 우선.

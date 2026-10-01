@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   //   여기서 막지 않으면 Live가 제한 우회로가 된다(Live는 턴당 비용이 더 크다).
   //   Live는 세션 중간에 서버가 개입할 수 없으므로 **세션 시작 시점**에만 판정한다.
   if (conversationId && session.user.screeningMode !== "general") {
-    const usage = await getDailyUsage(conversationId);
+    const usage = await getDailyUsage(conversationId, userId);
     if (usage.exceeded) {
       // 호칭·동반자 이름은 /api/chat과 같은 규칙으로 — 들리는 목소리가 달라지면 어르신이 혼란스럽다.
       const u = await prisma.user.findUnique({

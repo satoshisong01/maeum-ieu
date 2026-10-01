@@ -61,3 +61,18 @@ export type Conversation = Prisma.ConversationModel
  * 
  */
 export type Message = Prisma.MessageModel
+/**
+ * Model Subscription
+ * 구독(Google Play Billing) — 결제자와 혜택 대상을 분리한다.
+ * 
+ * 왜 분리하나: 70~90대 어르신이 Play 결제를 직접 하기는 어렵다. 보호자가 자기 Play 계정으로
+ * 결제하고, 혜택은 **연결된 어르신 계정**에 적용되어야 한다(ExpertPatient active 링크 기준).
+ * purchaserUserId = 결제한 사람, beneficiaryUserId = 상한이 올라가는 사람(같을 수도 있다).
+ * 
+ * 신뢰 원천은 Google이다. purchaseToken을 Play Developer API로 검증한 결과만 기록하고,
+ * 클라이언트가 보낸 상태는 절대 신뢰하지 않는다. 갱신·취소·환불은 RTDN(Pub/Sub)으로 반영한다.
+ * 
+ * ⚠️ 신규 테이블 생성은 prisma db push 금지(raw 테이블 drop 사고 이력)
+ * — scripts/ops-create-subscription.ts + prisma generate.
+ */
+export type Subscription = Prisma.SubscriptionModel

@@ -49,16 +49,31 @@ function kstMidnightUtc(now = new Date()): Date {
 /**
  * 오늘 사용량 조회. 제한이 꺼져 있거나 조회 실패 시에는 **통과**시킨다 —
  * 과금 보호 장치가 대화를 막는 쪽으로 실패하면 어르신이 서비스를 쓸 수 없게 된다.
+ *
+ * @param userId 넘기면 구독 티어를 반영해 상한을 올린다(미전달 시 무료 상한).
+ *   구독 조회는 무료 상한 근처에서만 수행한다 — 평상시 턴에 쿼리를 더하지 않기 위해.
  */
-export async function getDailyUsage(conversationId: string): Promise<DailyUsage> {
-  const limit = DAILY_TURN_LIMIT;
-  const none: DailyUsage = { used: 0, limit, exceeded: false, nearLimit: false, remaining: limit };
-  if (limit <= 0) return none;
+export async function getDailyUsage(conversationId: string, userId?: string): Promise<DailyUsage> {
+  const freeLimit = DAILY_TURN_LIMIT;
+  const none: DailyUsage = { used: 0, limit: freeLimit, exceeded: false, nearLimit: false, remaining: freeLimit };
+  if (freeLimit <= 0) return none;
 
   try {
     const used = await prisma.message.count({
       where: { conversationId, role: "user", createdAt: { gte: kstMidnightUtc() } },
     });
+
+    // 구독 상한은 **무료 상한에 근접했을 때만** 조회한다 — 평상시 턴(대부분)에
+    //   구독 조회를 더하지 않기 위해. 무료 여유가 남아 있으면 티어를 알 필요가 없다.
+    let limit = freeLimit;
+    if (userId && used >= freeLimit - WARN_AT_REMAINING) {
+      // 동적 import — entitlement가 DAILY_TURN_LIMIT을 되참조하므로 top-level 순환을 피한다
+      const { getEntitlement } = await import("@/lib/billing/entitlement");
+      const ent = await getEntitlement(userId);
+      if (ent.dailyTurnLimit <= 0) return { ...none, used }; // 유료 무제한
+      limit = Math.max(limit, ent.dailyTurnLimit);
+    }
+
     const remaining = Math.max(0, limit - used);
     return {
       used, limit, remaining,

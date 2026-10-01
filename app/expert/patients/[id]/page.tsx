@@ -32,6 +32,8 @@ interface Detail {
   // 보호자(guardian) 요약 전용 — 상세(domains/weekly/events/examSessions)는 서버가 보내지 않음
   statusLine?: string; needsCare?: boolean; advice?: string;
   emergency?: { count: number; lastAt: string | null; notifiedCount: number };
+  /** 구독 미보유로 요약 지표가 가려진 상태(위급 이력은 그대로 제공됨) */
+  locked?: boolean;
 }
 interface ExamSession {
   id: string; startedAt: string; endedAt: string | null; doctorComment: string;
@@ -89,6 +91,16 @@ function GuardianSummary({ d }: { d: Detail }) {
           <span className={`ml-auto rounded-full px-3 py-1 text-sm font-bold ${care ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}`}>{care ? "🩺 진료 권장" : "양호"}</span>
         </div>
         <p className={`mt-4 text-lg font-bold leading-relaxed ${care ? "text-red-800 dark:text-red-200" : "text-zinc-800 dark:text-zinc-100"}`}>{d.statusLine}</p>
+        {d.locked && (
+          // 구독 필요 — 위급 알림은 아래에서 계속 제공되므로 "안전은 그대로"임을 분명히 밝힌다
+          <div className="mt-3 rounded-lg bg-white/80 px-3 py-3 text-sm dark:bg-zinc-900/60">
+            <p className="text-zinc-700 dark:text-zinc-200">상태 요약·추세·복약 이행률은 구독 후 볼 수 있어요.</p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">위급 알림은 구독과 무관하게 계속 받습니다.</p>
+            <Link href="/subscribe" className="mt-2 inline-block rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700">
+              구독 알아보기
+            </Link>
+          </div>
+        )}
         {d.advice && <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{d.advice}</p>}
         {d.trend && d.trend !== "자료부족" && d.trendText && (
           <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200">{d.trendText}</p>

@@ -47,6 +47,16 @@ const CHECKS: Check[] = [
   // ── rate-limit ──
   { label: "UPSTASH_REDIS_REST_URL + _TOKEN", sev: "important", feature: "분산 rate-limit", breaks: "인메모리 폴백(서버리스에서 부정확·남용 방어 약화)", names: ["UPSTASH_REDIS_REST_URL"],
     validate: v => { if (!process.env.UPSTASH_REDIS_REST_TOKEN) return "UPSTASH_REDIS_REST_TOKEN 없음"; return /^https:\/\//.test(v) ? null : "https URL 아님"; } },
+  // ── 구독 결제(Play Billing) — 미설정이면 결제만 불가, 서비스는 무료 티어로 정상 동작 ──
+  { label: "PLAY_PACKAGE_NAME", sev: "optional", feature: "구독 구매 검증", breaks: "/api/billing/verify가 503 — 결제 불가(무료 이용은 정상)", names: ["PLAY_PACKAGE_NAME"],
+    validate: v => /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(v) ? null : "안드로이드 패키지명 형식 아님" },
+  { label: "PLAY_SERVICE_ACCOUNT_JSON", sev: "optional", feature: "구독 구매 검증", breaks: "구매 토큰을 Google에 확인할 수 없어 권리 부여 불가",
+    names: ["PLAY_SERVICE_ACCOUNT_JSON"],
+    validate: v => (v.trim().startsWith("{") ? jsonFields(v, ["client_email", "private_key"]) : b64Json(v, ["client_email", "private_key"])) },
+  { label: "BILLING_RTDN_SECRET", sev: "optional", feature: "갱신·해지 통지(RTDN)", breaks: "엔드포인트가 404로 닫힘 — 해지·환불이 반영되지 않아 혜택이 샐 수 있음",
+    names: ["BILLING_RTDN_SECRET"], validate: v => v.length >= 24 ? null : "너무 짧음 — 24자 이상 무작위 값 권장" },
+  { label: "BILLING_PRO_PRODUCT_IDS", sev: "optional", feature: "유료 상품 식별", breaks: "비어 있으면 모든 구독 상품을 유료로 인정(가격 미확정 단계에선 정상)",
+    names: ["BILLING_PRO_PRODUCT_IDS"] },
 ];
 
 const icon = { ok: "✅", miss: "❌", warn: "⚠️ " };
