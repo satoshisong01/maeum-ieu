@@ -43,6 +43,13 @@ export async function POST(req: Request) {
     const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { userId: true } });
     if (!conv || conv.userId !== userId) return NextResponse.json({ error: "대화를 찾을 수 없습니다." }, { status: 404 });
 
+    // 건강정보 수집 동의 게이트 — /api/chat에는 있는데 이 경로에는 없어서
+    //   미동의 어르신이 Live로 건강데이터(인지 평가·응급 이력)를 생성할 수 있었다(2026-10-01 감사).
+    const consent = await prisma.user.findUnique({ where: { id: userId }, select: { consentedAt: true } });
+    if (!consent?.consentedAt) {
+      return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
+    }
+
     // 응급 감지 — 저장 전에 판정해 마킹까지(위급 이력·보호자 알림의 전제). 정규식 none이면 LLM 백스톱.
     //   이 라우트는 음성 응답 이후의 회송이라 백스톱 지연이 대화 턴테이킹을 막지 않음.
     let emergency = detectEmergency(userText);
@@ -74,8 +81,12 @@ export async function POST(req: Request) {
     }
 
     // 인지 분석 — 일반인(general)은 목적 분리 원칙대로 미실행
-    const mode = session.user.screeningMode === "pro" ? "pro" : session.user.screeningMode === "general" ? "general" : "user";
-    if (mode !== "general" && userMsgId) {
+    // 인지 분석은 어르신(user) 계정에만 — general(목적 분리)·pro(검사자)·guardian(보호자) 제외.
+    //   기존에는 general만 제외해 guardian 발화가 보호자 본인의 cognitive_assessments로
+    //   기록되고 C2 알림 평가 대상이 됐다(2026-10-01 감사).
+    const rawMode = session.user.screeningMode;
+    const mode = rawMode === "pro" ? "pro" : rawMode === "general" ? "general" : rawMode === "guardian" ? "guardian" : "user";
+    if (mode === "user" && userMsgId) {
       const rows = await prisma.message.findMany({
         where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
         select: { role: true, content: true, createdAt: true },

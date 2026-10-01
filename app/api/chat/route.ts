@@ -286,8 +286,18 @@ async function handleExamGreeting(examSession: ExamSessionRow, conversationId: s
 }
 
 /** 검진 한 턴 — 현재 영역 답변을 항목별 채점 → 다음 영역 문항(또는 종료). */
-async function handleExamTurn(params: { examSession: ExamSessionRow; answer: string; conversationId?: string; userId: string; transcription?: string }) {
-  const { examSession, answer, conversationId, userId, transcription } = params;
+async function handleExamTurn(params: {
+  examSession: ExamSessionRow; answer: string; conversationId?: string; userId: string; transcription?: string;
+  /**
+   * 호출 전에 평가한 응급 결과 — 검진 경로도 응급 마킹·L2 알림을 수행하기 위해 받는다.
+   *
+   * 결함(2026-10-01): 검진 분기가 응급 평가 자체를 우회해 L3는 물론 L2 마킹·알림도
+   *   발생하지 않았다. L3는 호출 전에 즉답으로 분기하고, L2 이하는 여기서 마킹·알림한다.
+   */
+  emergency?: { effectiveLevel: 0 | 1 | 2 | 3; result: EmergencyResult };
+  honorific?: string;
+}) {
+  const { examSession, answer, conversationId, userId, transcription, emergency, honorific } = params;
   const order: string[] = (() => { try { return JSON.parse(examSession.item_order || "[]"); } catch { return []; } })();
   const idx = examSession.current_item;
   const ans = (answer || "").trim();
@@ -364,7 +374,31 @@ async function handleExamTurn(params: { examSession: ExamSessionRow; answer: str
     await prisma.$executeRawUnsafe(`UPDATE exam_session SET current_item = $2, answered_domains = $3, reask_count = 0 WHERE id = $1`, examSession.id, nextIdx, answered);
     text = `네, 답변 감사합니다. 다음 질문이에요. ${renderDomainBattery(order[nextIdx])}`;
   }
-  if (conversationId) await saveMessages({ conversationId, userId, userContent: ans || "(무응답)", assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true });
+  if (conversationId) {
+    const lvl = emergency?.effectiveLevel ?? 0;
+    const { userMsgId } = await saveMessages({
+      conversationId, userId, userContent: ans || "(무응답)", assistantContent: text,
+      skipUserEmbedding: true, skipAssistantEmbedding: true,
+      // 검진 답변에도 응급 신호가 섞일 수 있다 — 마킹해야 추세·보호자 화면 건수에 반영된다.
+      emergencyLevel: lvl > 0 ? lvl : undefined,
+      emergencyEvidence: emergency && emergency.result.level > 0
+        ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+    });
+    // L2(주의) 알림 — L3는 호출부에서 이미 즉답 분기했으므로 여기 오지 않는다.
+    if (lvl === 2 && emergency) {
+      const sendL2 = async () => {
+        try {
+          const r = await notifyGuardian({
+            userId, userName: honorific ?? "사용자", messageId: userMsgId, level: 2,
+            category: emergency.result.category, content: ans, aiReply: text, createdAt: new Date(),
+          });
+          if (r.sent) console.log("[emergency-notify] exam L2 sent:", r.channels);
+          else console.warn("[emergency-notify] exam L2 not sent:", r.reason);
+        } catch (e) { console.error("[emergency-notify] exam L2 error:", e); }
+      };
+      try { after(sendL2); } catch { await sendL2(); }
+    }
+  }
   return NextResponse.json({ text, role: "assistant", transcription });
 }
 
@@ -1030,6 +1064,22 @@ export async function POST(req: Request) {
       : session.user.screeningMode === "general" ? "general"
       : "user";
 
+    /**
+     * 보호자(guardian) 계정은 대화 대상이 아니다 — 403.
+     *
+     * 결함(2026-10-01 감사): mode 유니온에 guardian이 없어 `else → "user"`로 강등됐다.
+     *   guardian 계정이 /api/users/consent로 동의만 세우고 /api/chat을 직접 호출하면
+     *   어르신 전용 80/20 프롬프트가 돌고 5턴마다 인지 확인 질문을 받으며,
+     *   그 채점이 **보호자 본인의 cognitive_assessments로 기록**되어 C2 알림 평가 대상이 됐다.
+     *   UI는 guardian을 /expert로 리다이렉트하므로 직접 API 호출 시에만 발생했다.
+     */
+    if (session.user.screeningMode === "guardian") {
+      return NextResponse.json(
+        { error: "보호자 계정은 대화 기능을 사용할 수 없습니다. 환자 관리 화면을 이용해주세요." },
+        { status: 403 },
+      );
+    }
+
     // 건강정보 수집 동의 게이트(API 레벨) — 어르신 본인이 자기 데이터를 생성하는 경우 동의 필수.
     //   UI(app/page.tsx)에서 미동의 시 /consent로 보내지만, /api/chat 직접 호출로 우회되지 않도록 서버에서도 차단.
     if (mode === "user") {
@@ -1145,21 +1195,22 @@ export async function POST(req: Request) {
        *   L3 즉답·보호자 알림·Message.emergencyLevel 마킹이 전부 발생하지 않았다.
        * L3면 즉답하고 검진 상태는 전진시키지 않는다(같은 문항을 다시 물을 수 있게 유지).
        */
-      if (examAnswer.trim()) {
-        const examEmg = await evaluateEmergency({ userContent: examAnswer, conversationId });
-        if (examEmg.effectiveLevel === 3) {
-          return handleEmergencyL3({
-            result: examEmg.result, userContent: examAnswer,
-            conversationId, userId, honorific, companionName,
-            transcription: isAudio ? (examAnswer || "(음성 응답)") : undefined,
-          });
-        }
+      const examEmg = examAnswer.trim()
+        ? await evaluateEmergency({ userContent: examAnswer, conversationId })
+        : undefined;
+      if (examEmg?.effectiveLevel === 3) {
+        return handleEmergencyL3({
+          result: examEmg.result, userContent: examAnswer,
+          conversationId, userId, honorific, companionName,
+          transcription: isAudio ? (examAnswer || "(음성 응답)") : undefined,
+        });
       }
 
+      // L2 이하는 검진을 계속 진행하되, 마킹·알림은 handleExamTurn이 수행한다.
       if (isAudio && sttPromise) {
-        return handleExamTurn({ examSession, answer: examAnswer, conversationId, userId, transcription: examAnswer || "(음성 응답)" });
+        return handleExamTurn({ examSession, answer: examAnswer, conversationId, userId, transcription: examAnswer || "(음성 응답)", emergency: examEmg, honorific });
       }
-      if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId });
+      if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId, emergency: examEmg, honorific });
     }
 
     const historyText = buildHistoryText(history);

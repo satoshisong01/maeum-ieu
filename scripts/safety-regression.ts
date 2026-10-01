@@ -526,9 +526,17 @@ console.log("\n[probe-memory] 즉시기억 과제 채점 보존");
   const kept = validateMemoryImmediate(base(1), answer, hist, true);
   check("과제 답변 턴 → 채점 보존", kept.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
 
-  const stripped = validateMemoryImmediate(base(1), answer, hist, false);
-  check("일반 턴(유사도 낮음) → 기존대로 삭제(오탐 방지 유지)",
-    !stripped.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
+  // 가드의 목적은 **거짓 '이상'(score 2)** 차단이다. score 2는 isAnomaly를 만들어 등급·알림에
+  //   직접 영향을 주므로 '앵무새 수준 동일 문장'을 요구한다.
+  const stripped2 = validateMemoryImmediate(base(2), answer, hist, false);
+  check("일반 턴 + score 2(유사도 낮음) → 삭제(거짓 이상 차단)",
+    !stripped2.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
+  // 반면 경계(score 1)는 통과시킨다 — 표현을 조금 바꿔 되풀이하는 양상이 글자 80% 조건에
+  //   걸리지 않아 통째로 사라졌는데, 그것이 가족이 가장 먼저 알아채는 징후다(2026-10-01).
+  //   루브릭에 네 조건을 명시하고 난청·확인·강조·새정보·주제연속·자각 6종 FP를 실측 확인했다.
+  const kept1 = validateMemoryImmediate(base(1), answer, hist, false);
+  check("일반 턴 + score 1(경계) → 보존(표현 바꾼 반복 포착)",
+    kept1.cognitiveChecks.some((c: { domain: string }) => c.domain === "memory_immediate"));
 
   // 앵무새 자발 반복은 과제 턴이 아니어도 유사도 높아 보존되어야 함
   const parrotHist = "사용자: 오늘 장에 가서 고등어를 두마리 샀어\nAI: 저녁 반찬이 든든하시겠어요.";

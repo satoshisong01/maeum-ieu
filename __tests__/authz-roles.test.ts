@@ -166,3 +166,29 @@ describe("본인 결과 열람 차단 — 어르신(user)", () => {
     expect(r.status).toBe(401);
   });
 });
+
+describe("보호자 계정은 대화 대상이 아니다", () => {
+  it("/api/chat 소스가 guardian을 403으로 차단한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/chat/route.ts", "utf-8");
+    // mode 유니온에 guardian이 없어 else → "user"로 강등되던 결함(2026-10-01).
+    //   guardian 발화가 보호자 본인의 cognitive_assessments로 기록되고 C2 알림 대상이 됐다.
+    expect(src).toMatch(/screeningMode === "guardian"[\s\S]{0,200}status:\s*403/);
+  });
+
+  it("Live 경로도 인지 분석을 user 모드로만 수행한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/live/turn/route.ts", "utf-8");
+    // 기존에는 general만 제외해 guardian·pro 발화가 분석 대상이 됐다.
+    expect(src).toMatch(/mode === "user"[\s\S]{0,40}userMsgId/);
+    expect(src).not.toMatch(/mode !== "general"[\s\S]{0,40}userMsgId/);
+  });
+
+  it("Live 경로에 건강정보 동의 게이트가 있다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/live/turn/route.ts", "utf-8");
+    // /api/chat에는 있는데 Live에는 없어서 미동의 어르신이 건강데이터를 생성할 수 있었다.
+    expect(src).toMatch(/consentedAt/);
+    expect(src).toMatch(/needConsent/);
+  });
+});
