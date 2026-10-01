@@ -192,3 +192,36 @@ describe("보호자 계정은 대화 대상이 아니다", () => {
     expect(src).toMatch(/needConsent/);
   });
 });
+
+describe("건강정보 동의 게이트 범위", () => {
+  it("일반인(general)도 동의 없이 대화·자가점검을 저장할 수 없다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/chat/route.ts", "utf-8");
+    // 결함(2026-10-01): 게이트가 user에만 걸려 있어 일반인이 동의 없이 PHQ-9·GAD-7
+    //   응답·점수(mental_assessments)와 대화 원문을 저장했다. 우울·불안 점수는 민감정보다.
+    expect(src).toMatch(/mode === "user" \|\| mode === "general"[\s\S]{0,400}consentedAt/);
+    expect(src).toMatch(/consentedAt[\s\S]{0,200}needConsent[\s\S]{0,80}403/);
+  });
+
+  it("홈 화면도 미동의 일반인을 /consent로 보낸다 — 403으로 끊기지 않게", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/page.tsx", "utf-8");
+    expect(src).toMatch(/mode === "general"[\s\S]{0,300}consentedAt \? "\/mental" : "\/consent"/);
+  });
+
+  it("Live 경로의 동의 게이트는 역할을 가리지 않는다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/live/turn/route.ts", "utf-8");
+    const gate = src.slice(src.indexOf("건강정보 수집 동의 게이트"));
+    // 🔒 mode 조건이 붙으면 특정 역할이 동의 없이 건강데이터를 만들 수 있게 된다
+    expect(gate.slice(0, 400)).not.toMatch(/mode === "/);
+  });
+
+  it("동의 고지 문구가 일반인 수집 항목과 일치한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/consent/page.tsx", "utf-8");
+    // 일반인은 인지 선별 대상이 아니다 — "어르신의 인지"로 고지하면 실제와 어긋난다
+    expect(src).toMatch(/isGeneral/);
+    expect(src).toMatch(/자가점검\(우울·불안·성격\) 응답과 점수/);
+  });
+});

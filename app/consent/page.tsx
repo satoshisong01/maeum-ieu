@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
 export default function ConsentPage() {
+  // 일반인(general)은 인지 선별 대상이 아니라 마음 건강 자가점검만 한다 —
+  //   "어르신의 인지"로 고지하면 실제 수집 항목과 어긋난다(고지 정확성).
+  const { data: session } = useSession();
+  const isGeneral = session?.user?.screeningMode === "general";
+
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -18,7 +23,7 @@ export default function ConsentPage() {
         setError("처리에 실패했어요. 잠시 후 다시 시도해 주세요.");
         return;
       }
-      window.location.href = "/chat";
+      window.location.href = isGeneral ? "/mental" : "/chat";
     } finally {
       setLoading(false);
     }
@@ -29,18 +34,18 @@ export default function ConsentPage() {
       <div className="w-full max-w-lg rounded-2xl bg-white p-7 shadow-lg dark:bg-zinc-900">
         <h1 className="text-2xl font-bold text-zinc-800 dark:text-zinc-100">건강정보(민감정보) 수집·이용 동의</h1>
         <p className="mt-2 text-base text-zinc-600 dark:text-zinc-300">
-          마음이음은 어르신의 인지·마음 건강을 살피기 위해 <b>건강정보(민감정보)</b>를 수집·이용합니다. 아래 내용을 확인하고 동의해 주세요.
+          마음이음은 {isGeneral ? "회원님의 마음 건강" : "어르신의 인지·마음 건강"}을 살피기 위해 <b>건강정보(민감정보)</b>를 수집·이용합니다. 아래 내용을 확인하고 동의해 주세요.
           <span className="mt-1 block text-sm text-zinc-400">개인정보 보호법 제15조·제22조·제23조에 따른 안내</span>
         </p>
 
         <div className="mt-5 space-y-4 rounded-xl bg-zinc-50 p-4 text-[15px] leading-relaxed text-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-200">
           <div>
             <p className="font-semibold text-zinc-800 dark:text-zinc-100">① 수집·이용 목적</p>
-            <p>인지·마음 건강 상태의 관찰과 변화 감지, 위급(응급) 상황 시 보호자 알림</p>
+            <p>{isGeneral ? "마음 건강 자가점검 결과 제공과 변화 감지" : "인지·마음 건강 상태의 관찰과 변화 감지"}, 위급(응급) 상황 시 보호자 알림</p>
           </div>
           <div>
             <p className="font-semibold text-zinc-800 dark:text-zinc-100">② 수집 항목 <span className="text-rose-600 dark:text-rose-400">(민감정보 포함)</span></p>
-            <p>AI와 나눈 대화 내용 · 인지/마음 건강 상태 추정 결과 · 응급(위급) 신호 · 보호자 연락처(선택)</p>
+            <p>AI와 나눈 대화 내용 · {isGeneral ? "마음 건강 자가점검(우울·불안·성격) 응답과 점수" : "인지/마음 건강 상태 추정 결과"} · 응급(위급) 신호 · 보호자 연락처(선택)</p>
           </div>
           <div>
             <p className="font-semibold text-zinc-800 dark:text-zinc-100">③ 보유·이용 기간</p>

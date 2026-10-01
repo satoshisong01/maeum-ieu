@@ -37,7 +37,12 @@ export default async function Home() {
 
   // 의사·보호자·일반인은 각자의 역할 화면으로 (서버에서 결정 — 깜빡임 방지)
   if (mode === "pro" || mode === "guardian") redirect("/expert");
-  if (mode === "general") redirect("/mental");
+  // 일반인(general)도 건강정보 동의가 필요하다 — 자가점검 응답·점수가 민감정보이기 때문.
+  //   서버(/api/chat)에서도 막지만, 화면에서 먼저 동의를 받아야 대화가 403으로 끊기지 않는다.
+  if (mode === "general") {
+    const g = await prisma.user.findUnique({ where: { id: session.user.id }, select: { consentedAt: true } });
+    redirect(g?.consentedAt ? "/mental" : "/consent");
+  }
 
   // 어르신(user) — 건강정보 미동의면 동의 화면 먼저
   const u = await prisma.user.findUnique({ where: { id: session.user.id }, select: { consentedAt: true } });

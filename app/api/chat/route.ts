@@ -1081,9 +1081,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // 건강정보 수집 동의 게이트(API 레벨) — 어르신 본인이 자기 데이터를 생성하는 경우 동의 필수.
-    //   UI(app/page.tsx)에서 미동의 시 /consent로 보내지만, /api/chat 직접 호출로 우회되지 않도록 서버에서도 차단.
-    if (mode === "user") {
+    /**
+     * 건강정보 수집 동의 게이트(API 레벨) — 본인이 자기 건강데이터를 생성하는 경우 동의 필수.
+     *   UI(app/page.tsx)에서 미동의 시 /consent로 보내지만, /api/chat 직접 호출로 우회되지 않도록 서버에서도 차단.
+     *
+     * general(일반인)도 포함한다(2026-10-01 사용량 조사 중 발견): 게이트가 user에만 걸려 있어
+     *   일반인 계정이 **동의 없이** PHQ-9·GAD-7 응답·점수(mental_assessments)와 대화 원문을
+     *   저장하고 있었다. 우울·불안 점수는 민감정보이고, 이 경로도 응급 감지·보호자 알림이
+     *   동작하므로 동의 범위가 어르신과 다르지 않다.
+     *   (pro는 본인 데이터를 만들지 않고, 대리 검사는 환자 본인이 이미 동의한 계정에 귀속된다.)
+     */
+    if (mode === "user" || mode === "general") {
       const me = await prisma.user.findUnique({ where: { id: actorId }, select: { consentedAt: true } });
       if (!me?.consentedAt) {
         return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
