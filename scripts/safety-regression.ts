@@ -12,6 +12,7 @@
 import "dotenv/config";
 import { factCheckResponse } from "../lib/chat/fact-checker";
 import { stripRecallAnswerLeak, normalizeImnida } from "../lib/chat/korean-particle";
+import { renderSystemPrompt, sliceProtocolForDomain } from "../lib/chat/constants";
 import { detectEmergency } from "../lib/chat/emergency";
 import { SOFT_SIGNAL } from "../lib/chat/emergency-llm";
 import { detectInappropriate } from "../lib/chat/moderation";
@@ -68,6 +69,32 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
   // 따라하기 재요청(아직 등록 단계)도 단어 보존 — '불러드린'(과거 보고형)이 있어도 따라하기면 등록 (2026-06-12 빈따옴표 버그)
   const c7 = stripRecallAnswerLeak("방금 불러드린 단어 세 개, '나무, 자동차, 모자'를 다시 한번 따라 말씀해주시겠어요?");
   check("따라하기 재요청 단어 보존", c7.includes("나무") && c7.includes("모자"), c7);
+  // '세 개 ~' 등록 갈래가 과거형까지 먹어 strip이 통째로 우회되던 갭 (2026-10-01).
+  //   "세 개 말씀드렸죠/불러드렸는데"는 이미 들려준 단어를 다시 묻는 **회상**이다.
+  //   놓치면 정답이 노출되고 어르신이 그걸 읽어 답해 만점 회상으로 채점된다 = 위음성.
+  const c8 = stripRecallAnswerLeak("단어 세 개 말씀드렸죠, 나무, 자동차, 모자. 기억나세요?");
+  check("세개+과거형(말씀드렸죠) 정답 누출 없음", !c8.includes("나무") && !c8.includes("모자"), c8);
+  const c9 = stripRecallAnswerLeak("제가 세 개 불러드렸는데 나무, 자동차, 모자 생각나세요?");
+  check("세개+과거형(불러드렸는데) 정답 누출 없음", !c9.includes("나무") && !c9.includes("모자"), c9);
+  // 반대 방향 — 미래·의도형 등록은 계속 보존되어야 한다(과잉 교정 방지)
+  const c10 = stripRecallAnswerLeak("세 개 들려드릴게요. 나무, 자동차, 모자");
+  check("세개+들려드릴게요 등록 보존", c10.includes("나무") && c10.includes("모자"), c10);
+  const c11 = stripRecallAnswerLeak("단어 세 가지를 불러 줄게요. 나무, 자동차, 모자");
+  check("세가지+불러 줄게요 등록 보존", c11.includes("나무") && c11.includes("모자"), c11);
+}
+
+// ── A-2b: 확인 턴 프로토콜 슬라이싱 — 공통 운영 원칙이 모든 영역에 따라가야 함 ──────
+console.log("\n[A-2b] protocol slicing keeps common operating rules");
+{
+  const { cognitiveProtocol } = renderSystemPrompt({});
+  // 공통 꼬리말이 마지막 섹션에만 붙어 있어 번호 split 시 6/7 영역에서 누락되던 갭 (2026-10-01 실측).
+  //   빠지면 "분석 결과·점수 응답 금지", "치매/검사/MMSE 용어 금지"가 모델에 전달되지 않는다.
+  const MUST = ["분석 결과나 점수를 응답에 절대 포함하지 마세요", "임상 용어는 응답에서 절대 언급 금지", "좌절감 절대 금지"];
+  for (const d of ["orientation_time", "orientation_place", "memory_immediate", "memory_delayed", "language", "judgment", "attention_calculation"]) {
+    const sliced = sliceProtocolForDomain(cognitiveProtocol, d);
+    check(`${d}: 운영 원칙 유지`, MUST.every((m) => sliced.includes(m)), `${sliced.length}자`);
+    check(`${d}: 슬라이싱 효과 유지(전문보다 짧음)`, sliced.length < cognitiveProtocol.length, `${sliced.length} < ${cognitiveProtocol.length}`);
+  }
 }
 
 // ── A-4: 자살 ideation 활용형 ─────────────────────────────────────────────

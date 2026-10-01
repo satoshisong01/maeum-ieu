@@ -428,8 +428,22 @@ export function sliceProtocolForDomain(protocol: string, domain: string): string
   const parts = protocol.split(/\n(?=\d+\.\s)/);
   if (parts.length < 2) return protocol;
   const header = parts[0].replace("아래 7개 인지 영역을", "아래 인지 영역을");
-  const section = parts.slice(1).find((s) => s.startsWith(`${s[0]}. ${domain}`) || s.includes(`. ${domain} `));
-  return section ? `${header}\n${section}` : protocol;
+  const sectionIdx = parts.findIndex((s, i) => i > 0 && (s.startsWith(`${s[0]}. ${domain}`) || s.includes(`. ${domain} `)));
+  if (sectionIdx < 0) return protocol;
+
+  /**
+   * 영역 공통 꼬리말([운영 원칙] 등)은 번호 섹션이 아니라 **마지막 섹션 본문에 붙어 있다**.
+   * 번호(`\n\d+. `)로만 자르면 마지막 영역(7. attention_calculation)을 고를 때만 따라오고
+   * 나머지 6개 영역에서는 통째로 누락된다(2026-10-01 실측).
+   * 그 안에는 "분석 결과·점수 응답 금지", "치매/검사/MMSE 용어 금지", "좌절감 금지"가 들어 있어
+   * 빠지면 어르신에게 임상 용어나 점수가 노출될 수 있다. 영역과 무관하게 항상 덧붙인다.
+   */
+  const last = parts[parts.length - 1];
+  const tailAt = last.search(/\n\[/);
+  const commonTail = tailAt >= 0 ? last.slice(tailAt) : "";
+  const section = sectionIdx === parts.length - 1 ? parts[sectionIdx]
+    : parts[sectionIdx] + commonTail;
+  return `${header}\n${section}`;
 }
 
 export function renderSystemPrompt(params: { companionName?: string; companionRelation?: string }): {
