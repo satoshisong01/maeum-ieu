@@ -314,9 +314,19 @@ async function handleExamTurn(params: { examSession: ExamSessionRow; answer: str
 
   // 영역 마감 — 무응답이면 0점/무응답으로 기록(채점 호출 안 함), 응답이면 항목별 채점
   const domainAnswered = !isNonResponse(ans);
+  // 이 영역의 채점이 시스템 사유로 수행되지 못했는가(0점과 구별) — 커버리지 산정에 쓴다.
+  let unscoredDomain = false;
   if (domainAnswered) {
     const scores = await scoreDomainAnswer(domain, ans, examEnv());
-    for (const s of scores) {
+    // 미채점(시스템 채점 실패) 항목은 저장하지 않는다 — 저장하면 0점으로 집계되어
+    //   환자 기록에 가짜 인지장애 근거가 남고 total/max·등급이 실제보다 낮아진다.
+    const scoredRows = scores.filter((s) => !s.unscored);
+    const unscoredCount = scores.length - scoredRows.length;
+    if (unscoredCount > 0) {
+      unscoredDomain = true;
+      console.warn(`[exam] ${domain} 미채점 ${unscoredCount}항목 — 집계 제외, 커버리지 하향`);
+    }
+    for (const s of scoredRows) {
       await prisma.$executeRawUnsafe(
         `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (session_id, item_id) DO UPDATE SET prompt=EXCLUDED.prompt, answer=EXCLUDED.answer, score=EXCLUDED.score, max_points=EXCLUDED.max_points, reason=EXCLUDED.reason`,
@@ -331,7 +341,10 @@ async function handleExamTurn(params: { examSession: ExamSessionRow; answer: str
     }
   }
 
-  const answered = (examSession.answered_domains ?? 0) + (domainAnswered ? 1 : 0);
+  // 채점이 수행되지 않은 영역은 '응답한 영역'으로 세지 않는다 → assessCoverage가 자료부족으로 판정.
+  //   이렇게 해야 coverage_status='ok'인데 실제로는 채점이 빠진 상태(가짜 충분)를 막는다.
+  const domainScored = domainAnswered && unscoredDomain === false;
+  const answered = (examSession.answered_domains ?? 0) + (domainScored ? 1 : 0);
   const nextIdx = idx + 1;
   let text: string;
   if (nextIdx >= order.length) {
@@ -1119,9 +1132,32 @@ export async function POST(req: Request) {
 
     // 검진 진행 턴 — 진행 중 검진 세션이 있으면 항목단위 채점 경로로(일상 대화·인지분석 우회)
     if (examSession && examSession.item_order) {
+      const examAnswer = isAudio && sttPromise
+        ? ((await sttPromise.catch(() => "")) || "")
+        : (lastUserMessage ?? "");
+
+      /**
+       * ⛔ 검진 중에도 응급이 최우선이다 — 검진 진행보다 안전이 먼저다.
+       *
+       * 결함(2026-10-01 확증): 검진 분기가 evaluateEmergency보다 **먼저 return**해서,
+       *   대리 검진 중 환자가 "가슴이 찢어질 것 같고 숨이 안 쉬어져"라고 답하면
+       *   그 문장을 문항 답안으로 채점하고 "네, 답변 감사합니다. 다음 질문이에요"로 진행했다.
+       *   L3 즉답·보호자 알림·Message.emergencyLevel 마킹이 전부 발생하지 않았다.
+       * L3면 즉답하고 검진 상태는 전진시키지 않는다(같은 문항을 다시 물을 수 있게 유지).
+       */
+      if (examAnswer.trim()) {
+        const examEmg = await evaluateEmergency({ userContent: examAnswer, conversationId });
+        if (examEmg.effectiveLevel === 3) {
+          return handleEmergencyL3({
+            result: examEmg.result, userContent: examAnswer,
+            conversationId, userId, honorific, companionName,
+            transcription: isAudio ? (examAnswer || "(음성 응답)") : undefined,
+          });
+        }
+      }
+
       if (isAudio && sttPromise) {
-        const tr = (await sttPromise.catch(() => "")) || "";
-        return handleExamTurn({ examSession, answer: tr, conversationId, userId, transcription: tr || "(음성 응답)" });
+        return handleExamTurn({ examSession, answer: examAnswer, conversationId, userId, transcription: examAnswer || "(음성 응답)" });
       }
       if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId });
     }

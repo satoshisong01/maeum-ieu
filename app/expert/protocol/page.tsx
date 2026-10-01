@@ -13,9 +13,33 @@ import { LogoutButton } from "../../LogoutButton";
 import { CIST_ITEMS, CIST_DOMAIN_ORDER, VOICE_MAX_POINTS } from "@/lib/screening/cist-bank";
 
 export default function ProtocolPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
-  useEffect(() => { if (status === "unauthenticated") router.replace("/login"); }, [status, router]);
+
+  /**
+   * ⛔ pro(검사자) 전용 — 역할 검사가 없어 **어르신 계정으로도 열람 가능**했다(2026-10-01 확증).
+   *
+   * 이 화면은 등록 단어(나무·자동차·모자), 연속 빼기 정답, 따라말하기 문장, 이름대기 정답,
+   * 유창성 절단점을 그대로 렌더한다. 피검자가 미리 보면 그 사람의 검진이 영구히 무효가 된다.
+   * (/expert는 API 403으로 막히지만 이 페이지는 정적 렌더라 API 호출이 없어 그대로 보였다)
+   */
+  const mode = (session?.user as { screeningMode?: string } | undefined)?.screeningMode;
+  const allowed = mode === "pro";
+  useEffect(() => {
+    if (status === "unauthenticated") { router.replace("/login"); return; }
+    if (status === "authenticated" && !allowed) router.replace("/");
+  }, [status, allowed, router]);
+
+  // 권한 확인 전/미권한 상태에서는 문항을 렌더하지 않는다 — 클라이언트에 문항이 그려지면 이미 노출이다.
+  if (status !== "authenticated" || !allowed) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <p className="text-zinc-500 dark:text-zinc-400">
+          {status === "loading" ? "확인 중…" : "이 화면은 검사자(전문가) 계정만 열람할 수 있습니다."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
