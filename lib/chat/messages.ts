@@ -62,13 +62,26 @@ export async function saveMessages(params: {
       speakerLabel: inferredLabel,
     },
   });
-  const assistantMsg = await prisma.message.create({
-    data: { conversationId, role: "assistant", content: assistantContent, createdAt: assistantTime },
-  });
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: { updatedAt: assistantTime },
-  });
+  /**
+   * ⚠ 트랜잭션이 아니다. user 행은 들어갔는데 아래 둘이 실패하면, 예외가 전파되면서
+   *   **이미 만들어진 userMsgId가 버려진다**. 응급 경로에서 그 결과가 고약하다:
+   *   DB에는 `emergencyLevel=3, notifiedAt=null` 행이 남고 호출부는 id가 없어 마킹을 못 한다
+   *   → scripts/pilot-daily-check.ts가 "🔴 알림 대상이 있는데 미발송"으로 **거짓 경보**를 내고,
+   *     dedup 앵커가 없어 같은 응급이 다음 턴에 다시 발송된다.
+   *   user 행이 생긴 이상 그 id는 돌려주는 게 맞다(assistant 행 유실은 대화 품질 문제일 뿐).
+   */
+  let assistantMsg: { id: string; content: string } | null = null;
+  try {
+    assistantMsg = await prisma.message.create({
+      data: { conversationId, role: "assistant", content: assistantContent, createdAt: assistantTime },
+    });
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: assistantTime },
+    });
+  } catch (e) {
+    console.error("[saveMessages] assistant/conversation 쓰기 실패 — user 행은 생성됨:", e instanceof Error ? e.message : e);
+  }
 
   // RAG 임베딩 (응답 흐름은 막지 않되, 실패는 로깅 — 조용한 삼킴은 message↔vector 불일치를 은폐)
   //   ⚠ after()로 실행 보장 — 부유 프라미스로 두면 서버리스가 응답 직후 인스턴스를 freeze할 때
@@ -78,7 +91,7 @@ export async function saveMessages(params: {
     if (!skipUserEmbedding) {
       await saveMessageEmbedding(userId, userMsg.id, userMsg.content).catch((e) => console.warn("[rag] user embed 실패:", (e as Error).message));
     }
-    if (!skipAssistantEmbedding) {
+    if (!skipAssistantEmbedding && assistantMsg) {
       await saveMessageEmbedding(userId, assistantMsg.id, assistantMsg.content).catch((e) => console.warn("[rag] assistant embed 실패:", (e as Error).message));
     }
   };
@@ -86,7 +99,9 @@ export async function saveMessages(params: {
     try { after(embedTasks); } catch { embedTasks().catch(() => { /* 로깅은 내부에서 */ }); }
   }
 
-  return { userMsgId: userMsg.id, assistantMsgId: assistantMsg.id };
+  // assistantMsgId는 쓰기 실패 시 빈 문자열 — 호출부는 userMsgId만 쓰므로 안전하고,
+  //   빈 값이 들어가면 "assistant 행이 없다"가 드러난다(묵살보다 낫다).
+  return { userMsgId: userMsg.id, assistantMsgId: assistantMsg?.id ?? "" };
 }
 
 /** 이상징후 발견 시 Message에 마킹 */

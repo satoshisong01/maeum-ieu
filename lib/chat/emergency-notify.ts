@@ -21,7 +21,8 @@ import dns from "node:dns/promises";
 export interface NotifyPayload {
   userId: string;
   userName: string;
-  messageId: string;
+  /** 발송 시각 마킹 대상. DB 저장이 실패한 응급 턴에서는 없을 수 있고, 그래도 발송은 진행한다 */
+  messageId?: string;
   level: 2 | 3;
   category: string;
   content: string;          // 사용자 발화 원문 (요약본)
@@ -151,19 +152,34 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   const channels: string[] = [];
 
   // 1) 중복 차단 (같은 카테고리·같거나 높은 레벨만 — L2→L3 격상은 통과)
-  if (await isDuplicate(payload.userId, payload.category, payload.level)) {
-    return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 L${payload.level}+ 발송 이력)` };
+  //    ⚠ 조회 실패 시 **발송 쪽으로 열린다**(2026-10-01). 이 함수의 첫 await가 DB 읽기라,
+  //    예외가 그대로 전파되면 DB 일시 장애 하나로 푸시·이메일·웹훅이 **전부 0건**이 됐다.
+  //    중복 알림은 보호자가 한 번 더 확인하면 끝이지만, 누락은 되돌릴 수 없다.
+  try {
+    if (await isDuplicate(payload.userId, payload.category, payload.level)) {
+      return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 L${payload.level}+ 발송 이력)` };
+    }
+  } catch (e) {
+    console.warn("[emergency-notify] dedup 조회 실패 — 중복 위험을 감수하고 발송 진행:", e instanceof Error ? e.message : e);
   }
 
   // 2) 사용자 보호자 정보 조회
-  const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: { guardianWebhookUrl: true, guardianEmail: true, guardianName: true },
-  });
-  if (!user) return { sent: false, channels: [], reason: "user not found" };
+  //    조회 실패를 치명으로 다루지 않는다 — webhook·email은 못 쓰더라도 아래 FCM 경로는
+  //    별도 쿼리(ExpertPatient)라 살아 있을 수 있다. 한 쿼리 실패로 전 채널을 버리지 않는다.
+  let user: { guardianWebhookUrl: string | null; guardianEmail: string | null; guardianName: string | null } | null = null;
+  let lookupFailed = false;   // 조회 실패와 "대상 없음"을 구별하기 위한 플래그
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { guardianWebhookUrl: true, guardianEmail: true, guardianName: true },
+    });
+  } catch (e) {
+    lookupFailed = true;
+    console.error("[emergency-notify] 보호자 연락처 조회 실패 — webhook/email 건너뛰고 FCM만 시도:", e instanceof Error ? e.message : e);
+  }
 
   // 3) Webhook 발송 (보호자가 URL을 등록한 경우)
-  if (user.guardianWebhookUrl) {
+  if (user?.guardianWebhookUrl) {
     const r = await sendWebhook(user.guardianWebhookUrl, buildWebhookBody(payload));
     if (r.ok) channels.push("webhook");
     else console.warn("[emergency-notify] webhook failed:", r);
@@ -171,11 +187,18 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
 
   // 4) FCM 푸시 — 환자와 연결된 보호자(전문가) 계정의 앱 토픽으로 발송.
   //    보호자가 마음이음 앱에 로그인하면 maeum_<보호자id> 토픽을 구독함.
-  const links = await prisma.expertPatient.findMany({
-    where: { patientUserId: payload.userId, status: "active" },
-    select: { expertUserId: true },
-  });
-  const guardianIds = links.map((l) => l.expertUserId);
+  let guardianIds: string[] = [];
+  try {
+    const links = await prisma.expertPatient.findMany({
+      where: { patientUserId: payload.userId, status: "active" },
+      select: { expertUserId: true },
+    });
+    guardianIds = links.map((l) => l.expertUserId);
+  } catch (e) {
+    // 여기서 throw되면 **뒤에 오는 이메일 발송까지 통째로 날아간다**. 격리한다.
+    lookupFailed = true;
+    console.error("[emergency-notify] 보호자 연결 조회 실패 — FCM 건너뜀:", e instanceof Error ? e.message : e);
+  }
   if (guardianIds.length > 0) {
     const push = await sendEmergencyPush(guardianIds, {
       title: payload.level === 3 ? "🚨 즉시 응급 신호" : "⚠️ 주의 신호",
@@ -191,7 +214,7 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   }
 
   // 5) 이메일 — 보호자 이메일(암호화 저장)로 발송. RESEND_API_KEY 없으면 skip.
-  if (user.guardianEmail) {
+  if (user?.guardianEmail) {
     const email = decryptPII(user.guardianEmail);
     if (email) {
       const ok = await sendEmergencyEmail(email, {
@@ -206,13 +229,29 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
 
   // 6) 발송 시각 마킹 (어느 채널이든 1건 이상 성공 시)
   if (channels.length > 0) {
-    await prisma.message.update({
-      where: { id: payload.messageId },
-      data: { notifiedAt: new Date() },
-    });
+    // 마킹 실패가 **이미 성공한 발송을 실패로 둔갑**시키지 않게 격리.
+    //   (실패하면 dedup이 안 걸려 다음 턴에 한 번 더 갈 수 있는데, 누락보다 낫다)
+    if (payload.messageId) {
+      try {
+        await prisma.message.update({
+          where: { id: payload.messageId },
+          data: { notifiedAt: new Date() },
+        });
+      } catch (e) {
+        console.error("[emergency-notify] notifiedAt 마킹 실패(발송은 성공):", e instanceof Error ? e.message : e);
+      }
+    } else {
+      console.warn("[emergency-notify] messageId 없음 — 발송은 했으나 dedup 기록 불가(저장 실패 턴)");
+    }
     return { sent: true, channels };
   }
   // 전 채널 실패/미설정 — 사유를 남겨 호출부 로그('skipped: undefined')가 원인 불명이 되지 않게
-  const hadTargets = Boolean(user.guardianWebhookUrl) || guardianIds.length > 0 || Boolean(user.guardianEmail);
+  const hadTargets = Boolean(user?.guardianWebhookUrl) || guardianIds.length > 0 || Boolean(user?.guardianEmail);
+  // ⚠ 조회가 실패한 경우를 "보호자 미연결"로 적으면 **운영자가 원인을 영원히 못 찾는다**.
+  //   대상이 없는 것과 대상을 못 읽은 것은 조치가 완전히 다르다(전자는 설정, 후자는 장애).
+  if (lookupFailed && !hadTargets) {
+    console.error("[emergency-notify] 발송 0건 — 보호자 조회 실패로 대상 확인 불가(DB 장애 의심)");
+    return { sent: false, channels, reason: "보호자 조회 실패 — 발송 대상 확인 불가(DB 장애 의심)" };
+  }
   return { sent: false, channels, reason: hadTargets ? "모든 채널 발송 실패(위 warn 로그 참조)" : "알림 대상 없음(보호자 미연결·webhook/email 미등록)" };
 }

@@ -809,41 +809,64 @@ async function handleEmergencyL3(params: {
   const { result, userContent, conversationId, userId, honorific, companionName, transcription } = params;
   const reply = buildEmergencyL3Reply(honorific, companionName, result.category);
 
+  /**
+   * 저장 실패가 '119 안내'와 '보호자 알림'을 함께 삼키지 않게 분리한다(2026-10-01).
+   *   이전 구조는 (a) 알림 전체가 `if (conversationId)` 안에 있어 대화 ID가 없는 턴이면
+   *   어르신에게 119 안내만 뜨고 **보호자 알림 0건·기록 0건**이었고,
+   *   (b) `saveMessages`가 await라 쓰기 실패 시 예외가 전파돼 119 안내까지 못 보고 500이 됐다.
+   *
+   * ⚠ **보장 범위를 오해하지 말 것.** 여기서 막는 건 "L3 판정 이후의 쓰기 실패"뿐이다.
+   *   이 함수에 **도달하기 전에** DB를 치는 지점이 아직 셋 남아 있고, 거기서 터지면
+   *   여전히 500 — 어르신은 119 안내도 못 듣는다:
+   *     · :1111 동의 게이트 `prisma.user.findUnique` (mode user/general에서 무조건 실행)
+   *     · :1159 conversationId 소유권 검증
+   *     · :1192 buildSystemPrompt 내부 Promise.all (prompt.ts)
+   *   즉 "RDS가 죽어도 119 안내는 나간다"는 **아직 참이 아니다**. 그 수정은 별도 작업.
+   */
+  let userMsgId: string | undefined;
   if (conversationId) {
-    const { userMsgId } = await saveMessages({
-      conversationId,
-      userId,
-      userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
-      assistantContent: reply,
-      emergencyLevel: 3,
-      emergencyEvidence: `${result.category}:${result.evidence}`,
-    });
-    // 보호자 알림 — after()로 응답 후 실행을 "보장"하며 발송(응답 지연 없음).
-    //   ⚠ 부유 프라미스 금지(2026-07-07 감사 blocker): .then()으로 떠 있으면 Vercel이 응답 반환 직후
-    //   함수를 suspend할 때 알림이 무기록 유실될 수 있음. after()는 waitUntil로 함수 수명을 연장함.
-    const sendL3Notify = async () => {
-      try {
-        const r = await notifyGuardian({
-          userId,
-          userName: honorific,
-          messageId: userMsgId,
-          level: 3,
-          category: result.category,
-          content: (transcription ?? userContent) || "",
-          aiReply: reply,
-          createdAt: new Date(),
-        });
-        if (r.sent) console.log("[emergency-notify] L3 sent:", r.channels);
-        else console.warn("[emergency-notify] L3 not sent:", r.reason);
-      } catch (e) {
-        console.error("[emergency-notify] L3 error:", e);
-      }
-    };
     try {
-      after(sendL3Notify);
-    } catch {
-      await sendL3Notify(); // 요청 컨텍스트 밖(예: 테스트 하네스) — 응답 전에 직접 완료 보장
+      ({ userMsgId } = await saveMessages({
+        conversationId,
+        userId,
+        userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
+        assistantContent: reply,
+        emergencyLevel: 3,
+        emergencyEvidence: `${result.category}:${result.evidence}`,
+      }));
+    } catch (e) {
+      console.error("[emergency] L3 저장 실패 — 119 안내·보호자 알림은 계속 진행:", e instanceof Error ? e.message : e);
     }
+  } else {
+    console.warn("[emergency] L3인데 conversationId 없음 — 기록 없이 알림만 발송");
+  }
+
+  // 보호자 알림 — 저장 성공 여부와 무관하게 시도한다(FCM·이메일은 메시지 행이 없어도 나간다).
+  //   after()로 응답 후 실행을 "보장"하며 발송(응답 지연 없음).
+  //   ⚠ 부유 프라미스 금지(2026-07-07 감사 blocker): .then()으로 떠 있으면 Vercel이 응답 반환 직후
+  //   함수를 suspend할 때 알림이 무기록 유실될 수 있음. after()는 waitUntil로 함수 수명을 연장함.
+  const sendL3Notify = async () => {
+    try {
+      const r = await notifyGuardian({
+        userId,
+        userName: honorific,
+        messageId: userMsgId,
+        level: 3,
+        category: result.category,
+        content: (transcription ?? userContent) || "",
+        aiReply: reply,
+        createdAt: new Date(),
+      });
+      if (r.sent) console.log("[emergency-notify] L3 sent:", r.channels);
+      else console.warn("[emergency-notify] L3 not sent:", r.reason);
+    } catch (e) {
+      console.error("[emergency-notify] L3 error:", e);
+    }
+  };
+  try {
+    after(sendL3Notify);
+  } catch {
+    await sendL3Notify(); // 요청 컨텍스트 밖(예: 테스트 하네스) — 응답 전에 직접 완료 보장
   }
   const payload: Record<string, unknown> = { text: reply, role: "assistant", emergency: { level: 3, category: result.category } };
   if (transcription !== undefined) payload.transcription = transcription;
