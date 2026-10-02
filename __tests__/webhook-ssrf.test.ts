@@ -34,7 +34,8 @@ vi.mock("@/lib/notify/email", () => ({
 }));
 vi.mock("@/lib/crypto", () => ({ decryptPII: (s: string) => s, encryptPII: (s: string) => s }));
 
-const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as unknown as Response);
+// init(2번째 인자)까지 받는 시그니처 — redirect 옵션을 검증하려면 타입에 있어야 한다
+const fetchMock = vi.fn(async (_url?: unknown, _init?: unknown) => ({ ok: true, status: 200 }) as unknown as Response);
 vi.stubGlobal("fetch", fetchMock);
 
 /** 웹훅 URL만 등록된 보호자 상태로 1건 발송 시도하고, 실제 fetch가 나갔는지 본다. */
