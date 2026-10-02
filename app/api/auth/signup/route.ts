@@ -4,13 +4,16 @@ import bcrypt from "bcryptjs";
 import { encryptPII } from "@/lib/crypto";
 import { normalizeTimes } from "@/lib/chat/medication";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 interface MedicationDraftInput { label?: string; times?: unknown; enabled?: boolean }
 
 export async function POST(req: Request) {
   try {
     // 미인증 엔드포인트 — IP 기준 가입 폭주/봇 방어 (분당 10회)
-    const ip = (req.headers.get("x-forwarded-for")?.split(",")[0] || req.headers.get("x-real-ip") || "unknown").trim();
+    //   ⚠ XFF의 **맨 오른쪽**을 쓴다(getClientIp). 왼쪽은 클라이언트가 위조할 수 있어
+    //     헤더 한 줄로 이 한도를 무력화할 수 있었다(2026-10-02 수정).
+    const ip = getClientIp(req);
     const rl = await checkRateLimit(`signup:${ip}`, 10, 60_000);
     if (!rl.ok) {
       return NextResponse.json({ error: "잠시 후 다시 시도해 주세요." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } });
