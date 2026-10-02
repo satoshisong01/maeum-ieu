@@ -380,14 +380,20 @@ async function handleExamTurn(params: {
   }
   if (conversationId) {
     const lvl = emergency?.effectiveLevel ?? 0;
-    const { userMsgId } = await saveMessages({
-      conversationId, userId, userContent: ans || "(무응답)", assistantContent: text,
-      skipUserEmbedding: true, skipAssistantEmbedding: true,
-      // 검진 답변에도 응급 신호가 섞일 수 있다 — 마킹해야 추세·보호자 화면 건수에 반영된다.
-      emergencyLevel: lvl > 0 ? lvl : undefined,
-      emergencyEvidence: emergency && emergency.result.level > 0
-        ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
-    });
+    // ⚠ 저장 실패가 L2 알림을 삼키지 않게 격리 — 검진 경로도 동일(2026-10-02).
+    let userMsgId: string | undefined;
+    try {
+      ({ userMsgId } = await saveMessages({
+        conversationId, userId, userContent: ans || "(무응답)", assistantContent: text,
+        skipUserEmbedding: true, skipAssistantEmbedding: true,
+        // 검진 답변에도 응급 신호가 섞일 수 있다 — 마킹해야 추세·보호자 화면 건수에 반영된다.
+        emergencyLevel: lvl > 0 ? lvl : undefined,
+        emergencyEvidence: emergency && emergency.result.level > 0
+          ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+      }));
+    } catch (e) {
+      console.error("[exam] 저장 실패 — L2 알림은 계속:", e instanceof Error ? e.message : e);
+    }
     // L2(주의) 알림 — L3는 호출부에서 이미 즉답 분기했으므로 여기 오지 않는다.
     if (lvl === 2 && emergency) {
       const sendL2 = async () => {
@@ -725,14 +731,25 @@ async function handleAudioMessage(params: {
     timings,
     onComplete: async (answerText, fallbackUsed) => {
       if (!conversationId) return;
-      const { userMsgId } = await saveMessages({
-        conversationId, userId,
-        userContent: transcription || "(음성 메시지)",
-        assistantContent: answerText,
-        emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
-        emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
-        skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
-      });
+      /**
+       * ⚠ 저장 실패가 **L2 보호자 알림까지 삼키면 안 된다**(2026-10-02 적대 리뷰).
+       *   L3는 2026-10-01에 격리했는데 L2 경로 셋은 그대로였다. await가 throw하면
+       *   아래 알림 블록과 배경 작업이 통째로 건너뛰어져, "주의 신호인데 보호자가 모른다"가 된다.
+       *   FCM·이메일은 Message 행 없이도 나간다 — 마킹만 생략될 뿐이다.
+       */
+      let userMsgId: string | undefined;
+      try {
+        ({ userMsgId } = await saveMessages({
+          conversationId, userId,
+          userContent: transcription || "(음성 메시지)",
+          assistantContent: answerText,
+          emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+          emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+          skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
+        }));
+      } catch (e) {
+        console.error("[chat/audio] 저장 실패 — 알림·배경작업은 계속:", e instanceof Error ? e.message : e);
+      }
       if (emergency.effectiveLevel === 2) {
         // 부유 프라미스 금지(2026-07-07 감사) — after()로 실행 보장, 컨텍스트 밖이면 여기서 await.
         //   onComplete는 스트림 close 전에 await되고 'done' 이벤트는 이미 전송됐으므로 체감 지연 없음.
@@ -758,7 +775,9 @@ async function handleAudioMessage(params: {
         // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
         // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
         // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-        if (mode !== "general") {
+        // 저장 실패로 userMsgId가 없으면 인지 분석을 건너뛴다 — cognitive_assessments가
+        //   message_id를 참조하므로 저장할 곳이 없다. 알림은 위에서 이미 독립적으로 나갔다.
+        if (mode !== "general" && userMsgId) {
           await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: transcription, assistantResponse: fallbackUsed ? "" : answerText, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
         }
         if (transcription) {
@@ -1040,12 +1059,23 @@ async function handleTextMessage(params: {
     timings,
     onComplete: async (text, fallbackUsed) => {
       if (!conversationId || !userContent) return;
-      const { userMsgId } = await saveMessages({
-        conversationId, userId, userContent, assistantContent: text,
-        emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
-        emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
-        skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
-      });
+      /**
+       * ⚠ 저장 실패가 **L2 보호자 알림까지 삼키면 안 된다**(2026-10-02 적대 리뷰).
+       *   L3는 2026-10-01에 격리했는데 L2 경로 셋은 그대로였다. await가 throw하면
+       *   아래 알림 블록과 배경 작업이 통째로 건너뛰어져, "주의 신호인데 보호자가 모른다"가 된다.
+       *   FCM·이메일은 Message 행 없이도 나간다 — 마킹만 생략될 뿐이다.
+       */
+      let userMsgId: string | undefined;
+      try {
+        ({ userMsgId } = await saveMessages({
+          conversationId, userId, userContent, assistantContent: text,
+          emergencyLevel: emergency.effectiveLevel > 0 ? emergency.effectiveLevel : undefined,
+          emergencyEvidence: emergency.result.level > 0 ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+          skipAssistantEmbedding: fallbackUsed, // 폴백 멘트는 RAG 오염 방지 위해 임베딩 제외
+        }));
+      } catch (e) {
+        console.error("[chat/text] 저장 실패 — 알림·배경작업은 계속:", e instanceof Error ? e.message : e);
+      }
       if (emergency.effectiveLevel === 2) {
         // 부유 프라미스 금지(2026-07-07 감사) — after()로 실행 보장, 컨텍스트 밖이면 여기서 await.
         const sendL2Notify = async () => {
@@ -1066,7 +1096,9 @@ async function handleTextMessage(params: {
         // 폴백 턴에도 인지분석은 수행 — 분석 대상은 사용자 발화이므로 폴백과 무관하게 유효.
         // 단 AI 발화로 폴백 멘트를 넘기면 probe 감지·도메인 자동기록이 오염되므로 빈 문자열로 대체.
         // 일반인(general)은 인지 선별 대상이 아님 — 분석 미수행(목적 분리 + 비용 절감)
-        if (mode !== "general") {
+        // 저장 실패로 userMsgId가 없으면 인지 분석을 건너뛴다 — cognitive_assessments가
+        //   message_id를 참조하므로 저장할 곳이 없다. 알림은 위에서 이미 독립적으로 나갔다.
+        if (mode !== "general" && userMsgId) {
           await runCognitiveAnalysis({ userId, conversationId, userMsgId, userMessage: userContent, assistantResponse: fallbackUsed ? "" : text, historyText, envBlock, honorific, probeContext, answeringProbe }).catch((e) => console.error("[bg-cognitive]", e));
         }
         await extractAndSaveProfile({ userId, userMessage: userContent, userMessageId: userMsgId }).catch((e) => console.error("[bg-profile-extract]", e));
@@ -1305,6 +1337,29 @@ export async function POST(req: Request) {
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId, mode);
     if (isReEngage) return handleReEngageGreeting(systemPrompt, honorific, companionName, history, conversationId, reEngageAttempt ?? 1);
 
+    /**
+     * 검진 세션은 열렸는데 아직 문항이 배정되지 않은 상태(item_order NULL)에서의 대리 턴을 막는다.
+     *
+     * 결함(2026-10-02 적대 리뷰): exam_session은 item_order 없이 INSERT되고
+     *   (app/api/expert/exam/route.ts:44), 그 값은 handleExamGreeting에서만 채워진다.
+     *   그래서 전문가가 isInitialGreeting 없이 /api/chat을 호출하면
+     *     · 1237의 403 가드는 examSession이 truthy라 통과하고
+     *     · userId는 환자로 승격되는데
+     *     · 아래 `examSession.item_order` 가드에서 falsy라 **일반 대화 경로로 떨어졌다.**
+     *   결과: 환자의 RAG 기억 + 최근 대화 50건이 LLM 컨텍스트에 주입되어, 전문가가
+     *   프롬프트로 환자의 일상 대화 원문을 끌어낼 수 있다(동의서 §4 위반). 1234행 주석이
+     *   막으려던 바로 그 경로가 이 틈으로 되살아나 있었다.
+     *   게다가 2026-10-02 pro 수정 이후로는 이 턴이 scoringTurn=true가 되어, 자유 대화에서 나온
+     *   점수가 환자 기록에 **'정밀 채점' 품질로** 남고 악화 알림 평가까지 탄다.
+     * 정답은 폴스루가 아니라 차단이다 — 대리 경로의 유일한 정당한 용도는 검진 시행이다.
+     */
+    if (examSession && !examSession.item_order && userId !== actorId) {
+      return NextResponse.json(
+        { error: "검진이 아직 시작되지 않았습니다. 검진 시작을 먼저 진행해주세요." },
+        { status: 409 },
+      );
+    }
+
     // 검진 진행 턴 — 진행 중 검진 세션이 있으면 항목단위 채점 경로로(일상 대화·인지분석 우회)
     if (examSession && examSession.item_order) {
       const examAnswer = isAudio && sttPromise
@@ -1360,7 +1415,23 @@ export async function POST(req: Request) {
         //   "숨이 안 쉬어져"가 마무리 인사로 덮이지 않는다(이미 진행 중인 promise이고,
         //   handleAudioMessage가 같은 promise를 다시 await해도 즉시 resolve된다).
         const spoken = isAudio && sttPromise ? await sttPromise.catch(() => "") : (lastUserMessage ?? "");
-        const isEmergencyUtterance = spoken ? detectEmergency(spoken).level > 0 : false;
+        /**
+         * ⚠ 정규식만 보면 안 된다(2026-10-02 적대 리뷰). 본류 평가(evaluateEmergency)는
+         *   정규식이 none일 때 LLM 백스톱(detectEmergencyLLM)을 한 번 더 태우는데, 이 게이트는
+         *   정규식만 봐서 **백스톱이 잡아내던 사투리·완곡어 L3가 여기서 마무리 인사로 덮였다.**
+         *   백스톱이 존재하는 이유가 바로 "정규식이 놓치는 과소감지 꼬리"인데, 하필 그 꼬리가
+         *   한도 초과일에 묵살되면 가장 조용한 위음성이 된다.
+         *   비용: SOFT_SIGNAL 사전필터가 평범한 발화를 걸러 호출 자체가 드물고,
+         *   한도 초과 턴에만 돈다. 안전 기능은 비용 최적화 대상이 아니다(가이드 §3).
+         */
+        let isEmergencyUtterance = spoken ? detectEmergency(spoken).level > 0 : false;
+        if (spoken && !isEmergencyUtterance) {
+          const llm = await detectEmergencyLLM(spoken).catch(() => null);
+          if (llm) {
+            isEmergencyUtterance = true;
+            console.log("[daily-limit] 정규식 none → LLM 백스톱이 응급 포착:", llm.category);
+          }
+        }
         if (!isEmergencyUtterance) {
           // 오류(429)가 아니라 **동반자가 말하는 마무리 인사**를 200으로 — 화면엔 평소 말풍선이 뜨고
           //   TTS로 읽히므로 어르신이 "오늘은 그만"이라고 자연히 이해한다.

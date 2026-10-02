@@ -16,6 +16,7 @@
  *   DB가 죽어서 들어온 경로이므로 여기서 또 조회하면 같은 예외로 안전망째 무너진다.
  */
 import { detectEmergency, buildEmergencyL3Reply, type EmergencyCategory } from "@/lib/chat/emergency";
+import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 
 export interface SosState {
@@ -64,7 +65,24 @@ export async function lastResortEmergency(params: {
   }
   if (!content) return { fired: false, level: 0, skipped: "no-content" };
 
-  const result = detectEmergency(content);
+  /**
+   * 정규식 → (none이면) LLM 백스톱. 본류 evaluateEmergency와 같은 2단 구성이다.
+   *
+   * ⚠ 2026-10-02 적대 리뷰 지적: 1차 구현은 detectEmergency만 썼다. 그런데 백스톱이 존재하는
+   *   이유가 바로 "정규식이 놓치는 사투리·완곡어 과소감지 꼬리"이고, 안전망은 **그 꼬리가 가장
+   *   위험해지는 순간**(요청 자체가 실패한 순간)에 작동한다. 거기서 정규식만 보면
+   *   백스톱이 잡던 L3가 조용히 500으로 사라진다.
+   *   백스톱은 DB를 쓰지 않으므로(Gemini 호출뿐) RDS 장애 경로에서도 동작한다 —
+   *   이 모듈의 'DB 안 친다' 원칙과 충돌하지 않는다. 실패하면 null이라 더 나빠지지도 않는다.
+   */
+  let result = detectEmergency(content);
+  if (result.level === 0) {
+    const llm = await detectEmergencyLLM(content).catch(() => null);
+    if (llm) {
+      result = llm;
+      console.log("[last-resort] 정규식 none → LLM 백스톱이 응급 포착:", llm.category);
+    }
+  }
   if (result.level < minLevel) return { fired: false, level: result.level, skipped: "below-threshold" };
 
   const level = result.level as 2 | 3;

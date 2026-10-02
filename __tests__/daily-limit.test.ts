@@ -193,7 +193,18 @@ describe("라우트 게이트 계약", () => {
   it("응급 발화는 한도보다 우선한다 — 음성은 전사를 기다린 뒤 판정한다", () => {
     // 🔒 실서비스는 음성 전용. 전사 없이 판정하면 "숨이 안 쉬어져"가 마무리 인사로 덮인다.
     expect(gate).toMatch(/usage\.exceeded[\s\S]{0,700}await sttPromise[\s\S]{0,200}detectEmergency/);
-    expect(gate).toMatch(/detectEmergency\(spoken\)[\s\S]{0,140}if \(!isEmergencyUtterance\)/);
+    expect(gate).toMatch(/detectEmergency\(spoken\)[\s\S]{0,900}if \(!isEmergencyUtterance\)/);
+  });
+
+  it("정규식이 none이면 LLM 백스톱까지 본 뒤에 차단한다", () => {
+    // 🔒 2026-10-02 적대 리뷰: 이 게이트가 정규식만 봐서, 백스톱이 잡던 사투리·완곡어 L3가
+    //    한도 초과일에 마무리 인사로 덮였다. 백스톱의 존재 이유가 그 과소감지 꼬리다.
+    expect(gate).toMatch(/detectEmergencyLLM\(spoken\)/);
+    // 백스톱 호출이 차단 판정(!isEmergencyUtterance)보다 **앞**이어야 의미가 있다
+    const llmIdx = gate.indexOf("detectEmergencyLLM(spoken)");
+    const blockIdx = gate.indexOf("if (!isEmergencyUtterance)");
+    expect(llmIdx).toBeGreaterThan(-1);
+    expect(blockIdx).toBeGreaterThan(llmIdx);
   });
 
   it("차단 시 429가 아니라 200 + 동반자 발화를 돌려준다", () => {

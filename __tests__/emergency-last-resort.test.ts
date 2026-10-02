@@ -20,6 +20,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const notifyGuardian = vi.fn(async (_payload: unknown) => ({ sent: true, channels: ["fcm"] as string[], reason: undefined as string | undefined }));
 vi.mock("@/lib/chat/emergency-notify", () => ({ notifyGuardian: (p: unknown) => notifyGuardian(p) }));
 
+/** 정규식이 놓치는 꼬리를 잡는 LLM 백스톱 — 네트워크 없이 주입 */
+const detectEmergencyLLM = vi.fn(async (_t: string) => null as null | { level: 2 | 3; category: string; evidence: string });
+vi.mock("@/lib/chat/emergency-llm", () => ({
+  detectEmergencyLLM: (t: string) => detectEmergencyLLM(t),
+  SOFT_SIGNAL: /./,
+}));
+
 import { lastResortEmergency, type SosState } from "@/lib/chat/emergency-last-resort";
 
 const L3_SPEECH = "숨이 안 쉬어져요";
@@ -35,6 +42,7 @@ const run = (sos: SosState, opts: Partial<{ minLevel: 2 | 3; transcribe: (d: str
 beforeEach(() => {
   vi.clearAllMocks();
   notifyGuardian.mockResolvedValue({ sent: true, channels: ["fcm"], reason: undefined });
+  detectEmergencyLLM.mockResolvedValue(null);
 });
 
 describe("(A) 음성 턴 — 현재 발화를 재전사해 평가한다", () => {
@@ -179,5 +187,36 @@ describe("세 진입점이 공용 안전망을 쓴다", () => {
     expect(src).toMatch(/sos\.text = isAudioTurn \? "" :/);
     // 본류 STT 결과를 안전망에 넘기는 연결도 함께 고정(없으면 매번 재전사해 비용이 든다)
     expect(src).toMatch(/\.then\(\(t\) => \{ if \(t\) sos\.text = t; return t; \}\)/);
+  });
+});
+
+/**
+ * LLM 백스톱 연동 — 1차 구현이 detectEmergency만 쓰던 것을 2026-10-02 적대 리뷰가 지적했다.
+ * 백스톱의 존재 이유가 "정규식이 놓치는 사투리·완곡어 꼬리"인데, 안전망은 그 꼬리가 가장
+ * 위험해지는 순간(요청 자체가 실패한 순간)에 작동한다. 거기서 정규식만 보면 L3가 조용히 사라진다.
+ */
+describe("LLM 백스톱을 안전망에서도 쓴다", () => {
+  it("정규식이 none이면 백스톱을 호출한다", async () => {
+    await run({ userId: "u1", text: "인자 다 정리하고 조용히 갈란다" });
+    expect(detectEmergencyLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it("백스톱이 L3를 잡으면 발동한다 — 정규식이 놓친 꼬리", async () => {
+    detectEmergencyLLM.mockResolvedValue({ level: 3, category: "suicidal", evidence: "llm:완곡 표현" });
+    const r = await run({ userId: "u1", text: "이만 자리를 비켜주려고 하네" });
+    // 🔒 이게 false면 백스톱이 잡던 L3가 안전망에서 통째로 사라진다
+    expect(r.fired).toBe(true);
+    expect(r.level).toBe(3);
+    expect(r.reply).toBeTruthy();
+  });
+
+  it("정규식이 이미 잡았으면 백스톱을 부르지 않는다 (중복 비용 금지)", async () => {
+    await run({ userId: "u1", text: L3_SPEECH });
+    expect(detectEmergencyLLM).not.toHaveBeenCalled();
+  });
+
+  it("백스톱이 throw해도 안전망은 살아남는다", async () => {
+    detectEmergencyLLM.mockRejectedValue(new Error("gemini down"));
+    await expect(run({ userId: "u1", text: "조용히 갈란다" })).resolves.toMatchObject({ fired: false });
   });
 });

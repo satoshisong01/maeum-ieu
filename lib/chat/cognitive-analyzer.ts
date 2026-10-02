@@ -641,14 +641,34 @@ export async function analyzeCognitive(params: {
       const liteRes = await generateWithRetry(buildAnalyzerModel(apiKey, ANALYZER_LITE_MODEL), promptText);
       logUsage("analyzer-lite", liteRes);
       const liteResult = parseResult((liteRes.text ?? "").trim());
-      const suspicious = liteResult.isAnomaly || liteResult.cognitiveChecks.some((c) => c.score >= 1);
+      /**
+       * ⚠ lite가 **채점에 실패한 것**(degraded: 빈 응답·파싱 실패)을 "이상 없음"으로 읽으면 안 된다
+       *   (2026-10-02 적대 리뷰). 둘 다 cognitiveChecks가 비어 있어 모양이 같지만 의미가 정반대다 —
+       *   전자는 "모름", 후자는 "정상". 모름을 정상으로 처리하면 그 턴은 아무도 채점하지 않은 채
+       *   조용히 지나가고, 반복되면 인지 저하 추세에 구멍이 생긴다.
+       *   그래서 degraded도 승급 사유로 삼는다(primary가 다시 본다).
+       */
+      const suspicious = liteResult.isAnomaly
+        || liteResult.cognitiveChecks.some((c) => c.score >= 1)
+        || !!liteResult.degraded;
       if (suspicious) {
         // 재채점 실패(transient 소진 등) 시 lite 결과로 폴백 — 이미 이상 소견이 손에 있는데
         // 예외 전파로 그 턴 평가가 통째 유실되는 것 방지(lite 결과가 suspicious이므로 보수적으로 안전).
         try {
           const res = await generateWithRetry(buildAnalyzerModel(apiKey, primaryModelName), promptText);
           logUsage("analyzer", res);
-          raw = parseResult((res.text ?? "").trim());
+          const primaryResult = parseResult((res.text ?? "").trim());
+          /**
+           * ⚠ 예외만 막아서는 부족하다. primary가 **200으로 응답했는데 파싱이 실패**하면
+           *   primaryResult는 비어 있고(degraded), 그걸 그대로 쓰면 lite가 이미 잡아 둔 의심 소견이
+           *   통째로 버려진다 — 승급이 오히려 결과를 나쁘게 만드는 역설. 보수적으로 lite를 남긴다.
+           */
+          if (primaryResult.degraded && !liteResult.degraded) {
+            console.warn("[cognitive-analyzer] primary 파싱 실패 — lite 소견 보존:", primaryResult.degraded);
+            raw = liteResult;
+          } else {
+            raw = primaryResult;
+          }
         } catch (escalationErr) {
           console.warn("[cognitive-analyzer] escalation failed, falling back to lite result:", (escalationErr as Error).message);
           raw = liteResult;

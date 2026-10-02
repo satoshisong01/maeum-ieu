@@ -189,10 +189,26 @@ async function login(page, email) {
         await page.getByRole("button", { name: "동의하고 시작하기" }).click();
         await page.waitForTimeout(2500);
       }
-      // 어르신 홈에 도착했으면 '대화하기'(링크) 를 눌러 대화 화면으로 — 버튼이 아니라 <a>다.
-      if (!/\/(chat|mental|expert)/.test(page.url())) {
-        const talk = page.locator('a[href^="/chat"], a[href^="/live"]').first();
-        if (await talk.count()) { await talk.click(); await page.waitForTimeout(1500); }
+      /**
+       * 역할별 랜딩이 제각각이라(어르신=홈 큰버튼 / 일반인=/mental / 전문가=/expert)
+       * 홈 링크를 따라가는 방식은 역할마다 깨진다. 대화 화면으로 **직접** 간다 — 결정적이다.
+       *   (2026-10-02: 이 차이 때문에 general·pro가 30턴 중 0턴 실행으로 죽고 있었다)
+       */
+      if (!/\/chat/.test(page.url())) {
+        /**
+         * ⚠ pro(전문가)는 **본인 계정 대화가 제품에서 막혀 있다** — app/chat/page.tsx:683이
+         *   proxyPatientId 없는 pro를 /expert로 되돌린다. 전문가의 유일한 대화 경로는
+         *   `/chat?patient=<환자ID>` 대리 검진이고, 그건 표준 문항 상태머신(handleExamTurn)이라
+         *   이 유동형 수다 스크립트와 성격이 다르다.
+         *   즉 지금까지 pro 역할은 **제품에 존재하지 않는 경로**를 두드리고 있었다.
+         *   억지로 통과시키면 또 거짓 녹색이 되므로, 사유를 명시하고 명확히 중단한다.
+         *   (대리 검진 전용 시나리오는 scripts/e2e-screening.mjs가 담당한다)
+         */
+        if (ROLE === "pro") {
+          throw new Error("pro 역할은 본인 대화가 제품에서 차단됨(/expert 리다이렉트) — 대리 검진은 e2e-screening.mjs 사용");
+        }
+        await page.goto(`${BASE}/chat`, { waitUntil: "domcontentloaded" });
+        await page.waitForTimeout(2000);
       }
       return;
     } catch (e) { if (attempt === 2) throw e; await page.waitForTimeout(1500); }
