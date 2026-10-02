@@ -163,21 +163,54 @@ async function isDuplicate(userId: string, category: string, level: 2 | 3): Prom
  *   그래도 의미가 큰 이유: 공용 Gmail 단일 발신 계정(무료 ~500통/일)이라
  *   한 사람의 폭주가 **다른 환자의 알림까지** 끊는다.
  */
-const recentSends = new Map<string, number>();
+const recentSends = new Map<string, { at: number; windowMs: number }>();
 const FANOUT_KEY = (p: { userId: string; category: string; level: number }) => `${p.userId}:${p.category}:${p.level}`;
 
-function tooSoonWithoutDbDedup(key: string): boolean {
+/**
+ * 전 채널 실패 후의 **재시도 바닥** — 성공 창(1시간)보다 훨씬 짧다.
+ *
+ * 왜 둘을 나누나: 아무것도 전달되지 않았는데 1시간을 막으면 일시 장애가 지나간 뒤에도
+ *   그 응급은 영영 전달되지 않는다(위음성). 반대로 바닥이 없으면 SMTP 거절 같은 실패를
+ *   매 턴 재시도하며 공용 Gmail 쿼터를 태운다. 60초는 "다음 턴엔 다시 시도하되
+ *   폭주는 아니다"의 균형점이다.
+ */
+const RETRY_FLOOR_MS = 60 * 1000;
+
+/**
+ * 메모리 팬아웃 상한 — 발송 직전 **항상** 확인하는 공통 게이트.
+ *
+ * ⚠ 2026-10-02 수정(AWS 이전 감사 blocker): 이전에는 `isDuplicate()`가 **throw한 catch
+ *   안에서만** 이 함수를 불렀다. 그래서 가장 흔한 장애 유형에서 상한이 통째로 무력했다:
+ *     · **읽기는 되고 쓰기만 실패**(디스크 풀·읽기복제 전환·커넥션 고갈): isDuplicate는
+ *       정상적으로 "중복 아님"을 돌려준다(notifiedAt 쓰기가 실패해 앵커가 안 남았으니).
+ *       예외가 없으니 catch도 안 타고 → 같은 L3가 **매 턴** 푸시+이메일+웹훅으로 재발송된다.
+ *     · **messageId가 없는 경로**(최후 안전망 lastResortEmergency): 마킹 자체를 건너뛰므로
+ *       notifiedAt이 영영 안 찍힌다 → 같은 증상. 안전망을 추가하면서 이 경로가 늘었다.
+ *   공용 Gmail 단일 발신 계정(무료 ~500통/일)이라, 한 사람의 폭주가 같은 날
+ *   **다른 환자의 응급 이메일까지 차단**한다 — 사람 안전에 직결된다.
+ *
+ * ⚠ 키에 level이 들어가므로 L2→L3 격상은 막히지 않는다(별개 키).
+ * ⚠ 프로세스 메모리라 멀티 인스턴스에서는 태스크 수만큼 샌다. 완전한 해법은 Upstash
+ *   SETNX+TTL이고(이미 프로비저닝됨), AWS 이전 때 3단(DB → Redis → 메모리)으로 올리는 게 맞다.
+ */
+function tooSoonSinceLastSend(key: string): boolean {
   const last = recentSends.get(key);
   if (last === undefined) return false;
-  if (Date.now() - last < DEDUP_WINDOW_MS) return true;
+  if (Date.now() - last.at < last.windowMs) return true;
   recentSends.delete(key);
   return false;
+}
+
+/** 발송 앵커 기록. 성공은 전체 dedup 창, 전 채널 실패는 짧은 재시도 바닥. */
+function markSent(key: string, delivered: boolean): void {
+  pruneRecentSends();
+  recentSends.set(key, { at: Date.now(), windowMs: delivered ? DEDUP_WINDOW_MS : RETRY_FLOOR_MS });
 }
 
 /** 맵이 무한히 자라지 않게 — 만료분 정리(호출 빈도가 낮아 전수 순회로 충분) */
 function pruneRecentSends(): void {
   const now = Date.now();
-  for (const [k, t] of recentSends) if (now - t >= DEDUP_WINDOW_MS) recentSends.delete(k);
+  for (const [k, v] of recentSends) if (now - v.at >= v.windowMs) recentSends.delete(k);
 }
 
 /**
@@ -191,17 +224,26 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   //    ⚠ 조회 실패 시 **발송 쪽으로 열린다**(2026-10-01). 이 함수의 첫 await가 DB 읽기라,
   //    예외가 그대로 전파되면 DB 일시 장애 하나로 푸시·이메일·웹훅이 **전부 0건**이 됐다.
   //    중복 알림은 보호자가 한 번 더 확인하면 끝이지만, 누락은 되돌릴 수 없다.
+  const fanoutKey = FANOUT_KEY(payload);
+
+  /**
+   * 0) 메모리 팬아웃 상한 — **DB dedup보다 먼저, 그리고 항상** 확인한다.
+   *    DB dedup은 notifiedAt(쓰기)에 의존하므로 "읽기는 되고 쓰기만 실패"하거나
+   *    messageId가 없는 경로(최후 안전망)에서는 영원히 "중복 아님"을 돌려준다.
+   *    그 구멍을 메우는 게 이 게이트다(상세는 tooSoonSinceLastSend 주석).
+   */
+  if (tooSoonSinceLastSend(fanoutKey)) {
+    console.warn("[emergency-notify] 최근 발송 이력(메모리 상한) — 폭주 방지로 skip");
+    return { sent: false, channels: [], reason: "메모리 상한 — 최근 동일 응급 발송 이력" };
+  }
+
   try {
     if (await isDuplicate(payload.userId, payload.category, payload.level)) {
       return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 L${payload.level}+ 발송 이력)` };
     }
   } catch (e) {
-    // DB로 중복을 확인할 수 없었다 → 프로세스 메모리 상한으로 폭주만 막는다.
-    //   (정상 경로에서는 이 맵을 읽지 않는다 — DB dedup이 유일한 판단 근거여야 한다)
-    if (tooSoonWithoutDbDedup(FANOUT_KEY(payload))) {
-      console.warn("[emergency-notify] dedup 조회 실패 + 최근 발송 이력(메모리) — 폭주 방지로 skip");
-      return { sent: false, channels: [], reason: "dedup 조회 실패 — 메모리 상한으로 재발송 억제" };
-    }
+    // DB로 중복을 확인할 수 없어도 위 메모리 게이트는 이미 통과했다 — 발송을 진행한다.
+    //   (중복 알림은 보호자가 한 번 더 확인하면 끝이지만, 누락은 되돌릴 수 없다)
     console.warn("[emergency-notify] dedup 조회 실패 — 중복 위험을 감수하고 발송 진행:", e instanceof Error ? e.message : e);
   }
 
@@ -272,8 +314,7 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   // 6) 발송 시각 마킹 (어느 채널이든 1건 이상 성공 시)
   if (channels.length > 0) {
     // DB 마킹과 **별개로** 메모리 앵커를 남긴다 — 마킹이 실패해도 폭주 상한은 살아 있어야 한다.
-    pruneRecentSends();
-    recentSends.set(FANOUT_KEY(payload), Date.now());
+    markSent(fanoutKey, true);
     // 마킹 실패가 **이미 성공한 발송을 실패로 둔갑**시키지 않게 격리.
     //   (실패하면 dedup이 안 걸려 다음 턴에 한 번 더 갈 수 있는데, 누락보다 낫다)
     if (payload.messageId) {
@@ -294,6 +335,14 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   const hadTargets = Boolean(user?.guardianWebhookUrl) || guardianIds.length > 0 || Boolean(user?.guardianEmail);
   // ⚠ 조회가 실패한 경우를 "보호자 미연결"로 적으면 **운영자가 원인을 영원히 못 찾는다**.
   //   대상이 없는 것과 대상을 못 읽은 것은 조치가 완전히 다르다(전자는 설정, 후자는 장애).
+  /**
+   * 전 채널 실패 — **짧은 재시도 바닥**만 남긴다(성공 창을 쓰면 안 된다).
+   *   아무것도 전달되지 않았는데 1시간을 막으면 일시 장애가 지나간 뒤에도 그 응급이
+   *   영영 전달되지 않는다(위음성). 반대로 바닥이 없으면 SMTP 거절 같은 실패를 매 턴
+   *   재시도하며 공용 Gmail 쿼터를 태운다.
+   */
+  markSent(fanoutKey, false);
+
   const reason = lookupFailed && !hadTargets
     ? "보호자 조회 실패 — 발송 대상 확인 불가(DB 장애 의심)"
     : hadTargets ? "모든 채널 발송 실패(위 warn 로그 참조)" : "알림 대상 없음(보호자 미연결·webhook/email 미등록)";

@@ -291,3 +291,62 @@ describe("방어 분기 — 비정상 입력", () => {
     expect(r.sent).toBe(false);
   });
 });
+/**
+ * 폭주 상한이 **실제 장애 유형에서** 작동하는가 (2026-10-02 AWS 이전 감사 blocker).
+ *
+ * 이전 구현은 tooSoon 검사를 `isDuplicate()`가 throw한 catch 안에서만 했다. 그래서
+ * 가장 흔한 장애에서 상한이 통째로 무력했다:
+ *   · **읽기 OK + 쓰기 실패**(디스크 풀·읽기복제 전환·커넥션 고갈) — isDuplicate가 예외 없이
+ *     "중복 아님"을 돌려준다(notifiedAt 쓰기가 실패해 앵커가 안 남았으니). catch를 안 타므로
+ *     같은 L3가 매 턴 재발송된다.
+ *   · **messageId 없는 경로**(최후 안전망) — 마킹 자체를 건너뛰어 같은 증상.
+ * 공용 Gmail 단일 계정이라 한 사람의 폭주가 **다른 환자의 응급 이메일까지** 끊는다.
+ */
+describe("폭주 상한 — 읽기 OK·쓰기 실패에서도 막는다", () => {
+  it("notifiedAt 쓰기가 계속 실패해도 2회차는 억제된다", async () => {
+    db.message.findFirst.mockResolvedValue(null);          // 읽기 정상 = "중복 아님"
+    db.message.update.mockRejectedValue(new Error("write timeout")); // 쓰기만 실패
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    const payload = { ...P, userId: "rw-split", messageId: "m-rw" } as Parameters<typeof notifyGuardian>[0];
+    const first = await notifyGuardian(payload);
+    const second = await notifyGuardian(payload);
+    expect(first.sent).toBe(true);
+    // 🔒 true면 같은 응급이 매 턴 보호자에게 재발송돼 Gmail 쿼터를 태운다
+    expect(second.sent).toBe(false);
+  });
+
+  it("messageId가 없는 경로(최후 안전망)도 2회차는 억제된다", async () => {
+    db.message.findFirst.mockResolvedValue(null);
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    const payload = { ...P, userId: "no-msgid", messageId: undefined } as Parameters<typeof notifyGuardian>[0];
+    expect((await notifyGuardian(payload)).sent).toBe(true);
+    expect((await notifyGuardian(payload)).sent).toBe(false);
+  });
+
+  it("L2 → L3 격상은 상한에 걸리지 않는다 (키에 level 포함)", async () => {
+    db.message.findFirst.mockResolvedValue(null);
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    const base = { ...P, userId: "escalate", messageId: undefined };
+    expect((await notifyGuardian({ ...base, level: 2 } as Parameters<typeof notifyGuardian>[0])).sent).toBe(true);
+    // 🔒 경증 호소 → 악화 경로가 상한에 막히면 가장 위험한 전이를 놓친다
+    expect((await notifyGuardian({ ...base, level: 3 } as Parameters<typeof notifyGuardian>[0])).sent).toBe(true);
+  });
+
+  it("전 채널 실패는 짧은 재시도 바닥만 남긴다 — 1시간 봉쇄 금지", async () => {
+    vi.useFakeTimers();
+    try {
+      db.message.findFirst.mockResolvedValue(null);
+      db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: null, guardianName: null });
+      db.expertPatient.findMany.mockResolvedValue([]);
+      const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+      const payload = { ...P, userId: "allfail", messageId: undefined } as Parameters<typeof notifyGuardian>[0];
+      expect((await notifyGuardian(payload)).sent).toBe(false);
+      vi.advanceTimersByTime(61 * 1000);   // 재시도 바닥(60초) 경과
+      // 보호자 연락처가 복구된 상황
+      db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: "g@example.com", guardianName: "보호자" });
+      // 🔒 1시간 창을 쓰면 장애가 지나간 뒤에도 이 응급은 영영 전달되지 않는다(위음성)
+      expect((await notifyGuardian(payload)).sent).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
