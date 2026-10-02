@@ -21,10 +21,27 @@ import { timingSafeEqual } from "node:crypto";
 
 const mask = (t: string) => `${t.slice(0, 6)}…${t.slice(-4)}`;
 
+/**
+ * 공유비밀 검증 — **헤더 우선, 쿼리스트링 폴백**.
+ *
+ * ⚠ 2026-10-02 AWS 이전 감사: 비밀이 쿼리스트링에만 있었다. URL은 ALB/CloudFront
+ *   **액세스 로그에 평문으로 적재**되고, 그 로그는 S3에 장기 보존되며 운영자 외 열람 범위가
+ *   넓다. Vercel에서도 로그에 남지만 AWS로 가면 보존 기간과 접근 경로가 늘어난다.
+ *   헤더(X-RTDN-Secret)는 액세스 로그에 기록되지 않는다.
+ *
+ * 쿼리 폴백을 남기는 이유: Play Console에 등록된 Pub/Sub 푸시 엔드포인트가 아직
+ *   `?secret=` 형태다. 폴백을 지우면 **해지·환불 통지가 조용히 끊긴다**(혜택이 샌다).
+ *   런북의 "Play Console URL 3곳 교체"가 끝나면 이 분기를 제거할 것.
+ */
 function secretOk(req: Request): boolean {
   const expected = process.env.BILLING_RTDN_SECRET?.trim();
   if (!expected) return false;
-  const got = new URL(req.url).searchParams.get("secret") ?? "";
+  const header = req.headers.get("x-rtdn-secret")?.trim();
+  const query = new URL(req.url).searchParams.get("secret") ?? "";
+  const got = header && header.length > 0 ? header : query;
+  if (!header && query) {
+    console.warn("[rtdn] 쿼리스트링 비밀 사용 — 액세스 로그에 평문으로 남는다. Play Console 엔드포인트를 헤더 방식으로 교체할 것");
+  }
   const a = Buffer.from(got);
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);

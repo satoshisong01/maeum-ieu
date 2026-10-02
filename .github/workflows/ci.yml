@@ -57,6 +57,15 @@ jobs:
         run: npx tsx scripts/audit-user-scope.ts
         continue-on-error: true  # false positive 많아 warning 모드. 향후 strict 전환.
 
+      # ⚠ CI가 빌드를 한 번도 하지 않고 있었다 — 유일한 빌드 검증이 Vercel이었는데
+      #   AWS 이전으로 그걸 끊는 중이다(2026-10-02 감사 #37).
+      #   standalone 경로로 빌드해야 Docker에서 쓸 산출물과 같은 코드를 검증한다.
+      - name: Production build (standalone — Docker가 쓰는 경로)
+        run: npm run build
+        env:
+          BUILD_STANDALONE: "1"
+        continue-on-error: false
+
       - name: Prompt-leak detector (regex-only)
         run: npx tsx scripts/check-prompt-leak.ts --regex-only
         continue-on-error: false  # 사용자 이름이 prompt에 박히면 즉시 fail
@@ -69,4 +78,5 @@ jobs:
           echo "- Lint (eslint, 에러 0): strict" >> $GITHUB_STEP_SUMMARY
           echo "- Unit tests + safety-regression 342 + regex-battery + 커버리지 래칫: strict" >> $GITHUB_STEP_SUMMARY
           echo "- User-scope audit: warning-only" >> $GITHUB_STEP_SUMMARY
+          echo "- Production build (standalone): strict" >> $GITHUB_STEP_SUMMARY
           echo "- Prompt-leak (regex): strict" >> $GITHUB_STEP_SUMMARY
