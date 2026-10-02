@@ -21,6 +21,22 @@ function getTransporter(): nodemailer.Transporter | null {
     port: 465,
     secure: true,
     auth: { user, pass },
+    /**
+     * ⚠ 타임아웃을 명시한다 (2026-10-02 AWS 이전 감사 #20).
+     *
+     * nodemailer 기본값은 socketTimeout ~10분이다. 응급 알림은 `after()` 안에서 돌고,
+     * self-host(ECS)에서는 SIGTERM 뒤 `stopTimeout`(기본 30초)이 지나면 SIGKILL이다.
+     * 멈춘 SMTP 하나가 10분을 붙들면:
+     *   · 배포·스케일인 때마다 그 알림이 **중간에 잘려 유실**되고
+     *   · 순차 팬아웃이라 **뒤에 오는 채널(이메일 다음 단계)까지** 실행되지 않는다
+     * Vercel에서는 waitUntil이 함수 수명을 늘려 가려져 있었다.
+     *
+     * 합계가 stopTimeout 안에 들어오도록 잡는다(연결 8 + 인사 8 + 소켓 15 ≈ 최악 31초).
+     * 런북에서 ECS stopTimeout을 60초 이상으로 올리는 것과 짝이다 — 둘 중 하나만으로는 부족하다.
+     */
+    connectionTimeout: 8_000,
+    greetingTimeout: 8_000,
+    socketTimeout: 15_000,
   });
   return transporter;
 }

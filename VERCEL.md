@@ -32,9 +32,11 @@ git push -u origin main
 | `NEXTAUTH_URL` | **https://프로젝트도메인.vercel.app** | 배포 후 주소로 수정 가능 |
 | `NEXTAUTH_SECRET` | 랜덤 문자열 (로컬과 동일해도 됨) | `openssl rand -base64 32` |
 | `GEMINI_API_KEY` | Google AI Studio 키 | 로컬과 동일 |
-| `DATABASE_SSL_NO_VERIFY` | `1` | **⚠️ 필수(2026-06-10 이후)** — RDS 인증서가 자체서명 체인이라 미설정 시 전 DB 연결 실패(`self-signed certificate in certificate chain`). 정석 해법은 RDS CA 번들 적용 후 이 변수 제거 |
+| `DATABASE_SSL_NO_VERIFY` | **설정하지 말 것** | ❌ **더 이상 필요 없다(2026-10-02 정정).** `lib/rds-ca.ts`의 RDS CA 번들이 적용된 뒤로 `lib/prisma.ts`가 `rejectUnauthorized: true`로 **정상 검증**한다. 이 변수를 1로 두면 **건강 민감정보 DB 연결의 TLS 인증서 검증이 꺼진다**(중간자 공격 노출). 과거 자체서명 체인 오류의 비상 탈출구였고 지금은 흔적일 뿐이다. Vercel env에 남아 있다면 **삭제**하고, AWS로 env를 복사할 때 **절대 옮기지 말 것** |
 
-- RDS 보안 그룹: Vercel IP 또는 `0.0.0.0/0`에서 5432 허용해야 배포 환경에서 접속 가능
+- RDS 보안 그룹: Vercel에는 고정 IP가 없어 현재 `0.0.0.0/0`으로 5432가 열려 있다.
+  ⚠️ **이것이 지금 가장 큰 보안 노출이다** — 건강 민감정보 DB가 전 세계에 열려 있다.
+  AWS로 옮겨 앱이 VPC 안에 들어가면 닫을 수 있다(순서는 `docs/AWS_이전_런북.md` 참조).
 
 ## 4. 배포 후
 
