@@ -46,12 +46,13 @@ export default defineConfig({
        * __tests__/gate-scripts.test.ts를 통해 포함된다(그게 없으면 숫자가 거짓이 된다).
        */
       thresholds: {
-        // 2026-10-02 측정 경과: 41.3%(도입) → 57.2%(342건 포함해 정직화) → 80.5%(구멍 2개 메움).
-        //   emergency-llm 0%→100%, emergency-notify 26%→79%.
-        lines: 90,
-        functions: 85,
-        branches: 80,
-        statements: 88,
+        // 2026-10-02 경과: 41.3%(도입) → 57.2%(342건 포함해 정직화) → 80.5% → 85.3%.
+        //   emergency-llm 0→100%, emergency-notify 26→79%, korean-particle 65→100%.
+        //   남은 최저: emergency.ts 78.4%, emergency-notify.ts 79.1%.
+        lines: 92,
+        functions: 94,
+        branches: 85,
+        statements: 90,
       },
     },
   },
