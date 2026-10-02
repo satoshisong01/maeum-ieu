@@ -25,7 +25,9 @@ export const BILLING_ENFORCE = process.env.BILLING_ENFORCE === "1";
 
 /** 유료 티어 일일 상한 — 미설정 시 무료 상한의 3배 */
 export function proDailyTurnLimit(freeLimit: number): number {
-  const raw = Number(process.env.PRO_DAILY_TURN_LIMIT);
+  // 빈 문자열은 미설정으로 — daily-limit.ts와 같은 이유(Number("")===0 함정)
+  const rawStr = process.env.PRO_DAILY_TURN_LIMIT?.trim();
+  const raw = rawStr ? Number(rawStr) : NaN;
   if (Number.isFinite(raw) && raw > 0) return raw;
   return freeLimit > 0 ? freeLimit * 3 : 0;
 }

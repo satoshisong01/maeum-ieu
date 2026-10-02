@@ -18,10 +18,20 @@
  */
 import { prisma } from "@/lib/prisma";
 
-/** 기본 상한 — env DAILY_TURN_LIMIT로 조정. 0 이하면 제한 없음(운영 중 비상 해제용). */
+/**
+ * 기본 상한 — env DAILY_TURN_LIMIT로 조정. **명시적인 0 이하면** 제한 없음(운영 중 비상 해제용).
+ *
+ * ⚠ 빈 문자열을 "미설정"으로 다룬다(2026-10-02 수정). `Number("")`는 0이고 `isFinite(0)`은
+ *   true라, 이전 구현은 **빈 값 env를 '제한 해제'로 해석**했다. ECS 태스크 정의·CI 변수에서
+ *   값 없이 키만 선언하는 건 흔한 실수이고, 그러면 비용 보호 장치가 조용히 꺼진다
+ *   (에러도 로그도 없다 — 청구서에서나 드러난다).
+ *   의도적 해제는 "0"을 명시해야 하고, 그건 아래에서 그대로 통과한다.
+ */
 export const DAILY_TURN_LIMIT = (() => {
-  const raw = Number(process.env.DAILY_TURN_LIMIT);
-  return Number.isFinite(raw) ? raw : 100;
+  const raw = process.env.DAILY_TURN_LIMIT?.trim();
+  if (!raw) return 100;                         // 미설정 또는 빈 문자열 → 기본값
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 100;          // 숫자 아님 → 기본값
 })();
 
 /** 상한에 가까워졌음을 미리 알리는 지점 — 갑자기 끊기면 어르신이 당황한다. */

@@ -1,0 +1,67 @@
+# Docker 빌드 컨텍스트 제외 목록 (2026-10-02 신설)
+#
+# ⚠ 왜 이 파일이 Dockerfile보다 먼저인가:
+#   .gitignore는 git만 막는다. docker 빌드 컨텍스트에는 아무 방어가 없어서,
+#   관용적인 `COPY . .` 한 줄이면 아래가 전부 **이미지 레이어에 영구히** 박힌다:
+#     · .env (시크릿 17종 — DATABASE_URL·NEXTAUTH_SECRET·ENCRYPTION_KEY·GEMINI_API_KEY·
+#             GMAIL_APP_PASSWORD·UPSTASH_REDIS_REST_TOKEN·FCM_SERVICE_ACCOUNT_B64 …)
+#     · .gcp-credentials.json (GCP 서비스계정 private_key 평문)
+#     · training-data/ (운영 DB에서 추출한 **실제 환자 대화 원문** — .gitignore가
+#                       "절대 커밋 금지 (2026-10-01 데이터 사고)"라고 명시한 바로 그것)
+#     · .pilot-logs/ (PII 포함 가능)
+#   ECR 이미지는 레이어 단위로 영속하고, pull 권한이 있으면 누구나 `docker save`로 꺼낼 수 있다.
+#   ENCRYPTION_KEY가 새면 보호자 연락처 AES 암호화가 통째로 무의미해진다.
+#
+# 부수 효과: 빌드 컨텍스트가 ~2.7G(node_modules 1.6G + .next 926M + .git 90M)에서
+#   수십 MB로 줄어 빌드가 빨라진다.
+#
+# ⚠ 제외하면 **안 되는 것**(의도적으로 비워 둠):
+#   · public/maeum-app.apk (51M) — app/login/page.tsx:120이 직접 서비스한다.
+#     구버전 앱 사용자의 유일한 업데이트 경로라, 빼면 404가 된다.
+#     이미지에서 덜어내려면 S3/CloudFront로 옮기고 href를 먼저 바꿔야 한다.
+#   · prisma/ — build 스크립트가 `prisma generate`를 돌린다.
+#   · scripts/ — prebuild가 scripts/check-env.ts를 돌린다.
+#   · public/models, public/ort — 화자식별 모델·ORT WASM 런타임(self-host, CDN 미사용).
+
+# ── 시크릿·자격증명 (최우선) ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*-credentials.json
+.gcp-credentials.json
+gcp-key*.json
+vertex-key*.json
+
+# ── 개인정보·운영 데이터 ──────────────────────────────────────────────────
+training-data/
+.pilot-logs/
+coverage/
+
+# ── 빌드 산출물·의존성 (이미지 안에서 다시 만든다) ────────────────────────
+node_modules
+.next
+generated
+*.tsbuildinfo
+
+# ── VCS·CI·에디터 ─────────────────────────────────────────────────────────
+.git
+.gitignore
+.github
+.vercel
+.bkit
+.claude
+.playwright-mcp/
+
+# ── 테스트·로그 (런타임에 불필요) ─────────────────────────────────────────
+__tests__
+tests
+e2e*
+*.log
+.usage-server.log
+
+# ── 문서·산출물 (docs/playstore/*.aab 38M 포함) ───────────────────────────
+docs
+*.md
+!README.md
+_gantt_build.cjs
+pro-mode-chat.png
