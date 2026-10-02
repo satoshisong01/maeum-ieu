@@ -58,14 +58,22 @@ export async function POST(req: Request) {
       if (llm) emergency = llm;
     }
 
-    const { userMsgId } = await saveMessages({
-      conversationId, userId, userContent: userText, assistantContent: aiText,
-      emergencyLevel: emergency.level > 0 ? emergency.level : undefined,
-      emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : undefined,
-    });
+    // 저장 실패가 보호자 알림을 삼키지 않게 분리(2026-10-02, /api/chat과 동일 처방).
+    //   이전엔 await가 throw하면 500으로 끝나 **응급인데 알림 0건**이었다.
+    let userMsgId: string | undefined;
+    try {
+      ({ userMsgId } = await saveMessages({
+        conversationId, userId, userContent: userText, assistantContent: aiText,
+        emergencyLevel: emergency.level > 0 ? emergency.level : undefined,
+        emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : undefined,
+      }));
+    } catch (e) {
+      console.error("[live-turn] 저장 실패 — 응급 알림은 계속 진행:", e instanceof Error ? e.message : e);
+    }
 
     // 보호자 알림(L2+) — 메인 /api/chat 경로와 동등한 안전망(2026-07-07 감사: Live 경로가 알림을 전부 우회했음).
-    if (emergency.level >= 2 && userMsgId) {
+    //   ⚠ `&& userMsgId` 제거: 저장이 실패해도 FCM·이메일은 메시지 행 없이 나간다. 마킹만 생략된다.
+    if (emergency.level >= 2) {
       const level = emergency.level as 2 | 3;
       const sendLiveNotify = async () => {
         try {

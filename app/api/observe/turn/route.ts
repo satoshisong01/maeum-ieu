@@ -75,18 +75,25 @@ export async function POST(req: Request) {
     //   "[관찰]" 접두로 일반 대화와 구분. 응급 dedup·알림마킹(notifyGuardian)이 Message 행에 의존하므로 여기 저장.
     let conv = await prisma.conversation.findUnique({ where: { userId }, select: { id: true } });
     if (!conv) conv = await prisma.conversation.create({ data: { userId }, select: { id: true } });
-    const msg = await prisma.message.create({
-      data: {
-        conversationId: conv.id, role: "user", content: `[관찰] ${text}`,
-        emergencyLevel: emergency.level > 0 ? emergency.level : null,
-        emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : null,
-      },
-      select: { id: true },
-    });
-    const userMsgId = msg.id;
+    // 저장 실패가 보호자 알림을 삼키지 않게 분리(2026-10-02, /api/chat과 동일 처방).
+    let userMsgId: string | undefined;
+    try {
+      const msg = await prisma.message.create({
+        data: {
+          conversationId: conv.id, role: "user", content: `[관찰] ${text}`,
+          emergencyLevel: emergency.level > 0 ? emergency.level : null,
+          emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : null,
+        },
+        select: { id: true },
+      });
+      userMsgId = msg.id;
+    } catch (e) {
+      console.error("[observe-turn] 저장 실패 — 응급 알림은 계속 진행:", e instanceof Error ? e.message : e);
+    }
 
     // 보호자 알림(L2+) — 메인 경로와 동등한 안전망
-    if (emergency.level >= 2 && userMsgId) {
+    //   ⚠ `&& userMsgId` 제거: 저장 실패에도 발송은 간다(마킹만 생략).
+    if (emergency.level >= 2) {
       const level = emergency.level as 2 | 3;
       const send = async () => {
         try {

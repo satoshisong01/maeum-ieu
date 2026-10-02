@@ -9,6 +9,7 @@
 import "dotenv/config";
 import { prisma } from "../lib/prisma";
 import { FALLBACK_MARKS } from "../lib/chat/llm"; // 폴백 멘트와 단일 소스 — 문구 변경 시 자동 동기화
+import { isTestAccount } from "../lib/test-accounts";
 
 const DAYS = Math.max(1, parseInt(process.argv[2] || "2", 10) || 2);
 const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
@@ -25,12 +26,13 @@ async function main() {
   });
   const critical: string[] = [];
   let dedupSkipped = 0;
+  let testSkipped = 0;
   for (const m of unnotified) {
     const uid = m.conversation.userId;
     const category = (m.emergencyEvidence || "").split(":")[0];
     const [links, u, dedupHit] = await Promise.all([
       prisma.expertPatient.count({ where: { patientUserId: uid, status: "active" } }),
-      prisma.user.findUnique({ where: { id: uid }, select: { guardianWebhookUrl: true, guardianEmail: true, name: true } }),
+      prisma.user.findUnique({ where: { id: uid }, select: { guardianWebhookUrl: true, guardianEmail: true, name: true, email: true } }),
       // 정상 dedup 판별(2026-07-08 도입, 07-09 정합 보정) — 후보 시점 기준 1시간 내에 같은 카테고리·
       //   같거나 높은 레벨로 이미 발송된 "선행" 응급이 있으면, notifyGuardian이 의도적으로 skip한 것(결함 아님).
       //   isDuplicate와 앵커 정합: 선행 메시지는 후보보다 먼저 생성(createdAt lt) + notifiedAt은 after()
@@ -48,6 +50,9 @@ async function main() {
           })
         : Promise.resolve(null),
     ]);
+    // 검증용 합성 응급이 매일 🔴로 울리면 진짜 경보를 무시하게 된다(2026-10-02 실제 발생).
+    //   예약 도메인(@*.test, @example.com 등)만 제외한다 — lib/test-accounts.ts 참조.
+    if (isTestAccount(u?.email)) { testSkipped++; continue; }
     const hadTargets = links > 0 || Boolean(u?.guardianWebhookUrl) || Boolean(u?.guardianEmail);
     if (!hadTargets) continue; // 보호자 미연결 — [5]에서 별도 안내
     if (dedupHit) { dedupSkipped++; continue; } // 1시간 중복 억제 — 정상 동작
@@ -58,7 +63,12 @@ async function main() {
     console.log(`  ❌ 알림 대상이 있는데 발송 안 된 응급 ${critical.length}건 — FCM 자격증명/채널 즉시 점검!`);
     critical.forEach((l) => console.log(l));
   } else {
-    const notes = [dedupSkipped ? `중복억제(정상) ${dedupSkipped}건` : "", unnotified.length - dedupSkipped ? `보호자 미연결 ${unnotified.length - dedupSkipped}건` : ""].filter(Boolean).join(", ");
+    const unlinked = unnotified.length - dedupSkipped - testSkipped;
+    const notes = [
+      dedupSkipped ? `중복억제(정상) ${dedupSkipped}건` : "",
+      testSkipped ? `테스트 계정 ${testSkipped}건` : "",
+      unlinked > 0 ? `보호자 미연결 ${unlinked}건` : "",
+    ].filter(Boolean).join(", ");
     console.log(`  ✅ 발송 실패 0건${notes ? ` (${notes})` : ""}`);
   }
 

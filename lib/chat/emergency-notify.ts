@@ -145,6 +145,34 @@ async function isDuplicate(userId: string, category: string, level: 2 | 3): Prom
 }
 
 /**
+ * 발송 팬아웃 상한 — dedup을 fail-open으로 바꾼 대가를 메우는 2차 방어선.
+ *
+ * DB 쓰기가 지속 실패하면 notifiedAt 앵커가 안 남아 **같은 응급이 매 턴 재발송**된다.
+ * 1차 방어(DB dedup)가 바로 그 상황에서 무력하므로, 프로세스 메모리에 마지막 발송 시각을
+ * 남겨 "DB로 중복을 확인할 수 없었던 경우"에만 참조한다.
+ *
+ * ⚠ 서버리스라 인스턴스별이다 — 완전한 억제가 아니라 **"무한"을 "인스턴스당 1회"로** 낮추는 장치다.
+ *   그래도 의미가 큰 이유: 공용 Gmail 단일 발신 계정(무료 ~500통/일)이라
+ *   한 사람의 폭주가 **다른 환자의 알림까지** 끊는다.
+ */
+const recentSends = new Map<string, number>();
+const FANOUT_KEY = (p: { userId: string; category: string; level: number }) => `${p.userId}:${p.category}:${p.level}`;
+
+function tooSoonWithoutDbDedup(key: string): boolean {
+  const last = recentSends.get(key);
+  if (last === undefined) return false;
+  if (Date.now() - last < DEDUP_WINDOW_MS) return true;
+  recentSends.delete(key);
+  return false;
+}
+
+/** 맵이 무한히 자라지 않게 — 만료분 정리(호출 빈도가 낮아 전수 순회로 충분) */
+function pruneRecentSends(): void {
+  const now = Date.now();
+  for (const [k, t] of recentSends) if (now - t >= DEDUP_WINDOW_MS) recentSends.delete(k);
+}
+
+/**
  * 응급 알림 발송.
  * Returns 결과 + 발송한 채널 목록. 실패해도 throw 안 함 (LLM 응답에 영향 X).
  */
@@ -160,6 +188,12 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
       return { sent: false, channels: [], reason: `dedup window (${DEDUP_WINDOW_MS / 60000}분 내 동일 카테고리 L${payload.level}+ 발송 이력)` };
     }
   } catch (e) {
+    // DB로 중복을 확인할 수 없었다 → 프로세스 메모리 상한으로 폭주만 막는다.
+    //   (정상 경로에서는 이 맵을 읽지 않는다 — DB dedup이 유일한 판단 근거여야 한다)
+    if (tooSoonWithoutDbDedup(FANOUT_KEY(payload))) {
+      console.warn("[emergency-notify] dedup 조회 실패 + 최근 발송 이력(메모리) — 폭주 방지로 skip");
+      return { sent: false, channels: [], reason: "dedup 조회 실패 — 메모리 상한으로 재발송 억제" };
+    }
     console.warn("[emergency-notify] dedup 조회 실패 — 중복 위험을 감수하고 발송 진행:", e instanceof Error ? e.message : e);
   }
 
@@ -229,6 +263,9 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
 
   // 6) 발송 시각 마킹 (어느 채널이든 1건 이상 성공 시)
   if (channels.length > 0) {
+    // DB 마킹과 **별개로** 메모리 앵커를 남긴다 — 마킹이 실패해도 폭주 상한은 살아 있어야 한다.
+    pruneRecentSends();
+    recentSends.set(FANOUT_KEY(payload), Date.now());
     // 마킹 실패가 **이미 성공한 발송을 실패로 둔갑**시키지 않게 격리.
     //   (실패하면 dedup이 안 걸려 다음 턴에 한 번 더 갈 수 있는데, 누락보다 낫다)
     if (payload.messageId) {

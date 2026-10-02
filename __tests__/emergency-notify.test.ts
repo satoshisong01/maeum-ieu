@@ -141,3 +141,23 @@ describe("saveMessages 부분 실패 — 응급 턴의 dedup 앵커 보존", () 
     expect(created).toContain("assistant");
   });
 });
+
+describe("세 진입점의 알림 게이트가 대칭이다", () => {
+  it("live·observe 경로가 저장 실패에 알림을 묶지 않는다", async () => {
+    const fs = await import("node:fs/promises");
+    for (const f of ["app/api/live/turn/route.ts", "app/api/observe/turn/route.ts"]) {
+      const src = await fs.readFile(f, "utf-8");
+      // 🔒 `&& userMsgId` 게이트가 되살아나면 저장 실패 턴의 응급이 조용히 알림 0건이 된다
+      expect(src, f).not.toMatch(/emergency\.level >= 2 && userMsgId/);
+      expect(src, f).toMatch(/저장 실패[\s\S]{0,40}알림은 계속/);
+    }
+  });
+
+  it("세 경로 모두 저장을 try/catch로 감싼다", async () => {
+    const fs = await import("node:fs/promises");
+    for (const f of ["app/api/chat/route.ts", "app/api/live/turn/route.ts", "app/api/observe/turn/route.ts"]) {
+      const src = await fs.readFile(f, "utf-8");
+      expect(src, f).toMatch(/let userMsgId: string \| undefined/);
+    }
+  });
+});
