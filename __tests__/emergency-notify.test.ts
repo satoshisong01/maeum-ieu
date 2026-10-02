@@ -13,7 +13,7 @@
  *   중복 알림은 보호자가 한 번 더 확인하면 끝이지만, 알림 폭주는 신뢰를 잃고
  *   공용 Gmail 발신 한도를 태워 **다른 환자의 알림까지** 끊는다.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 const db = {
   message: { findFirst: vi.fn(), update: vi.fn() },
@@ -25,7 +25,11 @@ vi.mock("@/lib/prisma", () => ({ prisma: db }));
 const pushMock = vi.fn(async () => ({ sent: 1, failed: 0 }));
 const emailMock = vi.fn(async () => true);
 vi.mock("@/lib/notify/push-fcm", () => ({ sendEmergencyPush: (...a: unknown[]) => pushMock(...(a as [])) }));
-vi.mock("@/lib/notify/email", () => ({ sendEmergencyEmail: (...a: unknown[]) => emailMock(...(a as [])) }));
+const opsAlertMock = vi.fn(async () => true);
+vi.mock("@/lib/notify/email", () => ({
+  sendEmergencyEmail: (...a: unknown[]) => emailMock(...(a as [])),
+  sendOpsAlert: (...a: unknown[]) => opsAlertMock(...(a as [])),
+}));
 vi.mock("@/lib/crypto", () => ({ decryptPII: (s: string) => s, encryptPII: (s: string) => s }));
 
 const P = {
@@ -33,9 +37,17 @@ const P = {
   content: "숨이 안 쉬어져", aiReply: "119에 전화해주세요", createdAt: new Date("2026-10-01T12:00:00Z"),
 };
 
+/**
+ * ⚠ 매 호출에 **고유 userId**를 쓴다(2026-10-02 적대 리뷰 지적).
+ *   emergency-notify는 모듈 수준 Map(recentSends)으로 fan-out 상한을 거는데, 그 상태는
+ *   테스트 간에 리셋되지 않는다. 같은 userId를 재사용하면 두 번째 호출부터 조용히 skip돼
+ *   **테스트가 순서에 의존하고, 뒤 테스트가 거짓 통과한다**(실제로 이 파일에서 발생했다).
+ *   dedup 자체를 보려는 테스트는 fanoutKey를 명시적으로 고정해 쓴다.
+ */
+let notifySeq = 0;
 async function notify(extra: Record<string, unknown> = {}) {
   const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
-  return notifyGuardian({ ...P, messageId: "m1", ...extra } as Parameters<typeof notifyGuardian>[0]);
+  return notifyGuardian({ ...P, userId: `u-${++notifySeq}`, messageId: "m1", ...extra } as Parameters<typeof notifyGuardian>[0]);
 }
 
 beforeEach(() => {
@@ -112,36 +124,6 @@ describe("fail-open이 always-open으로 번지지 않는다", () => {
   });
 });
 
-describe("saveMessages 부분 실패 — 응급 턴의 dedup 앵커 보존", () => {
-  it("assistant 쓰기가 실패해도 userMsgId를 돌려준다", async () => {
-    vi.resetModules();
-    const created: string[] = [];
-    vi.doMock("@/lib/prisma", () => ({
-      prisma: {
-        message: {
-          create: vi.fn(async ({ data }: { data: { role: string } }) => {
-            created.push(data.role);
-            if (data.role === "assistant") throw new Error("write failed");
-            return { id: "user-msg-1", content: "숨이 안 쉬어져" };
-          }),
-        },
-        conversation: { update: vi.fn() },
-      },
-    }));
-    vi.doMock("@/lib/rag", () => ({ saveMessageEmbedding: vi.fn(async () => {}) }));
-    const { saveMessages } = await import("@/lib/chat/messages");
-    const r = await saveMessages({
-      conversationId: "c1", userId: "u1", userContent: "숨이 안 쉬어져",
-      assistantContent: "119에 전화해주세요", emergencyLevel: 3, emergencyEvidence: "medical_acute:t",
-      skipUserEmbedding: true, skipAssistantEmbedding: true,
-    });
-    // 🔒 이게 빈 값이면 notifiedAt 마킹이 불가 → pilot-daily-check가 거짓 🔴을 내고
-    //    dedup 앵커가 없어 같은 응급이 다음 턴에 재발송된다
-    expect(r.userMsgId).toBe("user-msg-1");
-    expect(created).toContain("assistant");
-  });
-});
-
 describe("요청이 통째로 실패해도 L3는 살아남는다 (최후 안전망)", () => {
   /**
    * handleEmergencyL3에 **도달하기 전** DB 호출(동의 게이트·소유권 검증·buildSystemPrompt)이
@@ -202,5 +184,106 @@ describe("세 진입점의 알림 게이트가 대칭이다", () => {
       const src = await fs.readFile(f, "utf-8");
       expect(src, f).toMatch(/let userMsgId: string \| undefined/);
     }
+  });
+});
+
+/**
+ * 전 채널 실패 시 운영자 경보 (2026-10-02 적대 리뷰).
+ * 이전엔 sent:false가 console.warn으로만 끝났고, 유일한 사후 탐지인 pilot-daily-check는
+ * Message 행을 전제로 해서 **알림이 실패하는 전형적 상황(RDS 장애 → 행 없음)을 구조적으로 못 봤다.**
+ */
+describe("보호자에게 한 건도 못 보내면 운영자에게 알린다", () => {
+  it("전 채널 실패 시 운영자 경보를 보낸다", async () => {
+    db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: null, guardianName: null });
+    db.expertPatient.findMany.mockResolvedValue([]);
+    const r = await notify();
+    expect(r.sent).toBe(false);
+    // 🔒 이게 0회면 보호자도 운영자도 모르는 응급이 조용히 사라진다
+    expect(opsAlertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("경보 본문에 사유·레벨·대상이 들어간다 (운영자가 조치할 수 있게)", async () => {
+    db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: null, guardianName: null });
+    db.expertPatient.findMany.mockResolvedValue([]);
+    await notify();
+    const [subject, lines] = opsAlertMock.mock.calls[0] as unknown as [string, string[]];
+    expect(subject).toContain("L3");
+    expect(lines.some((l) => l.startsWith("사유:"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("대상 userId:"))).toBe(true);
+  });
+
+  it("발송에 성공하면 운영자 경보를 보내지 않는다 (노이즈 금지)", async () => {
+    const r = await notify();
+    expect(r.sent).toBe(true);
+    expect(opsAlertMock).not.toHaveBeenCalled();
+  });
+
+  it("운영자 경보가 실패해도 notifyGuardian은 정상 반환한다", async () => {
+    opsAlertMock.mockRejectedValue(new Error("smtp down"));
+    db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: null, guardianName: null });
+    db.expertPatient.findMany.mockResolvedValue([]);
+    await expect(notify()).resolves.toMatchObject({ sent: false });
+  });
+});
+
+/**
+ * fan-out 상한 자체의 **양성** 테스트 (2026-10-02 적대 리뷰: 음성 테스트만 있고 양성이 없었다).
+ * DB dedup이 죽은 상태에서도 같은 응급이 무한 반복 발송되지 않아야 한다 —
+ * 그 상한이 공용 Gmail 한도를 지키는 유일한 선이다.
+ */
+describe("메모리 fan-out 상한 (DB dedup이 죽어도 폭주하지 않는다)", () => {
+  it("같은 사용자·분류·레벨의 2회차는 억제된다", async () => {
+    db.message.findFirst.mockRejectedValue(new Error("db down"));   // DB dedup 무력화
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    const payload = { ...P, userId: "fanout-victim", messageId: undefined } as Parameters<typeof notifyGuardian>[0];
+    const first = await notifyGuardian(payload);
+    const second = await notifyGuardian(payload);
+    expect(first.sent).toBe(true);
+    // 🔒 이게 true가 되면 DB 장애 중 같은 응급이 턴마다 발송돼 발신 한도를 태운다
+    expect(second.sent).toBe(false);
+  });
+});
+
+describe("saveMessages 부분 실패 — 응급 턴의 dedup 앵커 보존", () => {
+  /**
+   * ⚠ 이 describe는 vi.resetModules() + vi.doMock으로 **모듈 레지스트리를 갈아끼운다.**
+   *   정리하지 않으면 이후 describe가 `@/lib/chat/emergency-notify`를 import할 때
+   *   여기서 끼운 축소판 prisma 스텁(message.create만 있음)을 집어, user.findUnique가 없어
+   *   조회가 throw → lookupFailed → "발송 0건"이 된다.
+   *   실제로 2026-10-02에 뒤에 추가한 운영자 경보 테스트가 이 누수로 거짓 실패했다.
+   *   테스트 간 상태 누수는 결과를 **순서에 의존하게** 만들어, 거짓 실패와 거짓 통과를 둘 다 낳는다.
+   */
+  afterAll(() => {
+    vi.doUnmock("@/lib/prisma");
+    vi.doUnmock("@/lib/rag");
+    vi.resetModules();
+  });
+
+  it("assistant 쓰기가 실패해도 userMsgId를 돌려준다", async () => {
+    vi.resetModules();
+    const created: string[] = [];
+    vi.doMock("@/lib/prisma", () => ({
+      prisma: {
+        message: {
+          create: vi.fn(async ({ data }: { data: { role: string } }) => {
+            created.push(data.role);
+            if (data.role === "assistant") throw new Error("write failed");
+            return { id: "user-msg-1", content: "숨이 안 쉬어져" };
+          }),
+        },
+        conversation: { update: vi.fn() },
+      },
+    }));
+    vi.doMock("@/lib/rag", () => ({ saveMessageEmbedding: vi.fn(async () => {}) }));
+    const { saveMessages } = await import("@/lib/chat/messages");
+    const r = await saveMessages({
+      conversationId: "c1", userId: "u1", userContent: "숨이 안 쉬어져",
+      assistantContent: "119에 전화해주세요", emergencyLevel: 3, emergencyEvidence: "medical_acute:t",
+      skipUserEmbedding: true, skipAssistantEmbedding: true,
+    });
+    // 🔒 이게 빈 값이면 notifiedAt 마킹이 불가 → pilot-daily-check가 거짓 🔴을 내고
+    //    dedup 앵커가 없어 같은 응급이 다음 턴에 재발송된다
+    expect(r.userMsgId).toBe("user-msg-1");
+    expect(created).toContain("assistant");
   });
 });

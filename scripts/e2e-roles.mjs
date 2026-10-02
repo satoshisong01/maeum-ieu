@@ -364,18 +364,27 @@ async function sendAndRead(page, text) {
       console.log(`\n[이상감지 상세]`);
       for (const a of anomalies) console.log(`  t${a.t} [${a.flags.join(", ")}]  발화"${a.utter.slice(0, 30)}" → AI"${(a.ai || "(빈)").slice(0, 60)}"`);
     }
-    // 합격 조건: 중단 없음 + 설정 턴수 전수 실행 + 이상 0. 하나라도 어긋나면 exit 1.
+    /**
+     * 합격 조건: 중단 없음 + 설정 턴수 전수 실행 + 이상 0 + **서버 5xx 0**.
+     *
+     * ⚠ 2026-10-02 2차 수정: 5xx를 합격 조건에서 빼 두었더니, 30턴 중 서버 오류 2건이
+     *   난 실행이 "✅ 전 구간 클린"으로 보고됐다. 숫자는 출력되는데 판정에 안 쓰이면
+     *   사람은 ✅만 보고 넘어간다 — 거짓 녹색의 변종이다.
+     *   요청 실패·콘솔 에러는 헤드리스 환경(마이크 없음 등) 잡음이 섞이므로 경고로만 남긴다.
+     */
     const incomplete = turnsRun < TURNS;
-    if (runError || incomplete || anomalies.length) {
+    if (runError || incomplete || anomalies.length || net.http5xx > 0) {
       const why = [
         runError ? `중단: ${runError}` : null,
         incomplete ? `미완료: ${turnsRun}/${TURNS}턴만 실행` : null,
         anomalies.length ? `이상 ${anomalies.length}건` : null,
+        net.http5xx > 0 ? `서버 오류 5xx ${net.http5xx}건` : null,
       ].filter(Boolean).join(" · ");
       console.log(`\n❌ 실패 — ${why}`);
       process.exitCode = 1;
     } else {
-      console.log(`✅ 전 구간 클린 (${turnsRun}턴 전수)`);
+      const warn = [net.failed ? `요청실패 ${net.failed}` : null, net.consoleErrors ? `콘솔에러 ${net.consoleErrors}` : null].filter(Boolean).join(" · ");
+      console.log(`✅ 전 구간 클린 (${turnsRun}턴 전수)${warn ? ` — 참고: ${warn}` : ""}`);
     }
     console.log(`\n계정: ${email}`);
     await browser.close();

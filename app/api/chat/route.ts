@@ -610,8 +610,24 @@ async function handleAudioMessage(params: {
 
   // 1.45단계: STT 신뢰도 게이트 — 인식 결과가 잡음/짧음/오인식이면 LLM 우회하고 재질문
   //   응급/모더레이션 매칭이 없는 경우에만 실행. 신뢰도 통과한 발화만 인지 분석에 들어가도록.
+  /**
+   * ⚠ 주석은 "응급 매칭이 없는 경우에만"이라고 선언했지만 **코드에 그 조건이 없었다**
+   *   (2026-10-02 적대 리뷰). 위에서 L3만 단락시키고 L1·L2는 그대로 이 게이트에 들어왔다.
+   *
+   *   왜 치명적인가: 치매의 전형적 보속증("먹기 싫어"×4)은 evaluateSttConfidence가
+   *   `vocabulary collapse`로 떨어뜨리는데, 바로 그 발화를 detectEmergency가 L1로 잡는다.
+   *   게이트가 발동하면 emergencyLevel 없이 `(STT 저신뢰: …)` 태그로만 저장돼
+   *     (1) L1 누적 앵커가 안 남아 24h 3회 → L2 승격이 영구히 안 걸리고
+   *     (2) L2였다면 보호자 알림 0건이며
+   *     (3) 반복 발화 자체가 인지 증상인데 인지 분석까지 함께 건너뛰어진다.
+   *   stt-confidence.ts 헤더의 "응급 감지는 STT 신뢰도와 무관하게 먼저"라는 불변식과도 반대였다.
+   */
   const sttConf = evaluateSttConfidence(transcription);
-  if (!sttConf.pass) {
+  if (!sttConf.pass && emergency.effectiveLevel > 0) {
+    console.log("[stt-confidence] 저신뢰이나 응급 신호 동반 — 게이트 우회(마킹·알림·분석 보존):",
+      sttConf.reason, "L" + emergency.effectiveLevel);
+  }
+  if (!sttConf.pass && emergency.effectiveLevel === 0) {
     console.log("[stt-confidence] failed:", sttConf.reason, "txLen:", transcription.length); // PII(발화 원문) 미로깅
     const clarification = buildClarificationReply(honorific, companionName);
     if (conversationId) {
@@ -670,6 +686,7 @@ async function handleAudioMessage(params: {
       honorific,
       companionName,
       transcription,
+      emergency,   // 응급+부적절 동시 발화에서 응급 마킹·L2 알림이 사라지지 않게(2026-10-02)
     }),
     fetchMemories(userId, transcription),
   ]);
@@ -913,8 +930,18 @@ async function handleInappropriateMessage(params: {
   honorific: string;
   companionName: string;
   transcription?: string;
+  /**
+   * 호출 전에 평가한 응급 결과 — 거절 멘트 경로도 **마킹·L2 알림을 수행해야 한다**.
+   *
+   * 결함(2026-10-02 적대 리뷰): 이 함수가 emergency를 아예 받지 않아, 응급과 부적절 발언이
+   *   한 발화에 겹치면 응급 쪽이 통째로 사라졌다. 치매의 초조(agitation)에서 욕설 동반은
+   *   드문 조합이 아니다 — 예: "아무나 도와줘, 이 씨X 놈들아"는 L2 dizziness_help + profanity다.
+   *   그 턴은 거절 멘트만 저장되고 emergencyLevel 없이 끝나 보호자 알림 0건·위급 이력 0건이었다.
+   *   같은 라우트의 handleExamTurn은 emergency를 받아 마킹까지 하므로 경로 간 비대칭이기도 했다.
+   */
+  emergency?: { effectiveLevel: 0 | 1 | 2 | 3; result: EmergencyResult };
 }): Promise<Response | null> {
-  const { userContent, conversationId, userId, honorific, companionName, transcription } = params;
+  const { userContent, conversationId, userId, honorific, companionName, transcription, emergency } = params;
   const moderation = detectInappropriate(userContent);
   if (moderation.category === "ok") return null;
 
@@ -932,13 +959,38 @@ async function handleInappropriateMessage(params: {
   // 저장본은 표시 안 보이는 메타 시그니처를 끝에 붙여 향후 카운트에 사용
   const stored = `${reply}\n<!-- __mod:${moderation.category}__ -->`;
 
+  const lvl = emergency?.effectiveLevel ?? 0;
+  let userMsgId: string | undefined;
   if (conversationId) {
-    await saveMessages({
-      conversationId,
-      userId,
-      userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
-      assistantContent: stored,
-    });
+    // ⚠ 저장 실패가 아래 L2 알림을 삼키지 않게 격리(다른 경로와 동일 처방).
+    try {
+      ({ userMsgId } = await saveMessages({
+        conversationId,
+        userId,
+        userContent: transcription !== undefined ? (transcription || "(음성 메시지)") : userContent,
+        assistantContent: stored,
+        // 응급 신호가 섞인 발화는 거절 멘트로 끝나더라도 마킹해야 추세·L1 누적·보호자 화면에 반영된다.
+        emergencyLevel: lvl > 0 ? lvl : undefined,
+        emergencyEvidence: emergency && emergency.result.level > 0
+          ? `${emergency.result.category}:${emergency.result.evidence}` : undefined,
+      }));
+    } catch (e) {
+      console.error("[moderation] 저장 실패 — L2 알림은 계속:", e instanceof Error ? e.message : e);
+    }
+  }
+  if (lvl === 2 && emergency) {
+    const sendL2 = async () => {
+      try {
+        const r = await notifyGuardian({
+          userId, userName: honorific, messageId: userMsgId, level: 2,
+          category: emergency.result.category,
+          content: transcription ?? userContent, aiReply: reply, createdAt: new Date(),
+        });
+        if (r.sent) console.log("[emergency-notify] L2(moderated) sent:", r.channels);
+        else console.warn("[emergency-notify] L2(moderated) not sent:", r.reason);
+      } catch (e) { console.error("[emergency-notify] L2(moderated) error:", e); }
+    };
+    try { after(sendL2); } catch { await sendL2(); }
   }
   const payload: Record<string, unknown> = { text: reply, role: "assistant", moderated: moderation.category };
   if (transcription !== undefined) payload.transcription = transcription;
@@ -992,6 +1044,7 @@ async function handleTextMessage(params: {
     userId,
     honorific,
     companionName,
+    emergency,   // 응급+부적절 동시 발화에서 응급 마킹·L2 알림이 사라지지 않게(2026-10-02)
   });
   if (moderated) return moderated as NextResponse;
 

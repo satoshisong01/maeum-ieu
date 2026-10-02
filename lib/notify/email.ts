@@ -73,3 +73,36 @@ export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): 
     return false;
   }
 }
+
+/**
+ * 운영자 경보 — **모든 보호자 채널이 실패했을 때**의 마지막 통보.
+ *
+ * 왜 필요한가 (2026-10-02 적대 리뷰): notifyGuardian이 sent:false를 돌려줘도 호출부 5곳이
+ *   전부 console.warn으로 끝냈다. 영속 기록도, 사람에게 닿는 경로도 없었다.
+ *   유일한 사후 탐지인 scripts/pilot-daily-check.ts는 `Message.notifiedAt IS NULL`을 보는데,
+ *   **알림이 실패하는 전형적 상황(RDS 장애)에서는 Message 행 자체가 안 만들어진다.**
+ *   즉 가장 위험한 순간의 사건이 하루 한 번 점검에도 안 잡혀 "그날 응급 0건"으로 보였다 —
+ *   탐지 사각이 이중으로 겹친 상태였다.
+ *
+ * 이 경로는 **DB를 쓰지 않는다**(SMTP만). 그래서 RDS가 죽어도 사람에게 닿는다.
+ * env OPS_ALERT_EMAIL 미설정이면 조용히 skip — 기능을 막지는 않는다.
+ */
+export async function sendOpsAlert(subject: string, lines: string[]): Promise<boolean> {
+  const to = process.env.OPS_ALERT_EMAIL?.trim();
+  const t = getTransporter();
+  if (!t || !to || !EMAIL_RE.test(to)) return false;
+  try {
+    await t.sendMail({
+      from: `마음이음 운영 <${process.env.GMAIL_USER}>`,
+      to,
+      subject: `[마음이음 운영] ${subject}`,
+      text: lines.join("\n"),
+      html: `<pre style="font:14px/1.6 ui-monospace,monospace">${lines.map(esc).join("\n")}</pre>`,
+    });
+    return true;
+  } catch (e) {
+    // 여기서 throw하면 호출부(이미 실패 처리 중)가 또 무너진다.
+    console.error("[ops-alert] 발송 실패:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}

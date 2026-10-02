@@ -27,7 +27,11 @@ const db = {
 };
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
 vi.mock("@/lib/notify/push-fcm", () => ({ sendEmergencyPush: vi.fn(async () => ({ sent: 0, failed: 0 })) }));
-vi.mock("@/lib/notify/email", () => ({ sendEmergencyEmail: vi.fn(async () => false) }));
+vi.mock("@/lib/notify/email", () => ({
+  sendEmergencyEmail: vi.fn(async () => false),
+  // 전 채널 실패 시 운영자 경보 — 2026-10-02 추가된 의존성. 빠뜨리면 undefined 호출로 전 테스트가 깨진다.
+  sendOpsAlert: vi.fn(async () => true),
+}));
 vi.mock("@/lib/crypto", () => ({ decryptPII: (s: string) => s, encryptPII: (s: string) => s }));
 
 const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as unknown as Response);

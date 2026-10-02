@@ -14,7 +14,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { sendEmergencyPush } from "@/lib/notify/push-fcm";
-import { sendEmergencyEmail } from "@/lib/notify/email";
+import { sendEmergencyEmail, sendOpsAlert } from "@/lib/notify/email";
 import { decryptPII } from "@/lib/crypto";
 import dns from "node:dns/promises";
 
@@ -294,9 +294,35 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   const hadTargets = Boolean(user?.guardianWebhookUrl) || guardianIds.length > 0 || Boolean(user?.guardianEmail);
   // ⚠ 조회가 실패한 경우를 "보호자 미연결"로 적으면 **운영자가 원인을 영원히 못 찾는다**.
   //   대상이 없는 것과 대상을 못 읽은 것은 조치가 완전히 다르다(전자는 설정, 후자는 장애).
+  const reason = lookupFailed && !hadTargets
+    ? "보호자 조회 실패 — 발송 대상 확인 불가(DB 장애 의심)"
+    : hadTargets ? "모든 채널 발송 실패(위 warn 로그 참조)" : "알림 대상 없음(보호자 미연결·webhook/email 미등록)";
   if (lookupFailed && !hadTargets) {
     console.error("[emergency-notify] 발송 0건 — 보호자 조회 실패로 대상 확인 불가(DB 장애 의심)");
-    return { sent: false, channels, reason: "보호자 조회 실패 — 발송 대상 확인 불가(DB 장애 의심)" };
   }
-  return { sent: false, channels, reason: hadTargets ? "모든 채널 발송 실패(위 warn 로그 참조)" : "알림 대상 없음(보호자 미연결·webhook/email 미등록)" };
+
+  /**
+   * 운영자 경보 — 보호자에게 한 건도 못 보낸 응급을 **사람에게 알리는 마지막 경로**.
+   *
+   * 결함(2026-10-02 적대 리뷰): 여기서 sent:false를 돌려줘도 호출부 5곳이 전부 console.warn으로
+   *   끝냈고, 영속 기록도 통보도 없었다. 유일한 사후 탐지인 scripts/pilot-daily-check.ts는
+   *   `Message.notifiedAt IS NULL`을 보는데, **알림이 실패하는 전형적 상황(RDS 장애)에서는
+   *   Message 행 자체가 안 만들어진다.** 탐지 사각이 이중으로 겹쳐 "그날 응급 0건"으로 보였다.
+   *   이 경로는 SMTP만 쓰므로 RDS가 죽어도 닿는다. env OPS_ALERT_EMAIL 미설정이면 조용히 skip.
+   *   ⚠ 부유 프라미스 금지 — 호출부가 after()로 감싸 실행을 보장하는 블록 안에서 await한다.
+   */
+  await sendOpsAlert(
+    `응급 알림 실패 (L${payload.level} ${payload.category})`,
+    [
+      `사유: ${reason}`,
+      `레벨: L${payload.level} / 분류: ${payload.category}`,
+      `대상 userId: ${payload.userId}`,
+      `메시지 기록: ${payload.messageId ? payload.messageId : "없음(저장 실패 또는 안전망 경로)"}`,
+      `발생 시각: ${payload.createdAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`,
+      "",
+      "보호자에게 한 건도 전달되지 않았습니다. 수동 확인이 필요합니다.",
+    ],
+  ).catch(() => false);   // 경보 실패가 호출부를 무너뜨리지 않게
+
+  return { sent: false, channels, reason };
 }
