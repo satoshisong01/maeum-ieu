@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.20.0'   # 로컬·Docker 베이스와 동일하게 고정(2026-10-02) — 버전이 갈리면 CI 녹색이 배포 안전을 보증하지 못한다
           cache: 'npm'
 
       - name: Install dependencies
@@ -42,13 +42,16 @@ jobs:
         run: npx tsc --noEmit
         continue-on-error: false
 
-      - name: Unit tests (vitest — 세션종료 매트릭스 포함)
-        run: npx vitest run
-        continue-on-error: false  # 음성 종료패턴 매트릭스 등 회귀 고정 — 깨지면 merge 금지
+      - name: Lint (에러 0 — 2026-10-02 79건 정리 후 유지)
+        run: npx eslint .
+        continue-on-error: false
 
-      - name: Safety regression (응급 감지 회귀 275+)
-        run: npx tsx scripts/safety-regression.ts
-        continue-on-error: false  # 어르신 안전 직결 — 항상 strict
+      # vitest가 safety-regression(342) + regex-battery를 함께 돈다
+      #   (__tests__/gate-scripts.test.ts로 편입 — 별도 명령은 잊히고, 커버리지에도 안 잡혔다)
+      # 커버리지 임계치는 vitest.config.ts의 래칫 — 안전 핵심 9개 파일의 분기가 내려가면 fail.
+      - name: Unit tests + 게이트 스크립트 + 커버리지 래칫
+        run: npx vitest run --coverage
+        continue-on-error: false  # 회귀 고정 + 커버리지 하락 차단 — 깨지면 merge 금지
 
       - name: User-scope audit (DB queries have user_id filter)
         run: npx tsx scripts/audit-user-scope.ts
@@ -63,7 +66,7 @@ jobs:
         run: |
           echo "## CI Safety Checks Summary" >> $GITHUB_STEP_SUMMARY
           echo "- TypeScript compile: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Unit tests (vitest, 세션종료 매트릭스 포함): strict" >> $GITHUB_STEP_SUMMARY
-          echo "- Safety regression (응급 감지 275+): strict" >> $GITHUB_STEP_SUMMARY
+          echo "- Lint (eslint, 에러 0): strict" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit tests + safety-regression 342 + regex-battery + 커버리지 래칫: strict" >> $GITHUB_STEP_SUMMARY
           echo "- User-scope audit: warning-only" >> $GITHUB_STEP_SUMMARY
           echo "- Prompt-leak (regex): strict" >> $GITHUB_STEP_SUMMARY
