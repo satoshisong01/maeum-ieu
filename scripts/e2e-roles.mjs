@@ -249,6 +249,8 @@ async function sendAndRead(page, text) {
   const anomalies = [];
   const latencies = [];
   let empties = 0, leaks = 0, mixes = 0, memFails = 0;
+  let turnsRun = 0;      // 실제로 완료한 턴 — '설정 턴수'와 혼동하면 거짓 녹색이 난다
+  let runError = null;   // 실행 중단 사유
 
   try {
     await signupUI(page, email);
@@ -278,6 +280,7 @@ async function sendAndRead(page, text) {
       const ai = await sendAndRead(page, utter);
       const ms = Date.now() - t0;
       latencies.push(ms);
+      turnsRun++;
       history.push({ who: "ai", text: ai });
       const flags = detect(ai, utter);
       // 과거 기억 검증 — 회상 질문 턴이면 AI 응답에 기대 키워드 포함 여부 확인
@@ -297,10 +300,16 @@ async function sendAndRead(page, text) {
       }
     }
   } catch (e) {
-    console.error(`\n! 실행 오류: ${e.message.split("\n")[0]}`);
+    runError = e.message.split("\n")[0];
+    console.error(`\n! 실행 오류: ${runError}`);
   } finally {
     console.log(`\n===== 완료 (role=${ROLE}) =====`);
-    console.log(`총 ${TURNS}턴 · 빈응답 ${empties} · 누출 ${leaks} · 모드혼입 ${mixes} · 기억실패 ${memFails} · 이상감지 ${anomalies.length}`);
+    // ⚠ 2026-10-02 결함 수정: 이전엔 `총 ${TURNS}턴`(= 설정값)을 찍었다. 그래서 턴이 **0개**
+    //   실행돼도 "총 30턴 · 전부 0 · ✅ 전 구간 클린 · exit 0"이 나왔고, 로그인 타임아웃으로
+    //   한 턴도 못 돌린 실행이 사람 눈에 '통과'로 보였다. 실제로 이 날 user·general 두 역할이
+    //   모두 그렇게 거짓 통과했다. 검증 도구의 거짓 녹색은 검증을 안 하는 것보다 나쁘다 —
+    //   안 했다는 사실조차 가리기 때문이다.
+    console.log(`실행 ${turnsRun}/${TURNS}턴 · 빈응답 ${empties} · 누출 ${leaks} · 모드혼입 ${mixes} · 기억실패 ${memFails} · 이상감지 ${anomalies.length}`);
     if (latencies.length) {
       const sorted = [...latencies].sort((a, b) => a - b);
       const avg = Math.round(latencies.reduce((s, v) => s + v, 0) / latencies.length);
@@ -311,8 +320,19 @@ async function sendAndRead(page, text) {
     if (anomalies.length) {
       console.log(`\n[이상감지 상세]`);
       for (const a of anomalies) console.log(`  t${a.t} [${a.flags.join(", ")}]  발화"${a.utter.slice(0, 30)}" → AI"${(a.ai || "(빈)").slice(0, 60)}"`);
+    }
+    // 합격 조건: 중단 없음 + 설정 턴수 전수 실행 + 이상 0. 하나라도 어긋나면 exit 1.
+    const incomplete = turnsRun < TURNS;
+    if (runError || incomplete || anomalies.length) {
+      const why = [
+        runError ? `중단: ${runError}` : null,
+        incomplete ? `미완료: ${turnsRun}/${TURNS}턴만 실행` : null,
+        anomalies.length ? `이상 ${anomalies.length}건` : null,
+      ].filter(Boolean).join(" · ");
+      console.log(`\n❌ 실패 — ${why}`);
+      process.exitCode = 1;
     } else {
-      console.log(`✅ 전 구간 클린`);
+      console.log(`✅ 전 구간 클린 (${turnsRun}턴 전수)`);
     }
     console.log(`\n계정: ${email}`);
     await browser.close();

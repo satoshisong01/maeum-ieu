@@ -15,6 +15,7 @@ import { getTimeContext } from "@/lib/chat/time";
 import { detectEmergency } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
+import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
@@ -120,6 +121,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, emergencyLevel: emergency.level });
   } catch (e) {
     console.error("[live-turn]", e);
+    /**
+     * 최후 응급 안전망 — /api/chat과 동일 처방(2026-10-02). 이 경로도 응급 판정 **전에**
+     *   DB를 두 번 친다(대화 소유권 검증 / 동의 게이트). 거기서 터지면 그냥 500이었고,
+     *   응급 발화였어도 보호자 알림이 0건이었다. 한 경로만 고치면 F3 드리프트가 남는다.
+     * 이 경로는 클라가 전사된 userText를 보내므로 재전사가 필요 없다(transcribe 미주입).
+     */
+    await lastResortEmergency({
+      sos: { userId, text: userText },
+      userName: session.user.name || "사용자",
+      companionName: "민지",
+      minLevel: 2,   // 이 경로는 대화 흐름이 없고 원래 L2+에서 알림을 보낸다
+    }).catch((err) => console.error("[live-turn] 최후 안전망 실패:", err));
     return NextResponse.json({ error: "저장 중 오류가 발생했습니다." }, { status: 500 });
   }
 }

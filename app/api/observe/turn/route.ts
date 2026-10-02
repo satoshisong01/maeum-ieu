@@ -19,6 +19,7 @@ import { evaluateSttConfidence } from "@/lib/chat/stt-confidence";
 import { detectEmergency } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
+import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const MAX_AUDIO_B64 = 3_000_000; // ~2MB WAV (30초 16k mono ≈ 960KB) 상한
@@ -57,8 +58,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "이 계정은 감시 대상이 아닙니다." }, { status: 400 });
   }
 
+  // 전사는 try 밖에서 받아 catch가 쓸 수 있게 한다 — 안쪽에서만 알면 DB 실패 시 발화를 잃는다.
+  let observed = "";
   try {
     const text = await transcribe(audioB64, mimeType);
+    observed = text;
     const conf = evaluateSttConfidence(text);
     if (!text || !conf.pass) {
       return NextResponse.json({ ok: true, skipped: true, reason: conf.reason || "empty" });
@@ -109,6 +113,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, text, emergencyLevel: emergency.level });
   } catch (e) {
     console.error("[observe-turn]", e);
+    /**
+     * 최후 응급 안전망 — /api/chat과 동일 처방(2026-10-02). 이 경로는 응급 판정은 DB 전에
+     *   하지만, 그 뒤 conversation 조회·생성이 실패하면 **알림까지 통째로 날아갔다**
+     *   (알림 블록이 저장 블록 뒤에 있다). 전사만 성공했다면 알림은 나가야 한다.
+     * 전사 자체가 실패한 경우엔 observed가 비어 있어 안전망도 미발동한다(평가할 발화가 없다).
+     */
+    if (observed) {
+      await lastResortEmergency({
+        sos: { userId, text: observed },
+        userName: session.user.name || "사용자",
+        companionName: "민지",
+        minLevel: 2,
+      }).catch((err) => console.error("[observe-turn] 최후 안전망 실패:", err));
+    }
     return NextResponse.json({ error: "처리 중 오류" }, { status: 500 });
   }
 }

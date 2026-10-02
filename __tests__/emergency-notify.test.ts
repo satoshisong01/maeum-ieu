@@ -158,14 +158,23 @@ describe("요청이 통째로 실패해도 L3는 살아남는다 (최후 안전�
 
   it("안전망은 DB를 치지 않는다 — prisma 호출이 없어야 한다", async () => {
     const fs = await import("node:fs/promises");
+    // 2026-10-02: 판정·발송 로직은 lib/chat/emergency-last-resort.ts로 분리됐다
+    //   (route.ts 안에서는 export가 안 돼 행위 테스트를 쓸 수 없었고, 그 탓에
+    //    음성 턴 stale 텍스트 결함을 grep 테스트가 전부 놓쳤다).
+    const mod = await fs.readFile("lib/chat/emergency-last-resort.ts", "utf-8");
+    // 🔒 DB가 죽어서 들어온 경로다 — 여기서 또 조회하면 같은 예외로 안전망째 무너진다
+    expect(mod).not.toMatch(/from "@\/lib\/prisma"/);
+    expect(mod).not.toMatch(/prisma\./);
+    expect(mod).toMatch(/notifyGuardian/);
+    expect(mod).toMatch(/detectEmergency/);
+
+    // route.ts의 래퍼는 응답 조립만 담당하고 자체 DB 조회를 하지 않아야 한다
     const src = await fs.readFile("app/api/chat/route.ts", "utf-8");
     const start = src.indexOf("async function emergencyLastResort(");
-    const body = src.slice(start, src.indexOf("export async function POST(", start));
     expect(start).toBeGreaterThan(-1);
-    // 🔒 DB가 죽어서 들어온 경로다 — 여기서 또 조회하면 같은 예외로 안전망째 무너진다
+    const body = src.slice(start, src.indexOf("export async function POST(", start));
     expect(body).not.toMatch(/prisma\./);
-    expect(body).toMatch(/notifyGuardian/);
-    expect(body).toMatch(/detectEmergency/);
+    expect(body).toMatch(/lastResortEmergency\(/);
   });
 
   it("L3 미만은 안전망을 발동시키지 않는다 (500 유지)", async () => {

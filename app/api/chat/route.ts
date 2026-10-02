@@ -33,6 +33,7 @@ import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-c
 import { buildSttHints } from "@/lib/chat/stt-hints";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
+import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { getHonorific } from "@/lib/chat/prompt";
 import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
 import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
@@ -1099,37 +1100,21 @@ async function emergencyLastResort(
 ): Promise<NextResponse> {
   const fail = () => NextResponse.json({ error: toSafeError(error) }, { status: 500 });
   try {
-    let content = sos.text;
-    if (!content && sos.audio) {
-      content = await transcribeAudio(sos.audio.data, sos.audio.mimeType).catch(() => "");
-    }
-    if (!content) return fail();
+    // 판정·발송은 공용 모듈이 담당한다(live·observe와 같은 구현을 쓰게 해 F3 드리프트 차단).
+    //   여기 route.ts에 두면 Next route 파일 제약으로 export가 안 돼 **행위 테스트를 못 쓴다** —
+    //   실제로 그 때문에 소스 grep 테스트만 붙였고, 음성 턴 stale 텍스트 결함을 전부 놓쳤다.
+    const r = await lastResortEmergency({
+      sos, userName: getHonorific(null, null), companionName: COMPANION_DEFAULTS.name,
+      minLevel: 3,   // L1·L2는 대화 흐름 안에서 다뤄야 의미가 있다
+      transcribe: (d, m) => transcribeAudio(d, m),
+    });
+    if (!r.fired || !r.reply) return fail();
 
-    const result = detectEmergency(content);
-    if (result.level < 3) return fail();   // L1·L2는 대화 흐름 안에서 다뤄야 의미가 있다
-
-    console.error("[emergency] 요청 실패 중 L3 감지 — 최후 안전망 발동:", result.category);
-    const honorific = getHonorific(null, null);
-    const reply = buildEmergencyL3Reply(honorific, COMPANION_DEFAULTS.name, result.category);
-
-    const send = async () => {
-      try {
-        const r = await notifyGuardian({
-          userId: sos.userId, userName: honorific, level: 3, category: result.category,
-          content, aiReply: reply, createdAt: new Date(),
-        });
-        if (r.sent) console.log("[emergency-notify] last-resort sent:", r.channels);
-        else console.error("[emergency-notify] last-resort NOT sent:", r.reason);
-      } catch (e) {
-        console.error("[emergency-notify] last-resort error:", e);
-      }
-    };
-    try { after(send); } catch { await send(); }
-
+    console.error("[emergency] 요청 실패 중 L3 감지 — 최후 안전망 발동:", r.category);
     // degraded: true — 클라이언트가 "기록은 남지 않았다"를 구분할 수 있게 한다(멘트는 정상 노출).
     return NextResponse.json({
-      text: reply, role: "assistant",
-      emergency: { level: 3, category: result.category }, degraded: true,
+      text: r.reply, role: "assistant",
+      emergency: { level: 3, category: r.category }, degraded: true,
     });
   } catch (e) {
     console.error("[emergency] 최후 안전망 자체가 실패:", e);
@@ -1164,8 +1149,25 @@ export async function POST(req: Request) {
     const { messages, conversationId, isInitialGreeting, isReturningGreeting, isReEngage, reEngageAttempt, audio, context: ctx, proxyPatientId } = body;
     const actorId = session.user.id;
     // 안전망에 원문 확보 — 이 아래 어디서 터지든 catch가 응급을 다시 평가할 수 있게.
-    sos.text = messages?.filter((m) => m.role === "user").at(-1)?.content ?? "";
-    if (audio?.data && audio?.mimeType) sos.audio = { data: audio.data, mimeType: audio.mimeType };
+    /**
+     * ⚠ 음성 턴에서는 sos.text를 **채우지 않는다**(2026-10-02 적대 리뷰에서 확증된 결함 수정).
+     *
+     * 클라이언트의 두 경로가 비대칭이다:
+     *   · 텍스트 (page.tsx:908): `[...messagesRef.current, userMessage]` — 현재 발화 **포함**
+     *   · 음성   (page.tsx:1171): `messagesRef.current.slice(-50)`      — 현재 발화 **미포함**
+     *                             (아직 전사 전이라 클라도 텍스트를 모른다. 오디오에만 있다.)
+     *
+     * 그래서 음성 턴에 이 줄을 그대로 쓰면 sos.text에 **직전 턴 발화**가 들어간다. 그러면
+     * 아래 안전망의 `if (!content && sos.audio)` 가드가 거짓이 되어 STT 재시도가 영원히 안 돌고,
+     *   (A) 위음성 — 지금 "숨이 안 쉬어져"라고 말해도 직전 발화("점심 먹었어")로 판정해 L0 → 500.
+     *       즉 이 안전망이 고치려던 사고가 **음성 턴에서는 그대로 남는다**(음성 전용 제품이다).
+     *   (B) 위양성 — 직전 턴이 L3였고 지금은 "괜찮아"인데, 스테일 텍스트로 119 멘트를 재생하고
+     *       **틀린 발화 원문**으로 보호자 알림을 또 보낸다.
+     * 음성 턴의 진실은 오디오뿐이므로, 텍스트는 비워 두고 전사에만 의존한다(아래 sttPromise가 채운다).
+     */
+    const isAudioTurn = !!(audio?.data && audio?.mimeType);
+    sos.text = isAudioTurn ? "" : (messages?.filter((m) => m.role === "user").at(-1)?.content ?? "");
+    if (isAudioTurn && audio) sos.audio = { data: audio.data, mimeType: audio.mimeType };
     // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
     // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
     const mode: "user" | "pro" | "general" =
@@ -1266,7 +1268,12 @@ export async function POST(req: Request) {
     //   어휘 힌트(이름 표기 바이어스)도 병렬 시작 — transcribeAudio 내부에서 합류.
     //   단 검진(exam) 턴은 힌트 제외 — 회상/이름대기 답안이 힌트로 '보정'되면 채점 오염.
     const sttPromise = isAudio && audio
-      ? transcribeAudio(audio.data, audio.mimeType, examSession ? undefined : buildSttHints(userId)).catch((e) => { console.warn("[STT] transcription failed:", e); return ""; })
+      ? transcribeAudio(audio.data, audio.mimeType, examSession ? undefined : buildSttHints(userId))
+          // 전사가 나오는 즉시 안전망에도 넘겨 둔다 — 이 아래 어디서 터지든 catch가
+          //   **현재 발화**를 보게 된다. 이미 돌고 있는 STT를 재사용하므로 추가 비용 0이고,
+          //   안전망의 재전사 경로는 "STT가 아직 안 끝난 시점에 터진 경우"만 담당하게 된다.
+          .then((t) => { if (t) sos.text = t; return t; })
+          .catch((e) => { console.warn("[STT] transcription failed:", e); return ""; })
       : null;
 
     // weather · RAG(임베딩 HTTP) · DB 이력은 상호 독립 — 병렬화로 LLM 호출 전 선행 지연 절감.
