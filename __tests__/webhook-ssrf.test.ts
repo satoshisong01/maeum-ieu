@@ -196,3 +196,47 @@ describe("웹훅 전송 실패가 다른 채널을 막지 않는다", () => {
     expect(r.channels).not.toContain("webhook");
   });
 });
+
+/**
+ * 리다이렉트 우회 차단 (2026-10-02 발견 — 감사도 놓친 것).
+ *
+ * fetch 기본값은 `follow`다. isSafeWebhookUrl을 통과한 호스트가
+ * `302 Location: http://169.254.169.254/latest/meta-data/`를 돌려주면
+ * **가드를 완전히 우회해** 인스턴스 메타데이터로 요청이 나간다.
+ * 가드는 처음 URL만 보고, 리다이렉트 대상은 아무도 검사하지 않았다.
+ * DNS rebinding보다 훨씬 쉽고 확실한 우회 경로였다.
+ */
+describe("리다이렉트를 따라가지 않는다", () => {
+  it("fetch 호출에 redirect: manual 이 지정돼 있다", async () => {
+    vi.clearAllMocks();
+    db.message.findFirst.mockResolvedValue(null);
+    db.message.update.mockResolvedValue({});
+    db.expertPatient.findMany.mockResolvedValue([]);
+    db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: "https://ok.example.com/h", guardianEmail: null, guardianName: null });
+    lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as unknown as Response);
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    await notifyGuardian({
+      userId: "redir-opt", userName: "김", level: 3, category: "medical_acute",
+      content: "x", aiReply: "y", createdAt: new Date(),
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as unknown as { redirect?: string };
+    // 🔒 follow(기본값)로 되돌아가면 302 한 번으로 메타데이터에 닿는다
+    expect(init?.redirect).toBe("manual");
+  });
+
+  it("3xx 응답은 성공으로 세지 않는다", async () => {
+    vi.clearAllMocks();
+    db.message.findFirst.mockResolvedValue(null);
+    db.expertPatient.findMany.mockResolvedValue([]);
+    db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: "https://ok2.example.com/h", guardianEmail: null, guardianName: null });
+    lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+    fetchMock.mockResolvedValue({ ok: false, status: 302 } as unknown as Response);
+    const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+    const r = await notifyGuardian({
+      userId: "redir-3xx", userName: "김", level: 3, category: "medical_acute",
+      content: "x", aiReply: "y", createdAt: new Date(),
+    });
+    expect(r.channels).not.toContain("webhook");
+  });
+});

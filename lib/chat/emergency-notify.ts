@@ -125,7 +125,25 @@ async function sendWebhook(url: string, body: unknown): Promise<{ ok: boolean; s
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
+      /**
+       * ⚠ **리다이렉트를 따라가지 않는다** (2026-10-02 발견).
+       *
+       * fetch의 기본값은 `follow`다. 즉 위 isSafeWebhookUrl을 통과한 호스트가
+       * `302 Location: http://169.254.169.254/latest/meta-data/`를 돌려주면
+       * **SSRF 가드를 완전히 우회해** 내부망·인스턴스 메타데이터로 요청이 나간다.
+       * 가드는 처음 URL만 검사하고, 리다이렉트 대상은 아무도 검사하지 않았다.
+       * DNS rebinding(두 해석 사이의 경쟁)보다 **훨씬 쉽고 확실한** 우회 경로였다.
+       *
+       * `manual`이면 3xx를 그대로 돌려받고 따라가지 않는다. 정상 웹훅(Discord·Slack·
+       * IFTTT·n8n)은 POST에 3xx를 쓰지 않으므로 기능 영향이 없다 —
+       * 아래 res.ok가 false가 되어 "webhook failed"로 기록될 뿐이다.
+       */
+      redirect: "manual",
     });
+    if (res.status >= 300 && res.status < 400) {
+      console.warn(`[emergency-notify] 웹훅이 리다이렉트 응답(${res.status}) — 따라가지 않음(SSRF 우회 차단)`);
+      return { ok: false, status: res.status, error: "redirect blocked" };
+    }
     return { ok: res.ok, status: res.status };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
