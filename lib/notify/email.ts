@@ -86,18 +86,60 @@ export async function sendEmergencyEmail(to: string, p: EmergencyEmailPayload): 
  *
  * 이 경로는 **DB를 쓰지 않는다**(SMTP만). 그래서 RDS가 죽어도 사람에게 닿는다.
  * env OPS_ALERT_EMAIL 미설정이면 조용히 skip — 기능을 막지는 않는다.
+ *
+ * 쓰로틀 — 같은 사유의 경보를 창(window)당 1회로 묶는다.
+ *
+ * ⚠ 2026-10-02 적대 리뷰가 잡은 **내가 만든 결함**: 이 함수에 dedup이 전혀 없었다.
+ *   RDS 장애처럼 "모든 보호자 채널이 실패"가 지속되는 상황에서는 응급 턴마다 경보가 나가고,
+ *   **보호자 알림과 같은 Gmail 계정을 쓰므로**(GMAIL_USER 공유) 일일 발신 한도를 스스로 태운다.
+ *   그러면 정작 복구된 뒤에 가야 할 **보호자 이메일이 못 나간다** —
+ *   운영자에게 알리려다 환자의 알림 채널을 죽이는, 어제 emergency-notify에서 고친 것과 같은 유형이다.
+ *
+ * 설계: 프로세스 메모리이므로 멀티 인스턴스에서는 N배까지 샐 수 있다(ECS 태스크 수만큼).
+ *   그래도 "무제한"과 "인스턴스당 시간당 1건"은 자릿수가 다르다. 완전한 해법은 Redis 공유 카운터이고,
+ *   그건 Upstash가 이미 있으니 AWS 이전 때 함께 옮기는 게 맞다(지금은 과한 결합).
  */
+const OPS_ALERT_WINDOW_MS = 60 * 60 * 1000;   // 1시간
+/** subject → { 마지막 발송 시각, 그 뒤 억제된 건수 } */
+const opsAlertSent = new Map<string, { at: number; suppressed: number }>();
+
 export async function sendOpsAlert(subject: string, lines: string[]): Promise<boolean> {
   const to = process.env.OPS_ALERT_EMAIL?.trim();
   const t = getTransporter();
   if (!t || !to || !EMAIL_RE.test(to)) return false;
+
+  /**
+   * 같은 사유(subject)는 창당 1회. 만료분은 같은 패스에서 정리한다(맵 무한 증가 방지).
+   * ⚠ 키가 subject라 **다른 환자의 같은 유형 경보도 함께 억제된다.** 그래서 억제 건수를 세어
+   *   다음 메일에 싣는다 — 운영자에게 필요한 건 개별 사건이 아니라 "장애가 났고 규모가 N건"이다.
+   *   건수가 없으면 1건짜리 사고와 전면 장애가 똑같은 메일로 보인다.
+   */
+  const now = Date.now();
+  // ⚠ prev를 **정리보다 먼저** 읽는다. 만료 정리가 이 subject의 항목을 지우면
+  //   그 창에서 억제한 건수가 함께 사라져, 복구 후 첫 메일이 규모를 전하지 못한다
+  //   (실제로 그렇게 짰다가 테스트가 잡았다).
+  const prev = opsAlertSent.get(subject);
+  for (const [k, v] of opsAlertSent) {
+    if (k !== subject && now - v.at >= OPS_ALERT_WINDOW_MS) opsAlertSent.delete(k);
+  }
+  if (prev && now - prev.at < OPS_ALERT_WINDOW_MS) {
+    prev.suppressed++;
+    console.warn(`[ops-alert] 억제(창 내 중복 ${prev.suppressed}건): ${subject}`);
+    return false;
+  }
+  const suppressed = prev?.suppressed ?? 0;
+  opsAlertSent.set(subject, { at: now, suppressed: 0 });
+  const body = suppressed > 0
+    ? [...lines, "", `※ 직전 1시간 창에서 같은 사유 ${suppressed}건이 추가로 발생해 메일은 억제되었습니다.`]
+    : lines;
+
   try {
     await t.sendMail({
       from: `마음이음 운영 <${process.env.GMAIL_USER}>`,
       to,
       subject: `[마음이음 운영] ${subject}`,
-      text: lines.join("\n"),
-      html: `<pre style="font:14px/1.6 ui-monospace,monospace">${lines.map(esc).join("\n")}</pre>`,
+      text: body.join("\n"),
+      html: `<pre style="font:14px/1.6 ui-monospace,monospace">${body.map(esc).join("\n")}</pre>`,
     });
     return true;
   } catch (e) {
