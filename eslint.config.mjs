@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vitest 커버리지 산출물 — 생성 파일이라 린트 대상이 아니다(2026-10-02 커버리지 도입).
+    "coverage/**",
   ]),
 ]);
 

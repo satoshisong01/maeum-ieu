@@ -85,7 +85,15 @@ function isPrivateIPv4(ip: string): boolean {
 
 /**
  * SSRF 방어 — 보호자 웹훅 URL이 내부/사설/메타데이터로 향하지 않는지 검증.
- * 호스트네임을 실제 IP로 해석해 사설 대역이면 차단(DNS rebinding 방어). 해석 실패 시 차단.
+ * 호스트네임을 실제 IP로 해석해 사설 대역이면 차단. 해석 실패·빈 응답은 차단(fail-closed).
+ *
+ * ⚠ **DNS rebinding은 막지 못한다**(2026-10-02 정정 — 이전 주석이 "DNS rebinding 방어"라고
+ *   적고 있었으나 사실이 아니었다). 여기서 lookup한 뒤 아래 fetch가 **독립적으로 다시** 해석하므로,
+ *   TTL 0 레코드로 두 해석 사이에 IP를 바꾸면 우회된다. 실제로 막으려면 해석된 IP로 직접 접속하고
+ *   Host 헤더를 붙여야 한다.
+ *   현재 위험도 평가: 공격자는 보호자 계정이어야 하고, 응답 본문이 호출부로 돌아가지 않는
+ *   blind SSRF다. 그래서 즉시 치명은 아니나, AWS 메타데이터가 사정권이라 방치할 것도 아니다.
+ *   (회귀 고정: __tests__/webhook-ssrf.test.ts — 이 함수는 2026-10-02까지 테스트가 0건이었다)
  */
 async function isSafeWebhookUrl(rawUrl: string): Promise<boolean> {
   let u: URL;

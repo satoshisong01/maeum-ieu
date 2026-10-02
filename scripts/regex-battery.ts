@@ -95,3 +95,6 @@ for (const t of ["민지야 고마워", "겁나서 못 갔어", "마이크 잡�
   console.log(`  ${chk(!changed || n.normalized === t)} ${changed ? "변환" : "무변환"} "${t}" → "${n.normalized}"`);
 }
 console.log(`\n${p}/${p + f} passed, ${f} FAILED`);
+
+// 모듈 import 시 게이트 집계용 — safety-regression.ts와 같은 이유(커버리지 가시성).
+export const summary = { pass: p, fail: f };

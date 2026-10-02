@@ -19,6 +19,25 @@ import { detectInappropriate } from "../lib/chat/moderation";
 import { salvageJsonLeak } from "../lib/chat/sanitize";
 import { cleanName } from "../lib/chat/profile-extractor";
 
+/**
+ * 아래는 원래 각 섹션에서 지연 require(...)로 불러오던 모듈들이다.
+ * ESM(vitest)에서는 require가 없어 정적 import로 올렸다 — 이 스크립트를
+ * __tests__/gate-scripts.test.ts가 import해 342건을 커버리지에 잡히게 하기 위함.
+ * 전부 부작용 없는 순수 lib 모듈이라 로딩 시점 변경이 동작에 영향을 주지 않는다
+ * (342/342 동일 통과로 확인).
+ */
+import { detectInappropriate as mod } from "../lib/chat/moderation";
+import { injectPerseverationCheck, overrideLunarTimeOrientation, detectCognitiveQuestions, validateMemoryImmediate } from "../lib/chat/cognitive-analyzer";
+import { isAbortIntent, isMentalResultRequest } from "../lib/health/mental-flow";
+import { sanitizeForTts } from "../lib/chat/tts-text";
+import { extractPetFromText } from "../lib/chat/profile-extractor";
+import { detectFalseNegationAgainstFacts } from "../lib/chat/fact-checker";
+import { renderKeyFacts } from "../lib/chat/summarizer";
+import { detectLowEngagement, buildEngagementHint } from "../lib/chat/engagement";
+import { buildCognitiveAdaptationHint } from "../lib/health/cognitive-level";
+import { classifyMedReply } from "../lib/chat/medication";
+import { detectEmergency as det } from "../lib/chat/emergency";
+
 let pass = 0;
 let fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -330,7 +349,7 @@ console.log("\n[emergency] 뇌졸중 자연 발화 L3");
 // ── #14: 모더레이션 '야동' 한글 경계 — 조사 '~야'+'동탄/동네' 정상 발화 오차단 금지 ──
 console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
 {
-  const { detectInappropriate } = require("../lib/chat/moderation");
+
   check("'동네야 동탄이지' 정상", detectInappropriate("우리 동네야 동탄이지. 놀이터는 아파트 단지 안에 있어").category === "ok");
   check("'야 동탄 가자' 정상", detectInappropriate("야 동탄 가자").category === "ok");
   check("'밥 먹어야 동네 산책 가지' 정상", detectInappropriate("밥 먹어야 동네 산책 가지").category === "ok");
@@ -353,7 +372,7 @@ console.log("\n[moderation] '야동' 한글 경계 (동네야 동탄 FP)");
 // ── #12: 보속증 안전망 — 동일 발화 3턴 연속 반복 → memory_immediate 강제 마킹 ──
 console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
 {
-  const { injectPerseverationCheck } = require("../lib/chat/cognitive-analyzer");
+
   const empty = { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
   const hist = (lines: string[]) => lines.join("\n");
 
@@ -388,7 +407,7 @@ console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
 // ── #15: 검진 중단 死정규식 — "그만두면 신경 쓰여"(서술)가 검진 중단으로 오발동 금지 ──
 console.log("\n[mental-escape] '그만두면' 서술 → 검진 오중단 금지 (2026-06-15 BFI-10 라이브 FP)");
 {
-  const { isAbortIntent } = require("../lib/health/mental-flow");
+
   check("'그만할래' 중단 의사 감지", isAbortIntent("이제 그만할래") === true);
   check("'그만하자' 중단 의사 감지", isAbortIntent("이제 그만하자") === true);
   check("'그만둬' 중단 의사 감지", isAbortIntent("그만둬") === true);
@@ -400,7 +419,7 @@ console.log("\n[mental-escape] '그만두면' 서술 → 검진 오중단 금지
 // ── #16: TTS 검진 머리말 낭독 — "1/10."이 "십분의 일"(분수)로 읽히는 문제 ──
 console.log("\n[tts-text] '1/10.' 머리말 → '첫 번째 문제' 자연화 (2026-06-15 사용자 피드백)");
 {
-  const { sanitizeForTts } = require("../lib/chat/tts-text");
+
   check("'1/10.' → '첫 번째 문제'", sanitizeForTts("1/10. 지난 2주 동안").startsWith("첫 번째 문제."));
   check("'10/10.' → '열 번째 문제'", sanitizeForTts("10/10. 상상력이 풍부한 편이다").startsWith("열 번째 문제."));
   check("'1/10' 분수 표기 제거(낭독)", !sanitizeForTts("3/9. 잠들기 어렵거나").includes("/"));
@@ -412,7 +431,7 @@ console.log("\n[tts-text] '1/10.' 머리말 → '첫 번째 문제' 자연화 (2
 // ── #17: 반려동물 슬롯 추출 — 회상 견고성(두부 사례) + 음식 '두부' FP 차단 (2026-06-16) ──
 console.log("\n[pet-slot] 반려동물 추출(종 확인 필수)");
 {
-  const { extractPetFromText } = require("../lib/chat/profile-extractor");
+
   const r1 = extractPetFromText("요즘 고양이를 키우기 시작했어요. 이름은 두부예요");
   check("'고양이 키우기…이름은 두부' → 고양이 두부", !!r1 && r1.species === "고양이" && r1.name === "두부");
   const r2 = extractPetFromText("고양이 두부를 키워");
@@ -426,7 +445,7 @@ console.log("\n[pet-slot] 반려동물 추출(종 확인 필수)");
 // ── #18: 거짓 부정 단언 가드 — 확정 사실을 "안 한다고 하셨다"고 단언 시 제거 (2026-06-16 라이브) ──
 console.log("\n[false-negation] 확정사실 거짓 부정 단언 제거");
 {
-  const { detectFalseNegationAgainstFacts } = require("../lib/chat/fact-checker");
+
   const a = detectFalseNegationAgainstFacts("그럼요. 고양이는 안 키우신다고 하셨잖아요. 오늘 점심 드셨어요?", ["고양이", "두부"]);
   check("확정사실 부정단언 문장 제거", a.removed.length === 1 && !a.cleaned.includes("안 키우"));
   const b = detectFalseNegationAgainstFacts("재미없다고 하셨죠. 속상하셨겠어요.", ["고양이", "두부"]);
@@ -437,7 +456,7 @@ console.log("\n[false-negation] 확정사실 거짓 부정 단언 제거");
 // ── #19: keyFacts 프롬프트 렌더 — 구조화 사실 유실 방지 (2026-06-16) ──
 console.log("\n[keyfacts] 요약 keyFacts 프롬프트 주입");
 {
-  const { renderKeyFacts } = require("../lib/chat/summarizer");
+
   const s = renderKeyFacts(JSON.stringify({ hometown: "춘천", favorites: ["두부"], events: [{ when: "다음달", what: "제주여행" }] }));
   check("사물·이벤트 렌더", s.includes("춘천") && s.includes("두부") && s.includes("제주여행"));
   check("빈/깨진 keyFacts 방어", renderKeyFacts("") === "" && renderKeyFacts("{bad") === "");
@@ -446,7 +465,7 @@ console.log("\n[keyfacts] 요약 keyFacts 프롬프트 주입");
 // ── #20: 참여도 감지 — 단답·반복 시 발화량·질문 축소 (과다발화 루프 방지, 2026-06-16) ──
 console.log("\n[engagement] 저참여 감지 + 발화 페이스 hint");
 {
-  const { detectLowEngagement, buildEngagementHint } = require("../lib/chat/engagement");
+
   check("단답 '응' → very-low", detectLowEngagement("응", []) === "very-low");
   check("단답 '몰라' → very-low", detectLowEngagement("몰라", []) === "very-low");
   check("짧은 반복 → very-low", detectLowEngagement("그래", ["그래"]) === "very-low");
@@ -458,7 +477,7 @@ console.log("\n[engagement] 저참여 감지 + 발화 페이스 hint");
 // ── #21: 인지 등급 적응 — severity→프롬프트 폐루프 (중증/고위험만, 2026-06-16) ──
 console.log("\n[cognitive-adapt] 인지 등급별 대화 난이도 적응");
 {
-  const { buildCognitiveAdaptationHint } = require("../lib/health/cognitive-level");
+
   check("중증 → 1~2문장 짧게 지시", buildCognitiveAdaptationHint("중증").includes("1~2문장"));
   check("고위험 → 한 문장 지시", buildCognitiveAdaptationHint("고위험").includes("한 문장"));
   check("정상 → 적응 없음(빈 문자열, 현행 보존)", buildCognitiveAdaptationHint("정상") === "");
@@ -470,7 +489,7 @@ console.log("\n[cognitive-adapt] 인지 등급별 대화 난이도 적응");
 // ── #22: 검진 결과 요청 감지 — 미완료 시 가짜 결과 환각 방지 (2026-06-16) ──
 console.log("\n[mental-result] 검진 결과 요청 감지(환각 방지)");
 {
-  const { isMentalResultRequest } = require("../lib/health/mental-flow");
+
   check("'우울 점수 어때' → 결과요청", isMentalResultRequest("내 우울 점수 어때?") === true);
   check("'검사 결과 보여줘' → 결과요청", isMentalResultRequest("검사 결과 보여줘") === true);
   check("'점수 알려줘' → 결과요청", isMentalResultRequest("점수 알려줘") === true);
@@ -494,19 +513,23 @@ console.log("\n[fact-check] 바깥조사 일반명사 FP 방지 + 호칭 환각�
 // ── #24: 음력 날짜 시간지남력 과탐 보정 (음력 명시 시만, 2026-06-17) ──
 console.log("\n[lunar] 음력 명시 시 시간지남력 과탐 보정");
 {
-  const { overrideLunarTimeOrientation } = require("../lib/chat/cognitive-analyzer");
-  const base = (msgScore) => ({ isAnomaly: true, analysisNote: "", cognitiveChecks: [{ domain: "orientation_time", score: msgScore, confidence: 0.8, evidence: "", note: "" }] });
+
+  // ⚠ 아래 타입 주석은 장식이 아니다. 이 섹션은 원래 지연 require(...)로 모듈을 불러
+  //   반환값이 전부 any였고, 그 바람에 t1 undefined 가능성과 msgScore 암묵 any가 가려져 있었다
+  //   (정적 import로 올리자 tsc가 즉시 3건을 잡았다 — 2026-10-02).
+  const base = (msgScore: number) => ({ isAnomaly: true, analysisNote: "", cognitiveChecks: [{ domain: "orientation_time", score: msgScore, confidence: 0.8, evidence: "", note: "" }] });
   const r1 = overrideLunarTimeOrientation(base(2), "음력 6월 15일이 생일이라 잔치했어");
   const t1 = r1.cognitiveChecks.find((c) => c.domain === "orientation_time");
-  check("음력 명시 → 시간지남력 0 보정 + isAnomaly 해제", t1.score === 0 && r1.isAnomaly === false);
+  check("음력 명시 → 시간지남력 0 보정 + isAnomaly 해제", t1?.score === 0 && r1.isAnomaly === false, t1 ? "" : "orientation_time check 자체가 사라짐");
   const r2 = overrideLunarTimeOrientation(base(2), "오늘이 3월인가 8월인가 헷갈리네");
-  check("음력 미언급 → 보정 안 함(실제 오류 보존)", r2.cognitiveChecks.find((c) => c.domain === "orientation_time").score === 2);
+  const t2 = r2.cognitiveChecks.find((c) => c.domain === "orientation_time");
+  check("음력 미언급 → 보정 안 함(실제 오류 보존)", t2?.score === 2, t2 ? "" : "orientation_time check 자체가 사라짐");
 }
 
 // ── #25: 복약 자동캡처 응답 분류 — 리마인더 후 '먹었어/응'만 기록, 부정/애매 구분 (2026-06-18) ──
 console.log("\n[med-reply] 복약 응답 분류(자동캡처)");
 {
-  const { classifyMedReply } = require("../lib/chat/medication");
+
   check("'응 먹었어' → taken", classifyMedReply("응 먹었어") === "taken");
   check("'네' → taken", classifyMedReply("네") === "taken");
   check("'챙겨 먹었지' → taken", classifyMedReply("챙겨 먹었지") === "taken");
@@ -520,7 +543,7 @@ console.log("\n[med-reply] 복약 응답 분류(자동캡처)");
 //   라이브 대화에서 관측된 미탐 3종(오늘 없는 '며칠', '연도가 어떻게', '어느 철')을 회귀 고정.
 console.log("\n[probe-detect] 인지 질문 감지(운영 게이트)");
 {
-  const { detectCognitiveQuestions } = require("../lib/chat/cognitive-analyzer");
+
   const has = (s: string, d: string) => detectCognitiveQuestions(s).includes(d);
   check("'날짜를 적어두려는데 며칠이라 쓸까요?' → 시간", has("항아리에 담근 날을 적어두려고요. 며칠이라 쓸까요?", "orientation_time"));
   check("'올해 연도가 어떻게 됐더라요?' → 시간", has("택배에 적을 올해 연도가 어떻게 됐더라요?", "orientation_time"));
@@ -541,7 +564,7 @@ console.log("\n[probe-detect] 인지 질문 감지(운영 게이트)");
 //   단어 3개 등록 과제의 답변은 직전 발화와 당연히 다르므로 실패(2/3 회상)가 통째로 사라졌다.
 console.log("\n[probe-memory] 즉시기억 과제 채점 보존");
 {
-  const { validateMemoryImmediate } = require("../lib/chat/cognitive-analyzer");
+
   const base = (score: number) => ({
     isAnomaly: score >= 2,
     analysisNote: "3단어 중 2개만 회상 — 즉시 기억 저하",
@@ -577,7 +600,7 @@ console.log("\n[probe-memory] 즉시기억 과제 채점 보존");
 //   ⚠ '못 일어나'를 어지러움 전치 없이 넓히면 "아침에 못 일어나"(수면)가 오탐되므로 오탐 가드를 함께 고정한다.
 console.log("\n[emergency-dizzy] 어지러움 + 기동 불능 활용형");
 {
-  const { detectEmergency } = require("../lib/chat/emergency");
+
   const hit = (s: string) => detectEmergency(s).level >= 2;
   check("'어지러워서 일어나지 못해' → L2+", hit("어지러워서 일어나지 못해"));
   check("'어지러워서 일어날 수가 없어' → L2+", hit("어지러워서 일어날 수가 없어"));
@@ -598,8 +621,8 @@ console.log("\n[emergency-dizzy] 어지러움 + 기동 불능 활용형");
 //   ⚠ 진짜 위기 신호는 반드시 유지돼야 하므로 양방향(부정=L0 / 위기=L3)을 함께 고정한다.
 console.log("\n[suicidal-negation] 자살 표현 부정 응답");
 {
-  const { detectEmergency: det } = require("../lib/chat/emergency");
-  const { detectInappropriate: mod } = require("../lib/chat/moderation");
+
+
   const neg = [
     "죽고 싶다는 생각은 없었어요", "죽고 싶다는 생각 안 해봤어", "아니요 죽고 싶다는 건 아니에요",
     "죽고 싶을 만큼은 아니고요", "죽고 싶지 않아", "죽고 싶다는 생각 한 적 없어",
@@ -618,4 +641,14 @@ console.log("\n[suicidal-negation] 자살 표현 부정 응답");
 }
 
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
-process.exit(fail ? 1 : 0);
+/**
+ * 모듈로 import될 때는 종료하지 않는다 — __tests__/gate-scripts.test.ts가 이 파일을 불러
+ * 342건을 `npm test` 게이트 안으로 들여오고, 그래야 **커버리지에 잡힌다**.
+ *
+ * 왜 중요한가: 이 스크립트가 별도 tsx 프로세스로만 돌던 동안 vitest 커버리지는
+ * lib/chat/emergency.ts를 분기 23%로 보고했다. 실제로는 여기서 훨씬 많이 지나가는데도
+ * 측정에 안 잡혀서 "어디가 비었는지" 판단 자체가 틀린 숫자 위에서 이뤄졌다.
+ * 측정이 거짓이면 그 위의 모든 점검이 거짓이다.
+ */
+export const summary = { pass, fail };
+if (!process.env.GATE_AS_MODULE) process.exit(fail ? 1 : 0);
