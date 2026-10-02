@@ -16,9 +16,11 @@ interface UserRow {
   guardians: number; patients: number; totalMsgs: number; msgs7d: number;
   activeDays30d: number; emerg30d: number; lastAt: string | null;
   sessions: number; totalSecs: number; secs7d: number; avgSecsPerActiveDay: number;
+  /** e2e·내부 테스트 계정 — 행은 표시하되 요약 수치에서는 제외된다 */
+  isTest: boolean;
 }
 interface Overview {
-  summary: { totalUsers: number; byRole: Record<string, number>; activeToday: number; active7d: number; msgs7dTotal: number; secs7dTotal: number; emerg7d: number; emergUnnotified: number };
+  summary: { totalUsers: number; testUsers: number; byRole: Record<string, number>; activeToday: number; active7d: number; msgs7dTotal: number; secs7dTotal: number; emerg7d: number; emergUnnotified: number };
   users: UserRow[];
   emergencies: { level: number | null; evidence: string; notified: boolean; at: string; userName: string }[];
 }
@@ -83,7 +85,9 @@ export default function AdminPage() {
 
   const { summary } = data;
   const cards: { label: string; value: string; warn?: boolean }[] = [
-    { label: "전체 회원", value: `${summary.totalUsers}명` },
+    // 요약은 실사용 기준 — 테스트 계정 수는 괄호로 따로 보여 오해를 막는다
+    //   (2026-10-02 이전엔 테스트 311개가 '전체 회원'에 합산돼 317명으로 표시됐다)
+    { label: "전체 회원", value: `${summary.totalUsers}명${summary.testUsers ? ` (+테스트 ${summary.testUsers})` : ""}` },
     { label: "어르신 / 전문가 / 일반", value: `${summary.byRole.user ?? 0} / ${summary.byRole.pro ?? 0} / ${summary.byRole.general ?? 0}` },
     { label: "오늘 사용 / 7일 사용", value: `${summary.activeToday}명 / ${summary.active7d}명` },
     { label: "7일 발화량", value: `${summary.msgs7dTotal}건` },
@@ -138,7 +142,10 @@ export default function AdminPage() {
                   .map((u) => (
                     <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800 [&>td]:whitespace-nowrap">
                       <td className="py-2 pr-3">
-                        <div className="font-medium">{u.name}</div>
+                        <div className="font-medium">
+                          {u.name}
+                          {u.isTest && <span className="ml-1.5 rounded bg-zinc-200 px-1 py-0.5 text-[10px] font-normal text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">테스트</span>}
+                        </div>
                         <div className="max-w-[200px] truncate text-xs text-zinc-400" title={u.email}>{u.email}</div>
                       </td>
                       <td className="py-2 pr-3">

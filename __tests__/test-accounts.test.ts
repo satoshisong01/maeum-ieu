@@ -82,3 +82,39 @@ describe("통계용 테스트 계정 판정 (usage-stats) — 워치독보다 �
     expect(isTest("ops@firstcorea.com")).toBe(true);
   });
 });
+
+/**
+ * 테스트 트래픽이 '실사용 지표'로 새어 들어가는 지점의 회귀 고정.
+ *
+ * 2026-10-02에 두 곳에서 같은 오염이 확인됐다:
+ *   · scripts/usage-stats.ts — 일일 상한·가격 결정의 입력
+ *   · app/api/admin/overview — 관리자 대시보드('전체 회원 317명', 실제 6명)
+ * 한 곳만 고치면 F3(파서 드리프트)가 남는다. 두 지점 모두 고정한다.
+ */
+describe("실사용 지표에서 테스트 트래픽이 빠져 있다", () => {
+  it("admin overview 요약이 실사용 행만 집계한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/admin/overview/route.ts", "utf-8");
+    // 🔒 요약 집계가 userRows(전수)로 되돌아가면 대시보드가 다시 거짓을 보고한다
+    expect(src).toMatch(/const realRows = userRows\.filter\(\(u\) => !u\.isTest\)/);
+    expect(src).toMatch(/totalUsers: realRows\.length/);
+    for (const metric of ["activeToday", "active7d", "msgs7dTotal", "secs7dTotal"]) {
+      const line = src.split("\n").find((l) => l.includes(`const ${metric} =`)) ?? "";
+      expect(line, `${metric}는 realRows 기준이어야 한다`).toContain("realRows");
+    }
+  });
+
+  it("admin overview가 테스트 행을 숨기지는 않는다 (관리자 디버깅용)", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/admin/overview/route.ts", "utf-8");
+    // 🔒 users: realRows 로 바뀌면 관리자가 테스트 계정 상태를 볼 수 없게 된다
+    expect(src).toMatch(/users: userRows/);
+    expect(src).toMatch(/isTest: isTestAccount/);
+  });
+
+  it("usage-stats가 공유 판정을 쓴다 (자체 목록으로 되돌아가면 실패)", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("scripts/usage-stats.ts", "utf-8");
+    expect(src).toMatch(/isTestAccount\(email\) \|\| TEST_PATTERNS/);
+  });
+});

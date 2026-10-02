@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/admin";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { isTestAccount } from "@/lib/test-accounts";
 
 export async function GET() {
   const session = await getAdminSession();
@@ -109,6 +110,9 @@ export async function GET() {
         id: u.id,
         name: cleanName(u.name, u.email),
         email: u.email ?? "",
+        // 테스트 계정은 **숨기지 않는다**(관리자는 디버깅을 위해 봐야 한다).
+        //   대신 플래그를 달아 아래 요약 수치에서 빼고, 화면에서 구분해 표시한다.
+        isTest: isTestAccount(u.email ?? ""),
         role: u.screeningMode ?? "user",
         createdAt: u.createdAt.toISOString(),
         guardians: guardianCount.get(u.id) ?? 0,
@@ -125,17 +129,27 @@ export async function GET() {
       };
     });
 
+    /**
+     * ⚠ 요약 수치는 **실사용 계정만** 집계한다(2026-10-02 수정).
+     *   이전에는 전수 집계라 "전체 회원 317명"으로 표시됐는데 실제 실사용은 6명이었다.
+     *   나머지 311개는 scripts/e2e-roles.mjs가 만든 role_*@example.com 테스트 계정이다.
+     *   같은 오염이 scripts/usage-stats.ts에도 있었고, 그 숫자가 일일 상한·가격 결정의
+     *   근거로 쓰였다 — 대시보드도 같은 거짓을 경영 판단에 공급하고 있었다.
+     *   (테이블 행은 그대로 내려보내고 isTest 플래그로 구분한다 — 관리자는 테스트도 봐야 한다.)
+     */
+    const realRows = userRows.filter((u) => !u.isTest);
     const byRole = { user: 0, pro: 0, general: 0 } as Record<string, number>;
-    for (const u of userRows) byRole[u.role] = (byRole[u.role] ?? 0) + 1;
-    const activeToday = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= dayStart).length;
-    const active7d = userRows.filter((u) => u.lastAt && new Date(u.lastAt) >= weekAgo).length;
-    const msgs7dTotal = userRows.reduce((s, u) => s + u.msgs7d, 0);
-    const secs7dTotal = userRows.reduce((s, u) => s + u.secs7d, 0);
+    for (const u of realRows) byRole[u.role] = (byRole[u.role] ?? 0) + 1;
+    const activeToday = realRows.filter((u) => u.lastAt && new Date(u.lastAt) >= dayStart).length;
+    const active7d = realRows.filter((u) => u.lastAt && new Date(u.lastAt) >= weekAgo).length;
+    const msgs7dTotal = realRows.reduce((s, u) => s + u.msgs7d, 0);
+    const secs7dTotal = realRows.reduce((s, u) => s + u.secs7d, 0);
     const emergUnnotified = emergRecent.filter((e) => !e.notifiedAt).length;
 
     return NextResponse.json({
       summary: {
-        totalUsers: userRows.length,
+        totalUsers: realRows.length,
+        testUsers: userRows.length - realRows.length,
         byRole,
         activeToday,
         active7d,
