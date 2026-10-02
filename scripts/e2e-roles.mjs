@@ -175,12 +175,24 @@ async function login(page, email) {
       await page.locator('input[type="password"]').first().fill(PW);
       await page.waitForTimeout(400);
       await page.getByRole("button", { name: "로그인" }).click();
-      // 동의 게이트 통과 — 신규/미동의 계정은 /consent로 리다이렉트됨 → 동의 후 /chat
-      await page.waitForURL(/\/(chat|consent)/, { timeout: 25000 });
+      /**
+       * ⚠ 2026-10-02 수정 — 로그인 후 동선이 바뀌어 있었는데 스크립트가 낡아 있었다.
+       *   예전: 로그인 → /chat
+       *   현재: 로그인 → `/`(역할별 랜딩을 서버가 결정) → 미동의면 /consent, 동의했으면
+       *         어르신 홈(큰 버튼) 또는 /expert·/mental.
+       *   그래서 `waitForURL(/\/(chat|consent)/)`가 25초 타임아웃으로 죽었고, 그 실패가
+       *   "✅ 전 구간 클린 · exit 0"으로 보고되어 **라이브 검증이 통째로 멈춘 줄도 몰랐다**.
+       */
+      await page.waitForURL(/\/(consent|chat|mental|expert)|3100\/$/, { timeout: 25000 });
       if (page.url().includes("/consent")) {
         await page.getByRole("checkbox").first().check().catch(() => {});
         await page.getByRole("button", { name: "동의하고 시작하기" }).click();
-        await page.waitForURL(/\/chat/, { timeout: 20000 });
+        await page.waitForTimeout(2500);
+      }
+      // 어르신 홈에 도착했으면 '대화하기'(링크) 를 눌러 대화 화면으로 — 버튼이 아니라 <a>다.
+      if (!/\/(chat|mental|expert)/.test(page.url())) {
+        const talk = page.locator('a[href^="/chat"], a[href^="/live"]').first();
+        if (await talk.count()) { await talk.click(); await page.waitForTimeout(1500); }
       }
       return;
     } catch (e) { if (attempt === 2) throw e; await page.waitForTimeout(1500); }
@@ -189,12 +201,27 @@ async function login(page, email) {
 
 const INPUT_SEL = 'input[placeholder="메시지를 입력하세요."]';
 async function enterTextChat(page) {
-  await page.waitForSelector('button:has-text("글씨로 대화하기")', { timeout: 12000 }).catch(() => {});
-  await page.evaluate(() => {
-    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.includes("글씨로 대화하기"));
-    if (btn) btn.click();
-  });
-  await page.waitForSelector(INPUT_SEL, { timeout: 12000 });
+  /**
+   * ⚠ 2026-10-02 수정 — 모드 선택 화면의 구조가 바뀌어 있었다.
+   *   어르신(user) 모드에서는 '글씨로 대화하기'가 평소 숨겨져 있고(음성이 기본 동선),
+   *   마이크 거부 상태에서만 드러난다. headless에는 마이크가 없으므로
+   *   '음성으로 대화하기'를 먼저 눌러 micDenied를 유발해야 텍스트 버튼이 나타난다.
+   *   예전 스크립트는 곧장 '글씨로 대화하기'를 찾다 못 찾고 입력창 대기에서 12초 타임아웃으로 죽었다.
+   */
+  const clickByText = (needle) => page.evaluate((n) => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent.includes(n));
+    if (b) { b.click(); return true; }
+    return false;
+  }, needle);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await clickByText("글씨로 대화")) break;        // 전문가·일반인: 바로 보인다
+    if (await page.locator(INPUT_SEL).count()) break;   // 이미 텍스트 모드
+    // 어르신: 음성 시도 → 마이크 없음(headless) → micDenied → 텍스트 버튼 노출
+    if (!(await clickByText("음성으로 대화하기"))) await clickByText("대화 시작");
+    await page.waitForTimeout(2500);
+  }
+  await page.waitForSelector(INPUT_SEL, { timeout: 15000 });
   await page.waitForFunction(() => [...document.querySelectorAll("p")].filter((p) => p.textContent.trim()).length >= 1, { timeout: 15000 }).catch(() => {});
 }
 

@@ -163,3 +163,42 @@ describe("비로그인", () => {
     expect(t.length).toBeGreaterThan(100);
   });
 });
+
+/**
+ * 어르신 마이크 실패 시 텍스트 탈출구가 존재하는가 (2026-10-02 발견).
+ *
+ * 결함: app/chat/page.tsx의 '글씨로 대화하기' 버튼이 `screeningMode !== "user"`로 감싸져 있어
+ *   어르신에게는 **항상** 숨겨져 있었다. 그런데 바로 아래 micDenied 안내문은
+ *   "'글씨로 대화하기'를 눌러 텍스트로 대화할 수도 있어요"라고 말한다.
+ *   textOnly로 가는 다른 입구('글씨 대화로 전환')는 대화가 시작된 화면 안에 있어,
+ *   대화를 시작하지 못하는 이 상태에서는 닿을 수 없다 → 어르신이 앱을 전혀 못 쓴다.
+ *   이 제품의 1차 사용자가 그 어르신이고, 마이크 권한 거부는 흔한 실패다.
+ */
+describe("어르신 마이크 실패 탈출구", () => {
+  it("micDenied면 어르신에게도 '글씨로 대화하기'가 보인다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/chat/page.tsx", "utf-8");
+    // 🔒 `screeningMode !== "user" &&`로 되돌아가면 어르신이 다시 막다른 길에 갇힌다
+    expect(src).toMatch(/\(screeningMode !== "user" \|\| micDenied\) && \(/);
+    // '모드 선택 화면' 블록만 본다 — 대화 중 '글씨 대화로 전환'은 별개이고, 거기선 어르신도
+    //   "또는 글씨로 입력하세요." 입력창을 쓸 수 있어 막다른 길이 아니다.
+    const selectIdx = src.indexOf("음성으로 대화하기");
+    expect(selectIdx).toBeGreaterThan(-1);
+    const block = src.slice(Math.max(0, selectIdx - 1500), selectIdx + 1500);
+    expect(block, "모드 선택 화면의 텍스트 버튼이 user에게 무조건 숨겨지면 안 된다")
+      .not.toMatch(/\{screeningMode !== "user" && \(/);
+  });
+
+  it("안내문이 가리키는 버튼이 같은 화면에 실재한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/chat/page.tsx", "utf-8");
+    const guideIdx = src.indexOf("를 눌러 텍스트로 대화할 수도 있어요");
+    expect(guideIdx).toBeGreaterThan(-1);
+    // 안내문과 버튼이 같은 '모드 선택 화면' 블록 안에 있어야 한다 — 버튼이 먼저 나온다
+    const btnIdx = src.lastIndexOf("글씨로 대화하기", guideIdx);
+    expect(btnIdx, "안내문보다 앞에 버튼이 있어야 한다").toBeGreaterThan(-1);
+    // 그 버튼이 user 모드에서도 렌더될 조건인지
+    const gateIdx = src.lastIndexOf("screeningMode !== \"user\"", btnIdx);
+    expect(src.slice(gateIdx, btnIdx)).toContain("micDenied");
+  });
+});

@@ -1934,8 +1934,28 @@ export default function ChatPage() {
               <span className="text-2xl font-bold">대화 시작</span>
             </button>
             <p className="text-lg text-zinc-500 dark:text-zinc-400">버튼을 눌러 편하게 이야기 나눠요.</p>
+            {/**
+              * 마이크를 못 쓰는 어르신의 탈출구 (2026-10-02 추가).
+              *
+              * 이전에는 이 분기에 **텍스트 대안이 아예 없었다.** 어르신(user)은 로그인하면
+              * 홈 → /chat?start=1 → 이 elderIntro 화면으로 오는데, 마이크가 거부·부재면
+              * '대화 시작'을 눌러도 아무 일이 없고 "권한을 허용한 뒤 다시 눌러주세요"만 떴다.
+              * 다른 입구(모드 선택 화면의 '글씨로 대화하기', 대화 중 '글씨 대화로 전환')는
+              * elderIntro가 우선 렌더되거나 대화가 시작된 뒤라서 **닿을 수 없었다.**
+              * 즉 마이크 하나로 이 제품의 1차 사용자가 앱을 통째로 못 쓰는 상태였다.
+              * (headless 브라우저 재현으로 확인 — 버튼 1개, 입력창 0개, 눌러도 무반응)
+              */}
             {micDenied && (
-              <p className="text-sm text-red-500">마이크를 사용할 수 없어요 — 권한을 허용한 뒤 다시 눌러주세요.</p>
+              <div className="flex flex-col items-center gap-3">
+                <p className="text-sm text-red-500">마이크를 사용할 수 없어요 — 권한을 허용한 뒤 다시 눌러주세요.</p>
+                <button
+                  type="button"
+                  onClick={startTextMode}
+                  className="rounded-full bg-zinc-200 px-8 py-4 text-lg font-medium text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+                >
+                  ⌨️ 글씨로 대화하기
+                </button>
+              </div>
             )}
           </div>
         ) : (
@@ -2015,7 +2035,16 @@ export default function ChatPage() {
                 >
                   🎤 음성으로 대화하기
                 </button>
-                {screeningMode !== "user" && (
+                {/**
+                  * 어르신(user)에게는 평소 숨긴다 — 버튼이 많으면 혼란스럽고, 이 모드의 기본 동선은 음성이다.
+                  * ⚠ 단 micDenied면 **반드시 보여야 한다**(2026-10-02 수정).
+                  *   이전엔 user 모드에서 무조건 숨겨져, 마이크가 거부·부재인 어르신은
+                  *   아래 안내문이 "'글씨로 대화하기'를 눌러 텍스트로 대화할 수도 있어요"라고 말하는데
+                  *   **그 버튼이 화면에 없는** 막다른 길에 갇혔다. textOnly로 가는 다른 입구(아래 '글씨 대화로 전환')는
+                  *   대화가 이미 시작된 화면 안에 있어, 대화를 시작조차 못 하는 이 상태에서는 닿을 수 없다.
+                  *   이 제품의 1차 사용자가 바로 그 어르신이고, 마이크 거부는 흔한 실패다.
+                  */}
+                {(screeningMode !== "user" || micDenied) && (
                   <button
                     type="button"
                     onClick={startTextMode}
