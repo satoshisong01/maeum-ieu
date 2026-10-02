@@ -19,10 +19,12 @@ import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
+import { isLiveBetaEnabledServer } from "@/lib/feature-flags";
 
 export async function POST(req: Request) {
   // 라이브 베타 서버 게이트(2026-07-07 감사) — UI 링크 숨김과 짝. 플래그 없으면 저장 경로도 차단.
-  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") {
+  //   ⚠ 서버 인가는 **런타임 제어 가능한** 플래그를 쓴다(2026-10-02) — 상세는 lib/feature-flags.ts.
+  if (!isLiveBetaEnabledServer()) {
     return NextResponse.json({ error: "라이브 베타는 현재 비활성화되어 있습니다." }, { status: 403 });
   }
   const session = await getServerSession(authOptions);

@@ -300,7 +300,14 @@ export async function notifyGuardian(payload: NotifyPayload): Promise<NotifyResu
   // 5) 이메일 — 보호자 이메일(암호화 저장)로 발송. RESEND_API_KEY 없으면 skip.
   if (user?.guardianEmail) {
     const email = decryptPII(user.guardianEmail);
-    if (email) {
+    /**
+     * ⚠ 복호 실패를 **조용히 넘기지 않는다**(2026-10-02). 실패하면 decryptPII가 암호문을
+     *   그대로 돌려주고, sendEmergencyEmail의 수신자 형식 검사가 그걸 버려 **이메일 채널이
+     *   말없이 사라졌다**. ENCRYPTION_KEY 교체 때 전 보호자에게 동시에 일어난다.
+     */
+    if (email && email.startsWith("enc:")) {
+      console.error("[emergency-notify] 🔴 보호자 이메일 복호화 실패 — ENCRYPTION_KEY 확인 필요. 이메일 채널 사용 불가");
+    } else if (email) {
       const ok = await sendEmergencyEmail(email, {
         userName: payload.userName,
         level: payload.level,

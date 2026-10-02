@@ -84,6 +84,23 @@ if (unpriced) console.log(`\n⚠ 공시가를 모르는 모델 ${unpriced}종 �
 const turns = rows.filter((r) => /companion|chat/i.test(r.label)).reduce((s, r) => s + r.n, 0) || rows[0].n;
 console.log(`\n합계 ${totalKrw.toFixed(0)}원 / 추정 턴 ${turns} → **턴당 ${(totalKrw / turns).toFixed(2)}원**`);
 
+// 파생 지표 — 비용 "구조"가 의도대로인지 보는 눈. 총액만 보면 원인을 못 찾는다.
+const cnt = (re) => rows.filter((r) => re.test(r.label)).reduce((s, r) => s + r.n, 0);
+const probe = rows.filter((r) => /companion/.test(r.label) && r.model.includes("3.8")).reduce((s, r) => s + r.n, 0);
+const chat = cnt(/companion/);
+const lite = cnt(/analyzer-lite/);
+const primary = rows.filter((r) => r.label === "analyzer").reduce((s, r) => s + r.n, 0);
+const backstop = cnt(/emergency-llm/);
+console.log(`파생: 확인턴 ${probe}/${chat}${chat ? ` (${((probe / chat) * 100).toFixed(0)}%, 목표 ~20%)` : ""}`);
+console.log(`      분석기 lite ${lite} · primary ${primary} (probe 직행 포함 — 순수 승급률은 primary−probe컨텍스트)`);
+console.log(`      응급 LLM 백스톱 ${backstop}회 (${((backstop / lines) * 100).toFixed(1)}%) — 사전필터가 평범한 발화를 걸러야 낮게 유지된다`);
+
+console.log(`
+⚠ **표본 편향을 먼저 확인할 것.** 이 수치는 로그에 남은 **모든** 호출의 평균이다.
+   안전 스팟 체크(응급 발화 집중)나 검진을 함께 돌린 로그라면 평상시 원가보다 높게 나온다.
+   덱의 기준값(턴당 9.6원)과 비교하려면 **e2e-roles 일상 대화만** 돌린 깨끗한 로그로 재측정할 것.
+   섞인 표본으로 "원가가 올랐다/내렸다"를 판정하면 그게 F7(측정이 거짓)이다.`);
+
 console.log(`
 ===== 품질 축 (가이드 §3 — 비용과 **같은 표**에서 판정한다) =====
 ⚠ 아래는 이 스크립트가 측정하지 않는다. 직접 돌리고 수치를 눈으로 확인할 것.

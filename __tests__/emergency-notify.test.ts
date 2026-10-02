@@ -350,3 +350,27 @@ describe("폭주 상한 — 읽기 OK·쓰기 실패에서도 막는다", () => 
   });
 });
 
+
+/**
+ * 복호화 실패를 조용히 넘기지 않는다 (2026-10-02 감사 #10).
+ * ENCRYPTION_KEY를 교체하면 저장된 보호자 연락처가 전부 복호 실패하고, 수신자 형식 검사가
+ * "enc:v1:…"을 버려 **이메일 채널이 말없이 사라진다**. 전 보호자에게 동시에 일어난다.
+ */
+describe("PII 복호 실패 — 이메일 채널이 말없이 사라지지 않는다", () => {
+  it("복호 실패(enc: 접두사 잔존) 시 이메일을 보내지 않고 에러를 남긴다", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(String(a[0])); });
+    try {
+      db.message.findFirst.mockResolvedValue(null);
+      db.user.findUnique.mockResolvedValue({ guardianWebhookUrl: null, guardianEmail: "enc:v1:broken", guardianName: null });
+      db.expertPatient.findMany.mockResolvedValue([]);
+      const { notifyGuardian } = await import("@/lib/chat/emergency-notify");
+      const r = await notifyGuardian({ ...P, userId: "decrypt-fail", messageId: undefined } as Parameters<typeof notifyGuardian>[0]);
+      // decryptPII 목이 원문을 그대로 돌려주므로 "enc:" 접두사가 남는다
+      expect(emailMock).not.toHaveBeenCalled();
+      expect(r.channels).not.toContain("email");
+      // 🔒 로그가 없으면 운영자는 이메일이 왜 안 갔는지 영영 모른다
+      expect(errors.some((e) => /복호화 실패/.test(e))).toBe(true);
+    } finally { spy.mockRestore(); }
+  });
+});

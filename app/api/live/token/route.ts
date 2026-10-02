@@ -20,6 +20,7 @@ import { getTimeContext } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
 import { getDailyUsage, buildDailyLimitReply } from "@/lib/usage/daily-limit";
+import { isLiveBetaEnabledServer } from "@/lib/feature-flags";
 
 const LIVE_MODEL = process.env.LIVE_MODEL || "gemini-3.1-flash-live-preview";
 // 발급 검증된 상한(14k)에서 여유를 둔 캡 — 프로필·요약이 비대해도 토큰 발급이 막히지 않게
@@ -27,7 +28,9 @@ const MAX_INSTRUCTION_LENGTH = 13000;
 
 export async function POST(req: Request) {
   // 라이브는 재구축 중 경로(2026-07-20 파일럿 일시중단) — 플래그 켠 환경에서만 발급.
-  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") {
+  //   ⚠ 서버 인가는 **런타임 제어 가능한** 플래그를 쓴다(2026-10-02). NEXT_PUBLIC_*는
+  //     빌드 시 번들에 인라인돼 재빌드 없이는 못 끈다 — 사고 시 즉시 차단이 불가능했다.
+  if (!isLiveBetaEnabledServer()) {
     return NextResponse.json({ error: "라이브 베타는 현재 비활성화되어 있습니다." }, { status: 403 });
   }
   const session = await getServerSession(authOptions);
