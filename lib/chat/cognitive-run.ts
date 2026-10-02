@@ -32,10 +32,19 @@ export async function runCognitiveAnalysis(params: {
     const hasHighScore = analysis.cognitiveChecks.some((c) => c.score >= 2 && (c.confidence ?? 1) >= HIGH_SCORE_MIN_CONF);
     const isAnomaly = analysis.isAnomaly || hasHighScore;
 
+    // ⚠ degraded / probeContext를 **반드시 함께** 남긴다. 이전엔 checks 개수만 찍어서
+    //   "분석기가 죽어 0건"과 "건드린 영역이 없는 평범한 수다 턴 0건"이 로그상 구별 불가였고,
+    //   선별이 멈춘 걸 알아챌 신호가 아예 없었다. degraded가 있으면 그 턴은 채점되지 않은 것이다.
     console.log("[cognitive-analysis]", JSON.stringify({
       isAnomaly, geminiSaid: analysis.isAnomaly, hasHighScore,
       checks: analysis.cognitiveChecks.length,
+      probeContext: probeContext === true, answeringProbe: answeringProbe === true,
+      ...(analysis.degraded ? { degraded: analysis.degraded } : {}),
     }));
+    if (analysis.degraded) {
+      // 경고 레벨로 한 줄 더 — 운영 로그 필터(warn/error)에 걸려야 눈에 띈다.
+      console.warn(`[cognitive-analysis] DEGRADED(${analysis.degraded}) — 이 턴은 채점되지 않았습니다. user=${userId}`);
+    }
 
     // 정상(score 0) 포함 모든 체크를 저장 — 같은 영역 질문 반복 방지에 필요
     if (analysis.cognitiveChecks.length > 0) {

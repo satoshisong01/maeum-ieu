@@ -166,7 +166,11 @@ cognitiveChecks 항목: {"domain": "영역", "score": 0, "confidence": 0.8, "evi
 `;
 
 function parseResult(raw: string): CognitiveAnalysisResult {
-  const empty: CognitiveAnalysisResult = { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
+  // 파싱 실패는 "이상 없음"이 아니라 "채점 못 함"이다 — 사유를 달아 로그에서 구분되게 한다.
+  const empty: CognitiveAnalysisResult = {
+    isAnomaly: false, analysisNote: "", cognitiveChecks: [],
+    degraded: raw.length === 0 ? "empty-response" : "parse-failed",
+  };
   try {
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
@@ -595,7 +599,7 @@ export async function analyzeCognitive(params: {
   answeringProbe?: boolean;
 }): Promise<CognitiveAnalysisResult> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
+  if (!apiKey) return { isAnomaly: false, analysisNote: "", cognitiveChecks: [], degraded: "no-api-key" };
 
   try {
     const historyLines = params.historyText.split("\n");
@@ -666,6 +670,6 @@ export async function analyzeCognitive(params: {
     return ensureCognitiveDomainLogged(lunarChecked, params.assistantResponse);
   } catch (e) {
     console.warn("Cognitive analyzer error:", e);
-    return { isAnomaly: false, analysisNote: "", cognitiveChecks: [] };
+    return { isAnomaly: false, analysisNote: "", cognitiveChecks: [], degraded: `error:${e instanceof Error ? e.message.slice(0, 120) : "unknown"}` };
   }
 }

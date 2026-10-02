@@ -680,7 +680,11 @@ async function handleAudioMessage(params: {
   // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
   //   확인 턴은 캐시 우회 — Gemini 캐시는 생성 모델(2.5)에 종속이라 상향 모델과 함께 쓸 수 없음.
   const prefixCache = useSearch || probeTurn ? null : await getPrefixCache(userId, stablePrompt);
-  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
+  // ⚠ 캐시 경로에도 probeTurn을 **반드시** 넘긴다. 빠지면 기본값 false가 되어 확인 턴이
+  //   COMPANION_MODEL(2.5-flash)로 조용히 강등된다 — 2026-09-30에 "지시 준수가 깨져
+  //   인지 선별이 소리 없이 멈춘" 사고와 같은 유형이다. 지금은 위 가드(probeTurn이면 캐시 미사용)
+  //   덕에 발현되지 않지만, 그 가드를 누가 지우는 순간 터진다. 인자로 못박아 둔다.
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache, probeTurn) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
   const repetitionHint = buildRepetitionHint(transcription);
   const wordGameHint = buildWordGameHint(historyText, transcription);
   const nameAnswerHint = buildNameAnswerHint(historyText, transcription);
@@ -974,7 +978,11 @@ async function handleTextMessage(params: {
   // 명시적 프롬프트 캐시(env PROMPT_CACHE=1): 안정 프리픽스를 캐시로, 동적 turnBlock은 contents로. 실패·비활성 시 비캐시 폴백.
   //   확인 턴은 캐시 우회 — Gemini 캐시는 생성 모델(2.5)에 종속이라 상향 모델과 함께 쓸 수 없음.
   const prefixCache = useSearch || probeTurn ? null : await getPrefixCache(userId, stablePrompt);
-  const model = prefixCache ? getTextModel("", useSearch, prefixCache) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
+  // ⚠ 캐시 경로에도 probeTurn을 **반드시** 넘긴다. 빠지면 기본값 false가 되어 확인 턴이
+  //   COMPANION_MODEL(2.5-flash)로 조용히 강등된다 — 2026-09-30에 "지시 준수가 깨져
+  //   인지 선별이 소리 없이 멈춘" 사고와 같은 유형이다. 지금은 위 가드(probeTurn이면 캐시 미사용)
+  //   덕에 발현되지 않지만, 그 가드를 누가 지우는 순간 터진다. 인자로 못박아 둔다.
+  const model = prefixCache ? getTextModel("", useSearch, prefixCache, probeTurn) : getTextModel(systemPrompt, useSearch, undefined, probeTurn);
 
   const repetitionHint = buildRepetitionHint(userContent);
   const wordGameHint = buildWordGameHint(historyText, userContent);

@@ -53,4 +53,11 @@ export interface CognitiveAnalysisResult {
   isAnomaly: boolean;
   analysisNote: string;
   cognitiveChecks: CognitiveCheck[];
+  /**
+   * 분석 자체가 실패/미실행이었음을 알리는 사유(정상 턴에는 없음).
+   * 왜 필요한가: 실패 경로가 모두 `cognitiveChecks: []`를 돌려주므로, 로그만 보면
+   *   "분석기가 죽었다"와 "건드린 영역이 없는 평범한 수다 턴"이 **완전히 같은 모양**이었다.
+   *   선별이 조용히 멈춘 걸 운영자가 알아챌 신호가 없다는 뜻이다(2026-09-30 사고와 같은 종류).
+   */
+  degraded?: string;
 }

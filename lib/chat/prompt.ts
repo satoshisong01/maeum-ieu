@@ -192,12 +192,37 @@ export async function buildSystemPrompt(params: {
   //   · 전문가 모드: proGuideBlock이 표준 문항·정답 비노출 규칙을 자체 포함하며, 프로토콜의 "자연스러운 수다" 지시와 충돌
   //   (회상 정답 노출 방어는 턴 단위 hint(buildRecallVerificationHint) + 후처리(stripRecallAnswerLeak)가 별도 담당)
   let includeProtocol = false;
+  /**
+   * 채점 결정적 턴 — 동반자 모델 상향(3.8-flash) + 분석기 정밀 채점 라우팅에 쓰인다.
+   * includeProtocol(= 프로토콜 **텍스트 주입** 여부)과 반드시 분리한다: pro 모드는 프로토콜을
+   * guideBlock이 자체 포함해 주입을 생략하지만, 채점 중요도는 제품 전체에서 가장 높다.
+   */
+  let scoringTurn = false;
   // 확인 턴 여부는 턴 인덱스 산술로 확정 — 분석기가 AI 발화를 정규식으로 추측하던 게이트를 대체.
   //   질문 풀(3,888개)이 일부러 우회 표현이라 정규식은 구조적으로 미탐이 남음(2026-09-30 라이브 측정).
   let prevProbeTurn = false;
   let probeDomainForTurn = "";
   if (mode === "pro") {
     guideBlock = buildProGuideBlock(companionName, completedKo, remainingKo, remaining.length);
+    /**
+     * 결함(2026-10-02 발견): pro 분기가 두 플래그를 **둘 다 안 켜서** probeTurn/probeContext가
+     *   이 모드에서 항상 false였다. 결과:
+     *   · 동반자 모델이 2.5-flash로 고정 — 그런데 이 모드의 지시문(buildProGuideBlock)은 제품에서
+     *     가장 엄격하다(한 응답에 한 문항만 / 정답·보기 비노출 / 영역 순서 준수 등 7개 규칙).
+     *     2026-09-30에 "모델을 내리면 확인턴 지시 준수가 깨져 선별이 조용히 멈춘다"고 실측한
+     *     바로 그 조건이며, 하필 **의사가 시행해 결과지에 올라가는** 경로다.
+     *   · 분석기가 lite 1차 채점으로 흘렀다(정규식 폴백이 표준 문항은 대개 잡아 부분 발현).
+     *   표준화 검사 시행은 정의상 채점 결정적이다 — 오늘 남은 영역이 있는 동안 둘 다 켠다.
+     *   remaining이 0이면 guideBlock이 "추가 출제 금지, 마무리만"을 지시하므로 상향하지 않는다.
+     * ⚠ 구조화 검진(exam_session 열림 + 대리검사)은 handleExamTurn의 결정적 채점기를 타므로
+     *   여기 영향 밖이다. 이 분기가 담당하는 건 **세션 없이 대화로 시행하는 pro 검진**이다.
+     */
+    scoringTurn = remaining.length > 0;
+    // pro는 매 턴이 표준 문항 시행이므로 사용자 발화는 **항상** 출제된 과제에 대한 답변이다
+    //   → answeringProbe=true로 즉시기억 과제 채점 보존 + 자발적 반복 필터 우회(정상 동작).
+    //   ⚠ userMsgCount로 "첫 턴 제외" 가드를 걸 수 없다 — 위 병렬 배치가 pro 모드에선 count 쿼리를
+    //     아예 건너뛰고 0을 넣으므로 그 가드는 항상 false가 되는 죽은 코드가 된다.
+    prevProbeTurn = remaining.length > 0;
   } else if (mode === "general") {
     // 일반인 모드 — 인지 선별(치매) 없음. 마음 건강 동반자: 일상 대화 + 자가점검(T3) 안내.
     // 질문 풀·인지 프로토콜 미주입(토큰 절감), 인지 확인 질문 금지.
@@ -225,6 +250,11 @@ export async function buildSystemPrompt(params: {
     const isProbeTurn = remaining.length > 0 && userTurnIndex % 5 === 3;
     includeProtocol = isProbeTurn;
     // 직전 턴(userTurnIndex-1)이 확인 턴이었으면 이번 발화가 그 답 — 정밀 채점 필요
+    //   ⚠ 위 isProbeTurn과 달리 `remaining.length > 0` 가드를 **의도적으로 걸지 않는다**(일관성 아님).
+    //     remaining은 '지금' 남은 영역이고, 질문은 '직전 턴'에 나갔다. 마지막 영역을 묻는 순간
+    //     ensureCognitiveDomainLogged가 그 영역을 기록해 다음 턴엔 remaining이 0이 되므로,
+    //     가드를 걸면 **마지막 문항의 답변 턴만 정밀 채점에서 빠진다**(위음성). 대가는 영역을 다 채운
+    //     날의 5턴마다 1번이 불필요하게 3.8-flash로 가는 비용뿐이라, 안전한 쪽으로 비대칭을 유지한다.
     prevProbeTurn = userTurnIndex > 1 && (userTurnIndex - 1) % 5 === 3;
 
     if (!isProbeTurn) {
@@ -275,5 +305,5 @@ export async function buildSystemPrompt(params: {
   const turnBlock = [includeProtocol ? (probeDomainForTurn ? sliceProtocolForDomain(cognitiveProtocol, probeDomainForTurn) : cognitiveProtocol) : "", guideBlock, adaptationBlock, envBlock, dateBlock].filter(Boolean).join("\n\n");
   const systemPrompt = [stablePrompt, turnBlock].filter(Boolean).join("\n\n");
 
-  return { systemPrompt, stablePrompt, turnBlock, envBlock: `${userBlock}\n${envBlock}`, probeTurn: includeProtocol, prevProbeTurn, userName, honorific, companionName, companionRelation, profile };
+  return { systemPrompt, stablePrompt, turnBlock, envBlock: `${userBlock}\n${envBlock}`, probeTurn: includeProtocol || scoringTurn, prevProbeTurn, userName, honorific, companionName, companionRelation, profile };
 }
