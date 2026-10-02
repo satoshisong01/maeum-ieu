@@ -50,3 +50,35 @@ describe("워치독이 이 제외를 실제로 쓴다", () => {
     expect(src).toMatch(/테스트 계정 \$\{testSkipped\}건/);
   });
 });
+
+/**
+ * 통계용 판정과 워치독용 판정의 **의도적 비대칭**을 고정한다.
+ *
+ * 2026-10-02 결함: scripts/usage-stats.ts가 자체 TEST_PATTERNS만 쓰다가
+ *   e2e가 만드는 `role_*@example.com`을 전부 '실사용자'로 집계했다(317중 285 불일치).
+ *   그 숫자가 일일 상한·가격 결정의 근거였다 — 측정이 거짓이면 그 위 판단이 전부 거짓이다.
+ */
+describe("통계용 테스트 계정 판정 (usage-stats) — 워치독보다 공격적이어야 한다", () => {
+  it("e2e 자동 생성 계정을 테스트로 분류한다", async () => {
+    const { isTest } = await import("../scripts/usage-stats");
+    // 🔒 이게 false가 되면 테스트 트래픽이 실사용량으로 집계돼 상한·가격을 잘못 정한다
+    expect(isTest("role_user_1759300000@example.com")).toBe(true);
+    expect(isTest("role_general_1759300001@example.com")).toBe(true);
+  });
+
+  it("사내·운영 계정도 실사용자로 세지 않는다", async () => {
+    const { isTest } = await import("../scripts/usage-stats");
+    for (const e of ["ops@firstcorea.com", "x@maeum.app", "y@maeum.kr", "z@admin.com"]) {
+      expect(isTest(e), e).toBe(true);
+    }
+  });
+
+  it("워치독(isTestAccount)보다 넓게 거른다 — 방향이 반대인 비대칭", async () => {
+    const { isTest } = await import("../scripts/usage-stats");
+    const { isTestAccount } = await import("../lib/test-accounts");
+    // 워치독은 보수적이어야 한다(실사용자를 테스트로 오분류하면 응급이 감시에서 빠진다)
+    expect(isTestAccount("ops@firstcorea.com")).toBe(false);
+    // 통계는 공격적이어야 한다(테스트를 실사용자로 세면 사용량을 과대평가한다)
+    expect(isTest("ops@firstcorea.com")).toBe(true);
+  });
+});
