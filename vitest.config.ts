@@ -51,8 +51,8 @@ export default defineConfig({
         //   남은 최저: emergency.ts 78.4%, emergency-notify.ts 79.1%.
         lines: 97,
         functions: 100,
-        branches: 89,
-        statements: 95,
+        branches: 91,
+        statements: 96,
       },
     },
   },
