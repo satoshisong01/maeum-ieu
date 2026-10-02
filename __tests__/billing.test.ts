@@ -235,6 +235,37 @@ describe("일일 상한과의 연동", () => {
     expect(u.exceeded).toBe(false);
   });
 
+  it("DAILY_TURN_LIMIT=0이면 제한 자체가 꺼진다", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    (prisma.message.count as unknown as { mockImplementation: (f: () => Promise<number>) => void })
+      .mockImplementation(async () => 500);
+    const { usage } = await load({ DAILY_TURN_LIMIT: "0" });
+    const u = await usage.getDailyUsage("conv-1", "elder-1");
+    expect(u.exceeded).toBe(false);
+    // 🔒 제한이 꺼져 있으면 구독 조회도 하지 않아야 한다(불필요한 쿼리)
+    expect(lastSubWhere).toBeNull();
+  });
+
+  /**
+   * ⚠ daily-limit.ts의 `if (ent.dailyTurnLimit <= 0) return { ...none, used }`는
+   *   **현재 설정 공간에서 도달 불가**다(2026-10-02 확인). 억지로 덮지 않고 사실을 남긴다:
+   *     · freeLimit <= 0이면 그 위에서 이미 반환한다
+   *     · freeLimit > 0이면 proDailyTurnLimit은 raw>0이거나 freeLimit*3이라 **항상 양수**
+   *   즉 "유료 무제한"을 표현할 방법이 지금은 없다. 방어 코드로 남겨 두는 건 괜찮지만,
+   *   무제한 요금제를 실제로 도입하려면 proDailyTurnLimit이 0을 반환할 경로부터 만들어야 한다.
+   */
+
+  it("사용량 조회가 실패하면 제한 미적용으로 통과한다 (fail-open)", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    (prisma.message.count as unknown as { mockImplementation: (f: () => Promise<never>) => void })
+      .mockImplementation(async () => { throw new Error("db down"); });
+    const { usage } = await load({ DAILY_TURN_LIMIT: "100" });
+    const u = await usage.getDailyUsage("conv-1", "elder-1");
+    // 🔒 DB 장애로 어르신의 대화를 끊으면 안 된다 — 사용량 제한은 비용 기능이지 안전 기능이 아니다
+    expect(u.exceeded).toBe(false);
+    expect(u.nearLimit).toBe(false);
+  });
+
   it("userId 없이 호출하면 무료 상한만 적용된다", async () => {
     const { prisma } = await import("@/lib/prisma");
     (prisma.message.count as unknown as { mockImplementation: (f: () => Promise<number>) => void })
@@ -305,5 +336,76 @@ describe("안전 경로 분리 — 과금이 안전을 막지 않는다", () => 
     const gate = s.slice(s.indexOf("let nearLimitRemaining"), s.indexOf("const historyText = buildHistoryText"));
     expect(gate).toMatch(/isEmergencyUtterance/);
     expect(gate).not.toMatch(/entitlement|subscription/i);
+  });
+});
+
+/**
+ * 혜택 대상(beneficiary) 결정 — **남의 계정에 혜택을 붙이지 못하게** 하는 가드.
+ *
+ * 2026-10-02 커버리지에서 이 분기가 미실행이었다. 보호자가 결제하면서 임의의
+ * patientUserId를 요청할 수 있는데, 연결(active) 검증이 없으면 생판 남의 계정에
+ * 유료 혜택이 붙는다. 코드 주석이 "클라이언트가 보낸 대상을 그대로 믿지 않는다"고
+ * 선언하고 있었지만 그 선언을 지키는 테스트가 없었다.
+ */
+describe("혜택 대상 결정 — 연결 검증", () => {
+  it("요청 대상이 active 연결이면 인정한다", async () => {
+    const { ent } = await load();
+    links = [{ expertUserId: "g-1", patientUserId: "elder-1", status: "active", createdAt: new Date("2026-01-01") }];
+    expect(await ent.resolveBeneficiary("g-1", "elder-1")).toBe("elder-1");
+  });
+
+  it("미연결 대상 요청은 **무시**하고 기본 규칙으로 떨어진다", async () => {
+    const { ent } = await load();
+    links = [{ expertUserId: "g-1", patientUserId: "elder-1", status: "active", createdAt: new Date("2026-01-01") }];
+    // 🔒 "elder-999"가 그대로 반환되면 남의 계정에 유료 혜택이 붙는다
+    expect(await ent.resolveBeneficiary("g-1", "elder-999")).toBe("elder-1");
+  });
+
+  it("연결이 끊긴(revoked) 대상 요청도 무시한다", async () => {
+    const { ent } = await load();
+    links = [{ expertUserId: "g-1", patientUserId: "elder-1", status: "revoked", createdAt: new Date("2026-01-01") }];
+    // active가 하나도 없으면 결제자 본인이 대상
+    expect(await ent.resolveBeneficiary("g-1", "elder-1")).toBe("g-1");
+  });
+
+  it("여러 명 연결 시 가장 먼저 연결된 어르신이 기본 대상", async () => {
+    const { ent } = await load();
+    links = [
+      { expertUserId: "g-1", patientUserId: "elder-late", status: "active", createdAt: new Date("2026-05-01") },
+      { expertUserId: "g-1", patientUserId: "elder-first", status: "active", createdAt: new Date("2026-01-01") },
+    ];
+    expect(await ent.resolveBeneficiary("g-1")).toBe("elder-first");
+  });
+
+  it("연결된 어르신이 없으면 결제자 본인 (어르신이 직접 결제한 경우)", async () => {
+    const { ent } = await load();
+    links = [];
+    expect(await ent.resolveBeneficiary("elder-self")).toBe("elder-self");
+  });
+
+  it("본인을 대상으로 요청하면 연결 조회 없이 통과", async () => {
+    const { ent } = await load();
+    links = [];
+    expect(await ent.resolveBeneficiary("elder-self", "elder-self")).toBe("elder-self");
+  });
+});
+
+describe("조회 실패 시 안전한 방향으로 떨어진다", () => {
+  it("구독 조회가 실패하면 무료 티어로 (유료로 오인하지 않는다)", async () => {
+    const { ent } = await load();
+    subThrows = true;
+    const e = await ent.getEntitlement("elder-1");
+    // 🔒 DB 장애를 유료로 처리하면 과금 없이 혜택이 새고, 그 상태가 조용히 지속된다
+    expect(e.tier).toBe("free");
+    subThrows = false;
+  });
+
+  it("결제자 본인이 수혜자면 source=purchaser, 아니면 beneficiary", async () => {
+    const { ent } = await load({ BILLING_PRO_PRODUCT_IDS: "maeum_pro_monthly" });
+    const future = new Date(Date.now() + 30 * 86400_000);
+    subRows = [{ productId: "maeum_pro_monthly", expiresAt: future, beneficiaryUserId: "elder-1", purchaserUserId: "elder-1" }];
+    expect((await ent.getEntitlement("elder-1")).source).toBe("purchaser");
+    subRows = [{ productId: "maeum_pro_monthly", expiresAt: future, beneficiaryUserId: "elder-1", purchaserUserId: "guardian-9" }];
+    expect((await ent.getEntitlement("elder-1")).source).toBe("beneficiary");
   });
 });
