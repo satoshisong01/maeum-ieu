@@ -49,10 +49,10 @@ export default defineConfig({
         // 2026-10-02 경과: 41.3%(도입) → 57.2%(342건 포함해 정직화) → 80.5% → 85.3%.
         //   emergency-llm 0→100%, emergency-notify 26→79%, korean-particle 65→100%.
         //   남은 최저: emergency.ts 78.4%, emergency-notify.ts 79.1%.
-        lines: 92,
-        functions: 94,
-        branches: 85,
-        statements: 90,
+        lines: 97,
+        functions: 100,
+        branches: 89,
+        statements: 95,
       },
     },
   },
