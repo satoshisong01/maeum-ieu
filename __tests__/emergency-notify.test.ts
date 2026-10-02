@@ -142,6 +142,40 @@ describe("saveMessages 부분 실패 — 응급 턴의 dedup 앵커 보존", () 
   });
 });
 
+describe("요청이 통째로 실패해도 L3는 살아남는다 (최후 안전망)", () => {
+  /**
+   * handleEmergencyL3에 **도달하기 전** DB 호출(동의 게이트·소유권 검증·buildSystemPrompt)이
+   * 터지면 500으로 끝나 119 안내도 보호자 알림도 0건이었다. 그 catch 경로를 고정한다.
+   */
+  it("POST catch가 emergencyLastResort로 흐른다 — 맨 500 return이 되살아나면 실패", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/chat/route.ts", "utf-8");
+    const tail = src.slice(src.lastIndexOf("} catch (e) {"));
+    // 🔒 `return NextResponse.json({ error: toSafeError(e) }, { status: 500 });`로 되돌아가면
+    //    RDS 장애 중 응급이 다시 조용히 사라진다
+    expect(tail).toMatch(/return emergencyLastResort\(e, sos\)/);
+  });
+
+  it("안전망은 DB를 치지 않는다 — prisma 호출이 없어야 한다", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/chat/route.ts", "utf-8");
+    const start = src.indexOf("async function emergencyLastResort(");
+    const body = src.slice(start, src.indexOf("export async function POST(", start));
+    expect(start).toBeGreaterThan(-1);
+    // 🔒 DB가 죽어서 들어온 경로다 — 여기서 또 조회하면 같은 예외로 안전망째 무너진다
+    expect(body).not.toMatch(/prisma\./);
+    expect(body).toMatch(/notifyGuardian/);
+    expect(body).toMatch(/detectEmergency/);
+  });
+
+  it("L3 미만은 안전망을 발동시키지 않는다 (500 유지)", async () => {
+    const { detectEmergency } = await import("@/lib/chat/emergency");
+    // 안전망 게이트가 쓰는 판정 자체를 고정 — 일상 발화가 L3로 새면 알림 폭주
+    expect(detectEmergency("오늘 점심 뭐 먹을까요").level).toBeLessThan(3);
+    expect(detectEmergency("숨이 안 쉬어져요").level).toBe(3);
+  });
+});
+
 describe("세 진입점의 알림 게이트가 대칭이다", () => {
   it("live·observe 경로가 저장 실패에 알림을 묶지 않는다", async () => {
     const fs = await import("node:fs/promises");

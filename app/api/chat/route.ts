@@ -33,6 +33,8 @@ import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-c
 import { buildSttHints } from "@/lib/chat/stt-hints";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
+import { getHonorific } from "@/lib/chat/prompt";
+import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
 import { maybeNotifyCognitiveDecline } from "@/lib/health/cognitive-alert";
 import { handleMentalFlow } from "@/lib/health/mental-flow";
 import { getMentalFollowupHint } from "@/lib/health/mental-followup";
@@ -819,13 +821,14 @@ async function handleEmergencyL3(params: {
    *   어르신에게 119 안내만 뜨고 **보호자 알림 0건·기록 0건**이었고,
    *   (b) `saveMessages`가 await라 쓰기 실패 시 예외가 전파돼 119 안내까지 못 보고 500이 됐다.
    *
-   * ⚠ **보장 범위를 오해하지 말 것.** 여기서 막는 건 "L3 판정 이후의 쓰기 실패"뿐이다.
-   *   이 함수에 **도달하기 전에** DB를 치는 지점이 아직 셋 남아 있고, 거기서 터지면
-   *   여전히 500 — 어르신은 119 안내도 못 듣는다:
-   *     · :1111 동의 게이트 `prisma.user.findUnique` (mode user/general에서 무조건 실행)
-   *     · :1159 conversationId 소유권 검증
-   *     · :1192 buildSystemPrompt 내부 Promise.all (prompt.ts)
-   *   즉 "RDS가 죽어도 119 안내는 나간다"는 **아직 참이 아니다**. 그 수정은 별도 작업.
+   * ⚠ **보장 범위를 정확히 알 것.** 여기서 막는 건 "L3 판정 이후의 쓰기 실패"뿐이다.
+   *   이 함수에 **도달하기 전에** DB를 치는 지점이 넷 남아 있다(동의 게이트 / 대리검사 링크·환자 조회 /
+   *   conversationId 소유권 검증 / buildSystemPrompt 내부 Promise.all). 거기서 터지면 이 함수는
+   *   아예 실행되지 않는다 — 대신 POST의 catch가 `emergencyLastResort`로 흘러
+   *   119 안내 + 보호자 알림을 DB 없이 재시도한다(2026-10-02).
+   *   따라서 "RDS가 죽어도 119 안내는 나간다"는 이제 참이지만, **그 턴은 DB에 기록되지 않는다**
+   *   (응답의 degraded:true가 그 사실을 알린다). 기록 공백은 dedup 앵커도 없다는 뜻이라,
+   *   같은 응급이 다음 턴에 다시 발송될 수 있다 — emergency-notify의 메모리 fan-out 상한이 그 선을 잡는다.
    */
   let userMsgId: string | undefined;
   if (conversationId) {
@@ -1075,11 +1078,82 @@ async function handleTextMessage(params: {
 
 // ─── POST ───────────────────────────────────────────────────────────────────
 
+/**
+ * 요청 처리가 통째로 실패했을 때의 **최후 응급 안전망**.
+ *
+ * 무엇을 보장하나: RDS가 죽어 /api/chat이 500으로 끝나는 상황에서도, 그 발화가 L3 응급이면
+ *   (1) 어르신에게 119 안내 멘트가 나가고 (2) 보호자 알림이 시도된다.
+ *   이전에는 둘 다 0이었다 — 어르신은 빈 화면을, 보호자는 아무 소식도 받지 못했다.
+ *
+ * ⚠ 이 함수는 **DB를 한 번도 치지 않는다.** 호칭·동반자 이름도 조회하지 않고 기본값을 쓴다
+ *   (그 조회가 터져서 여기로 왔을 수 있다). notifyGuardian 내부의 dedup 조회·보호자 연락처
+ *   조회도 실패하면 fail-open으로 FCM 토픽 발송까지는 간다 — 그게 이 경로의 최소 보장선이다.
+ *
+ * 비용: 음성 턴은 여기서 STT를 **다시** 돌린다. 예외 경로에서만 실행되므로 평시 비용은 0이고,
+ *   음성 전용 제품에서 전사 없이는 응급을 볼 방법 자체가 없어 감수할 가치가 있다
+ *   (일일 사용량 게이트에서 같은 판단을 했다).
+ */
+async function emergencyLastResort(
+  error: unknown,
+  sos: { userId: string; text: string; audio?: { data: string; mimeType: string } },
+): Promise<NextResponse> {
+  const fail = () => NextResponse.json({ error: toSafeError(error) }, { status: 500 });
+  try {
+    let content = sos.text;
+    if (!content && sos.audio) {
+      content = await transcribeAudio(sos.audio.data, sos.audio.mimeType).catch(() => "");
+    }
+    if (!content) return fail();
+
+    const result = detectEmergency(content);
+    if (result.level < 3) return fail();   // L1·L2는 대화 흐름 안에서 다뤄야 의미가 있다
+
+    console.error("[emergency] 요청 실패 중 L3 감지 — 최후 안전망 발동:", result.category);
+    const honorific = getHonorific(null, null);
+    const reply = buildEmergencyL3Reply(honorific, COMPANION_DEFAULTS.name, result.category);
+
+    const send = async () => {
+      try {
+        const r = await notifyGuardian({
+          userId: sos.userId, userName: honorific, level: 3, category: result.category,
+          content, aiReply: reply, createdAt: new Date(),
+        });
+        if (r.sent) console.log("[emergency-notify] last-resort sent:", r.channels);
+        else console.error("[emergency-notify] last-resort NOT sent:", r.reason);
+      } catch (e) {
+        console.error("[emergency-notify] last-resort error:", e);
+      }
+    };
+    try { after(send); } catch { await send(); }
+
+    // degraded: true — 클라이언트가 "기록은 남지 않았다"를 구분할 수 있게 한다(멘트는 정상 노출).
+    return NextResponse.json({
+      text: reply, role: "assistant",
+      emergency: { level: 3, category: result.category }, degraded: true,
+    });
+  } catch (e) {
+    console.error("[emergency] 최후 안전망 자체가 실패:", e);
+    return fail();
+  }
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
+
+  /**
+   * 최후 응급 안전망용 상태 — try 블록 **밖**에 둔다.
+   *
+   * 왜: handleEmergencyL3에 도달하기 전에 DB를 치는 지점이 넷이다(동의 게이트 / 대리검사 조회 /
+   *   conversationId 소유권 검증 / buildSystemPrompt 내부 Promise.all). 거기서 터지면 지금까지는
+   *   그냥 500이었고, 그 결과 응급 발화를 한 어르신은 **119 안내도 못 듣고 보호자 알림도 0건**이었다.
+   *   RDS가 흔들리면 바로 발생하는 경로지 가설이 아니다. 아래 catch에서 마지막으로 한 번 더 본다.
+   */
+  const sos: { userId: string; text: string; audio?: { data: string; mimeType: string } } = {
+    userId: session.user.id, text: "",
+  };
 
   try {
     const parsed = ChatRequestSchema.safeParse(await req.json());
@@ -1089,6 +1163,9 @@ export async function POST(req: Request) {
     const body = parsed.data as ChatRequestBody;
     const { messages, conversationId, isInitialGreeting, isReturningGreeting, isReEngage, reEngageAttempt, audio, context: ctx, proxyPatientId } = body;
     const actorId = session.user.id;
+    // 안전망에 원문 확보 — 이 아래 어디서 터지든 catch가 응급을 다시 평가할 수 있게.
+    sos.text = messages?.filter((m) => m.role === "user").at(-1)?.content ?? "";
+    if (audio?.data && audio?.mimeType) sos.audio = { data: audio.data, mimeType: audio.mimeType };
     // 모드는 세션의 계정 역할(screeningMode)에서 서버가 결정 — 클라이언트 body.mode는 신뢰하지 않음
     // (user 계정이 mode:"pro"를 보내 표준화 검사 모드를 스푸핑하는 것 차단)
     const mode: "user" | "pro" | "general" =
@@ -1149,6 +1226,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "일반인 계정은 대리 검사 대상이 아닙니다." }, { status: 400 });
       }
       userId = proxyPatientId;
+      sos.userId = proxyPatientId;   // 알림은 환자의 보호자에게 가야 한다
     }
 
     // 전문가 검진 상태머신 — 대리 검사 중 진행 세션이 있으면 항목단위 검진으로 라우팅
@@ -1317,6 +1395,6 @@ export async function POST(req: Request) {
     return handleTextMessage({ systemPrompt: sysPrompt, stablePrompt, turnBlock, envBlock, userId, conversationId, userContent: lastUserMessage, historyText, memories, messages: history, companionName, companionRelation, honorific, profile, timings: _t, mode, probeTurn, probeContext, answeringProbe });
   } catch (e) {
     console.error("chat api error", e);
-    return NextResponse.json({ error: toSafeError(e) }, { status: 500 });
+    return emergencyLastResort(e, sos);
   }
 }
