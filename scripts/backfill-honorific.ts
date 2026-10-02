@@ -3,8 +3,7 @@
  * 이미 설정된 사용자는 건너뜀.
  */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 function autoHonorific(age: number | null, gender: string | null): string | null {
   if (age == null || gender == null) return null;
   if (age >= 60) return gender === "male" ? "할아버지" : gender === "female" ? "할머니" : null;

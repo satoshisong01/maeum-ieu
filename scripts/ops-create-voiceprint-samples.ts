@@ -5,8 +5,7 @@
  * 원음성 미저장 — 벡터만.
  */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 async function main() {
   let connStr = process.env.DATABASE_URL!;
   try { const u = new URL(connStr); u.searchParams.set("sslmode", "no-verify"); connStr = u.toString(); } catch { /* noop */ }

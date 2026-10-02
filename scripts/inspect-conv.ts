@@ -1,6 +1,5 @@
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 async function main() {
   const convId = process.argv[2] || "cmnzeyeop000104jofjo0v49j";
   let connStr = process.env.DATABASE_URL!;

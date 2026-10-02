@@ -9,15 +9,18 @@ import "dotenv/config";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { VertexAI } from "@google-cloud/vertexai";
 
+// 함수 내부 지연 require를 정적 import로 올림(2026-10-02 린트 정리).
+//   pg.Pool·fs·os·path는 import만으로 부작용이 없어 로딩 시점 변경이 동작에 영향 없다.
+import fs from "fs";
+import os from "os";
+import path from "path";
+
 // ─── 인증 설정 ──────────────────────────────────────────────────────────────
 
 function ensureAuth() {
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) return;
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!keyJson) return;
-  const fs = require("fs");
-  const os = require("os");
-  const path = require("path");
   const keyPath = path.join(os.tmpdir(), "vertex-sa-key.json");
   if (!fs.existsSync(keyPath)) fs.writeFileSync(keyPath, keyJson);
   process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
@@ -145,11 +148,11 @@ function parseResponse(raw: string): ParsedResult {
     const end = raw.lastIndexOf("}");
     if (start === -1 || end === -1) return { isAnomaly: false, checks: [] };
     const parsed = JSON.parse(raw.slice(start, end + 1));
-    const checks = (parsed.cognitiveChecks || []).map((c: any) => ({
+    const checks = (parsed.cognitiveChecks || []).map((c: { domain?: string; score?: number }) => ({
       domain: c.domain || "",
       score: c.score || 0,
     }));
-    const hasHighScore = checks.some((c: any) => c.score >= 2);
+    const hasHighScore = checks.some((c: { score: number }) => c.score >= 2);
     return { isAnomaly: parsed.isAnomaly === true || hasHighScore, checks };
   } catch {
     return { isAnomaly: false, checks: [] };

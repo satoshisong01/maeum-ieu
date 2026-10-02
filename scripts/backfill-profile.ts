@@ -6,8 +6,7 @@
  */
 import "dotenv/config";
 import { extractAndSaveProfile } from "../lib/chat/profile-extractor";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 async function main() {
   const emailFilter = process.argv[2];
 

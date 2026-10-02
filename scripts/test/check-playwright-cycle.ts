@@ -1,6 +1,5 @@
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 (async () => {
   let s = process.env.DATABASE_URL!;
   try { const u = new URL(s); u.searchParams.set("sslmode", "no-verify"); s = u.toString(); } catch {}

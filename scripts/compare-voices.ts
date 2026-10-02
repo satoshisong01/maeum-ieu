@@ -7,6 +7,9 @@ import { GoogleGenAI } from "@google/genai";
 import { writeFile } from "node:fs/promises";
 import { pcmToWav } from "../lib/audio";
 
+/** Gemini TTS 응답의 오디오 파트 — SDK 타입이 inlineData를 노출하지 않아 최소 형태만 선언 */
+type GenAiLike = { candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[] };
+
 const SAMPLE_TEXT = "할아버지, 안녕하세요. 민지예요. 오늘 점심은 맛있게 드셨어요? 민지가 보고 싶어서 전화했어요.";
 const CANDIDATES = ["Leda", "Kore", "Aoede", "Puck", "Charon", "Zephyr", "Fenrir", "Schedar"];
 
@@ -24,7 +27,7 @@ async function main() {
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
         },
       });
-      const dataB64: string | undefined = (res as any)?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      const dataB64 = (res as GenAiLike)?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (!dataB64) { console.warn(`✗ ${voice} empty`); continue; }
       const wav = pcmToWav(Buffer.from(dataB64, "base64"));
       const path = `/tmp/voice-${voice}.wav`;

@@ -1,7 +1,6 @@
 /** 특정 메시지 인덱스 범위만 평가 (최근 N 대신 과거 구간 비교용) */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 interface MsgRow { id: string; role: string; content: string; isAnomaly: boolean | null; analysisNote: string | null; createdAt: Date; }
 
 const ANOMALY_SIGNATURES: { name: string; pattern: RegExp }[] = [

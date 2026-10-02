@@ -3,8 +3,7 @@
  * ⚠️ prisma db push 금지 — 수동 ALTER(멱등 IF NOT EXISTS). 실행 후 schema.prisma 갱신 + prisma generate.
  */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 async function main() {
   let connStr = process.env.DATABASE_URL!;
   try { const u = new URL(connStr); u.searchParams.set("sslmode", "no-verify"); connStr = u.toString(); } catch { /* noop */ }

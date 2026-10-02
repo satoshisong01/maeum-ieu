@@ -13,7 +13,7 @@ async function main() {
     conversationId: undefined,
     timeCtx: { dateStr: now.toLocaleString("ko-KR"), timeLabel: "낮", now },
     weather: { promptText: "날씨 정보 없음" },
-  } as any);
+  } as unknown as Parameters<typeof buildSystemPrompt>[0]);
   console.log("\n--- systemPrompt 앞 500자 ---");
   console.log(parts.systemPrompt.slice(0, 500));
   console.log("\ncompanion:", parts.companionName, parts.companionRelation);

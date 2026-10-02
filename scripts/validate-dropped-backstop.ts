@@ -27,7 +27,7 @@ async function main() {
   console.log(`검증 대상(dropped, 중복제거): ${dropped.length}건 — 실제 백스톱 LLM 전수 실행\n`);
 
   const misses: { text: string; cat: string; lvl: number }[] = [];
-  let done = 0, errNull = 0;
+  let done = 0;
   for (const t of dropped) {
     const r = await detectEmergencyLLM(t);  // 정규식 none이므로 백스톱이 곧 최종판정
     done++;

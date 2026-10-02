@@ -27,7 +27,7 @@ async function main() {
   });
   const elapsed = Date.now() - t0;
 
-  const part = (res as any)?.candidates?.[0]?.content?.parts?.[0];
+  const part = (res as { candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[] })?.candidates?.[0]?.content?.parts?.[0];
   const dataB64: string | undefined = part?.inlineData?.data;
   const mimeType: string = part?.inlineData?.mimeType || "(unknown)";
   if (!dataB64) {

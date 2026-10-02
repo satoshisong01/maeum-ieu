@@ -17,8 +17,7 @@
  *   recall / precision
  */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 interface MsgRow {
   id: string;
   role: string;

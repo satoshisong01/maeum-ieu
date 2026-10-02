@@ -31,6 +31,10 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   useEffect(() => {
     const t = getInitialTheme();
+    // 테마는 localStorage·OS 설정에서 오므로 서버 렌더 시점에 알 수 없다. 마운트 후 확정하지
+    //   않으면 하이드레이션 불일치가 난다(mounted 플래그와 짝을 이루는 의도된 패턴).
+    //   1회만 실행되어 연쇄 렌더가 없다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(t);
     applyTheme(t);
     setMounted(true);

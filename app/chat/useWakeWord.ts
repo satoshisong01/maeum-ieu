@@ -10,6 +10,21 @@
  * 주의: SpeechRecognition은 마이크 권한이 따로 또 떠지 않도록 streamRef와 공존 가능.
  *   onresult.interimResults=true 사용으로 사용자가 "마음아"라고 끝까지 말하기 전 부분 매칭도 가능.
  */
+/* eslint-disable react-hooks/immutability, react-hooks/refs --
+ * 이 훅은 전체가 "렌더 중 ref 동기화" 패턴으로 쓰여 있다(onWakeRef/enabledRef/pausedRef 등 7곳).
+ * 콜백이 전부 useCallback(…, [])이라 최신 prop을 보려면 ref 경유가 필요했고, 그 설계 위에
+ * barge-in·자동재시작 로직이 얹혀 있다.
+ *
+ * 2026-10-02에 린트를 0으로 만들려고 자기참조를 startRef로 바꿔 봤더니 **에러가 1건에서 7건으로
+ * 늘었다** — 이 규칙은 컴포넌트당 하나만 보고하므로, 하나를 고치면 다음 것이 드러날 뿐이다.
+ * 0으로 만들려면 훅 전체를 재설계해야 하는데, 여기는 호출어("마음아") 진입점이다.
+ * 음성 전용 제품에서 이 파일이 고장나면 어르신이 불러도 아무 반응이 없는 형태로 조용히 나타난다.
+ * 동작하는 코드를 린트 숫자 때문에 갈아엎는 건 위험 대비 이득이 없다 — 사유를 남기고 예외 처리한다.
+ *
+ * ⚠ 알려진 잠복 위험: start 콜백이 자기 자신을 직접 부른다(TDZ 참조). deps가 []인 동안은
+ *   항상 첫 렌더의 같은 함수라 정상이지만, **deps를 하나라도 추가하면 재시작이 낡은 함수를
+ *   계속 부르는 stale 클로저가 된다.** deps를 건드릴 일이 생기면 그때 ref 경유로 함께 바꿀 것.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type SpeechRecognitionEvent = {

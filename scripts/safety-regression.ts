@@ -14,6 +14,8 @@ import { factCheckResponse } from "../lib/chat/fact-checker";
 import { stripRecallAnswerLeak, normalizeImnida } from "../lib/chat/korean-particle";
 import { renderSystemPrompt, sliceProtocolForDomain } from "../lib/chat/constants";
 import { detectEmergency } from "../lib/chat/emergency";
+import type { FullProfile } from "../lib/chat/profile";
+import type { CognitiveCheck } from "../lib/chat/types";
 import { SOFT_SIGNAL } from "../lib/chat/emergency-llm";
 import { detectInappropriate } from "../lib/chat/moderation";
 import { salvageJsonLeak } from "../lib/chat/sanitize";
@@ -48,7 +50,7 @@ function check(name: string, ok: boolean, detail = "") {
 // ── A-1: grounding wholesale fallback 게이트 ──────────────────────────────
 console.log("\n[A-1] grounding wholesale fallback gate");
 {
-  const emptyProfile: any = { family: [], profile: null };
+  const emptyProfile: FullProfile = { family: [], profile: null, facts: [] };
   const fc = (aiText: string, currentUserText: string) =>
     factCheckResponse({ aiText, profile: emptyProfile, recentUserText: "", memories: "", honorific: "선생님", currentUserText });
 
@@ -265,7 +267,7 @@ console.log("\n[extractor] cleanName quotative 라고 fix");
 // 엉뚱한 이름을 노출. fallback 멘트가 input.companionName을 따라야 함.
 console.log("\n[A-6] fact-check fallback uses custom companion name (no hardcoded 민지)");
 {
-  const emptyProfile: any = { family: [], profile: null };
+  const emptyProfile: FullProfile = { family: [], profile: null, facts: [] };
   // 단일 ungrounded 이름 문장 → strip 후 <20자 → fallback 발동. recentUserText가 가족/이름 질문.
   const r = factCheckResponse({
     aiText: "준호 아드님이세요!", profile: emptyProfile, recentUserText: "막내아들 이름이 뭐였지",
@@ -303,7 +305,7 @@ console.log("\n[normalizeImnida] 받침없는 이름 '이에요'→'예요' (이
 // ── #11: 가족 순서 모순 검출 부활 (아드님/따님 존칭 형태 + order 없을 때 오매칭 금지) ──
 console.log("\n[relation-contradiction] 가족 순서 모순 검출 (아드님 존칭)");
 {
-  const prof: any = { family: [{ name: "영수", relation: "son", orderIdx: 2 }], profile: null };
+  const prof = { family: [{ name: "영수", relation: "son", orderIdx: 2 }], profile: null, facts: [] } as unknown as FullProfile;
   const fcWarn = (aiText: string) =>
     factCheckResponse({ aiText, profile: prof, recentUserText: "", memories: "", honorific: "할머니", currentUserText: "" }).warnings;
   // 영수는 둘째인데 "큰 아드님 영수" → 모순 경고 발생(존칭 형태에서도 검출돼야 함)
@@ -317,7 +319,7 @@ console.log("\n[relation-contradiction] 가족 순서 모순 검출 (아드님 �
 // ── #13: 존댓말 활용형이 장소 접미사(시/면)로 오추출 → wholesale 교체 오발동 금지 ──
 console.log("\n[fact-noun] 존댓말 밀집 응답 wholesale 교체 오발동 금지");
 {
-  const emptyProfile: any = { family: [], profile: null };
+  const emptyProfile: FullProfile = { family: [], profile: null, facts: [] };
   // 김치 사이클 재현 — '편하시군요/담그시는군요/먹어주면' 등 활용형만 있는 정상 응답 (>120자)
   const kimchi = "할머니, 김치는 직접 담가야 마음이 편하시군요. 아드님들도 할머니께서 담그시는 김치를 더 좋아하신다니 정말 자랑스러우시겠어요. 정성껏 담가서 아드님들이 맛있게 먹어주면 그걸로 충분하다고 하시는 말씀이 참 따뜻하네요.";
   const r = factCheckResponse({ aiText: kimchi, profile: emptyProfile, recentUserText: "김치는 내가 직접 담가야 맘이 편하지", memories: "", honorific: "할머니", currentUserText: "그럼그럼, 김치는 내가 직접 담가야 맘이 편하지. 아들들도 내 김치를 더 좋아하고." });
@@ -383,7 +385,7 @@ console.log("\n[perseveration] 동일 발화 3턴 연속 반복 안전망");
     "[방금] 사용자: 우리 어렸을 적엔 말이지, 밤에는",
     "[방금] AI: 천천히 들려주세요!",
   ]));
-  check("3연속 반복 → memory_immediate 마킹", r1.isAnomaly && r1.cognitiveChecks.some((c: any) => c.domain === "memory_immediate" && c.score >= 1));
+  check("3연속 반복 → memory_immediate 마킹", r1.isAnomaly && r1.cognitiveChecks.some((c: CognitiveCheck) => c.domain === "memory_immediate" && c.score >= 1));
 
   // 2턴 반복만으로는 미발동 (오탐 방지)
   const r2 = injectPerseverationCheck(empty, "오늘 날씨 참 좋네", hist([

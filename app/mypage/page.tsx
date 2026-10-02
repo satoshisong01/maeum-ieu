@@ -429,7 +429,7 @@ export default function MyPage() {
             <hr className="my-2 border-zinc-100 dark:border-zinc-700" />
 
             {/* AI 동반자 설정 */}
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (비우면 "민지 / 손녀")</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (비우면 &quot;민지 / 손녀&quot;)</p>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">AI가 나를 부를 호칭</label>
               <select

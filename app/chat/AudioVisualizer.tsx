@@ -25,6 +25,10 @@ export function AudioVisualizer({ stream, active, aiSpeaking, size: propSize }: 
 
     const dpr = window.devicePixelRatio ?? 1;
     const size = propSize ?? Math.min(280, window.innerWidth - 48);
+    // 캔버스 크기는 window.innerWidth에 의존해 서버에서 알 수 없다. 마운트 후 1회 측정해
+    //   state로 올리는 것이 이 값의 유일한 출처이고, deps([propSize])가 바뀔 때만 재실행되므로
+    //   연쇄 렌더로 번지지 않는다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDim(size);
     canvas.width = size * dpr;
     canvas.height = size * dpr;

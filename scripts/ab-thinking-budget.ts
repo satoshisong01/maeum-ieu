@@ -103,7 +103,8 @@ async function main() {
     const flip = Math.random() < 0.5; // A=384 or A=512 무작위
     const A = flip ? t.out[384] : t.out[512];
     const B = flip ? t.out[512] : t.out[384];
-    let j: any; try { j = await judge(t.text, A, B); } catch (e: any) { console.log(`  [judge fail ${t.tag}] ${e.message}`); continue; }
+    let j: { winner?: string; reason?: string } | undefined;
+    try { j = await judge(t.text, A, B); } catch (e) { console.log(`  [judge fail ${t.tag}] ${(e as Error).message}`); continue; }
     const sc384 = flip ? j.scoreA : j.scoreB;
     const sc512 = flip ? j.scoreB : j.scoreA;
     const safe384 = flip ? j.safetyConcernA : j.safetyConcernB;

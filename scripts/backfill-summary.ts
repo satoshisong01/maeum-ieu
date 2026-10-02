@@ -11,8 +11,7 @@
  */
 import "dotenv/config";
 import { summarizeMessages, rollupSummaries } from "../lib/chat/summarizer";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 /** 주의 시작(월요일 0시 KST) 반환 */
 function weekStart(d: Date): Date {
   const local = new Date(d);

@@ -15,8 +15,7 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 const ROOT = path.resolve(__dirname, "..");
 // systemPrompt에 직접 들어가는 정적 텍스트 파일만 검사.
 // route.ts는 코드+주석이라 LLM prompt와 무관 — 제외.

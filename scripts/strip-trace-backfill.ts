@@ -2,8 +2,7 @@
  * 과거 저장된 AI 메시지 중 reasoning trace가 선두에 노출된 건을 stripReasoningTrace로 정리.
  */
 import "dotenv/config";
-const { Pool } = require("pg");
-
+import { Pool } from "pg";
 function stripReasoningTrace(text: string): string {
   if (!text) return text;
   let t = text.trim();

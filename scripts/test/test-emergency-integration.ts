@@ -3,6 +3,10 @@
  */
 import "dotenv/config";
 
+// 함수 내부 지연 require를 정적 import로 올림(2026-10-02 린트 정리).
+//   pg.Pool·fs·os·path는 import만으로 부작용이 없어 로딩 시점 변경이 동작에 영향 없다.
+import { Pool } from "pg";
+
 const BASE_URL = "http://localhost:3000";
 const CONV_ID = "cmni80oop000704lk3m8ayf3b";
 const EMAIL = "abc@abc.com";
@@ -39,7 +43,6 @@ async function sendMsg(cookie: string, history: { role: string; content: string;
 }
 
 async function checkDb(content: string): Promise<{ level: number | null; evidence: string | null } | null> {
-  const { Pool } = require("pg");
   let connStr = process.env.DATABASE_URL!;
   try { const u = new URL(connStr); u.searchParams.set("sslmode", "no-verify"); connStr = u.toString(); } catch {}
   const pool = new Pool({ connectionString: connStr, ssl: { rejectUnauthorized: false } });

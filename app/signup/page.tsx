@@ -212,7 +212,7 @@ export default function SignupPage() {
             <option value="other">기타</option>
           </select>
           <hr className="border-zinc-100 dark:border-zinc-700" />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (선택 — 비우면 기본값 "민지 / 손녀")</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">AI 동반자 설정 (선택 — 비우면 기본값 &quot;민지 / 손녀&quot;)</p>
           <input
             type="text"
             placeholder="AI 이름 (예: 민지, 수진, 지훈)"

@@ -77,7 +77,7 @@ function extractJsonFromResponse(raw: string): { text: string; transcription: st
 function displayMessageContent(content: string): string {
   if (!content || !content.trim()) return content;
   // AI가 실수로 포함한 cognitiveChecks 등 기술 데이터 + moderation 메타 시그니처 제거
-  let cleaned = content
+  const cleaned = content
     .replace(/<!--\s*__mod:[^>]*-->/g, "")
     .replace(/cognitiveChecks\s*:\s*\[[\s\S]*?\]/g, "")
     .replace(/isAnomaly\s*:\s*(true|false)/gi, "")
@@ -1284,7 +1284,7 @@ export default function ChatPage() {
       return;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") return;
-    if (typeof window === "undefined" || !(window as any).MediaRecorder) {
+    if (typeof window === "undefined" || !("MediaRecorder" in window)) {
       alert("이 브라우저는 음성 녹음을 지원하지 않습니다.");
       return;
     }
