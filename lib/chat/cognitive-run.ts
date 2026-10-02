@@ -43,7 +43,8 @@ export async function runCognitiveAnalysis(params: {
     }));
     if (analysis.degraded) {
       // 경고 레벨로 한 줄 더 — 운영 로그 필터(warn/error)에 걸려야 눈에 띈다.
-      console.warn(`[cognitive-analysis] DEGRADED(${analysis.degraded}) — 이 턴은 채점되지 않았습니다. user=${userId}`);
+      // userId는 앞 8자만 — 이 저장소의 로깅 관행(PII 최소화). 전체 id는 로그 유출 시 계정 추적에 쓰인다.
+      console.warn(`[cognitive-analysis] DEGRADED(${analysis.degraded}) — 이 턴은 채점되지 않았습니다. user=${userId.slice(0, 8)}`);
     }
 
     // 정상(score 0) 포함 모든 체크를 저장 — 같은 영역 질문 반복 방지에 필요

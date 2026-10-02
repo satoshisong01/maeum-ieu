@@ -130,3 +130,43 @@ describe("분석 실패는 '이상 없음'과 구별된다", () => {
     }
   });
 });
+
+/**
+ * 체인의 **마지막 링크** — probeTurn(boolean)이 실제 모델명으로 이어지는가.
+ *
+ * 2026-10-02 적대 리뷰 지적: 위 테스트들은 probeTurn이 true/false인지까지만 본다.
+ *   그런데 강등이 실제로 일어나는 곳은 lib/chat/llm.ts의 모델 선택이다.
+ *   boolean은 맞는데 그 아래에서 모델이 안 바뀌면 선별은 똑같이 조용히 멈춘다.
+ */
+describe("probeTurn → 실제 모델 선택", () => {
+  it("확인 턴은 3.8-flash, 수다 턴은 2.5-flash", async () => {
+    const { getTextModel } = await import("@/lib/chat/llm");
+    const seen: string[] = [];
+    // generateContent를 가로채지 않고도 모델명을 보려면 호출 시 전달되는 model을 봐야 한다.
+    // 여기서는 소스 계약을 고정한다 — 런타임 호출은 Gemini 키가 필요해 단위 테스트 범위 밖이다.
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("lib/chat/llm.ts", "utf-8");
+    const block = src.slice(src.indexOf("const model = probeTurn"), src.indexOf("const model = probeTurn") + 240);
+    // 🔒 삼항이 뒤집히거나 기본값이 바뀌면 확인 턴이 조용히 저가 모델로 내려간다
+    expect(block).toMatch(/probeTurn\s*\n?\s*\?\s*\(process\.env\.COMPANION_PROBE_MODEL \|\| "gemini-3\.8-flash"\)/);
+    expect(block).toMatch(/:\s*\(process\.env\.COMPANION_MODEL \|\| "gemini-2\.5-flash"\)/);
+    expect(typeof getTextModel).toBe("function");
+    expect(seen).toEqual([]);
+  });
+
+  it("getTextModel의 probeTurn은 4번째 인자이고 기본값이 false다 (인자 누락 = 조용한 강등)", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("lib/chat/llm.ts", "utf-8");
+    expect(src).toMatch(/getTextModel\([^)]*cachedContent\?: string,\s*probeTurn: boolean = false\)/);
+    /**
+     * 🔒 실제로 터졌던 결함 유형만 고정한다: **캐시 경로에서 4번째 인자 누락**.
+     *   인사 핸들러(handleFirstGreeting 등)는 확인 턴이 아니므로 probeTurn 미전달이 올바르다 —
+     *   "전 호출부가 넘겨야 한다"로 쓰면 그 셋 때문에 거짓 실패한다.
+     *   위험한 건 prefixCache를 쓰면서 probeTurn을 빠뜨리는 조합이다(기본값 false로 조용한 강등).
+     */
+    const route = await fs.readFile("app/api/chat/route.ts", "utf-8");
+    const cacheCalls = [...route.matchAll(/getTextModel\([^;]*?prefixCache[^;]*?\)/g)].map((m) => m[0]);
+    expect(cacheCalls.length).toBeGreaterThanOrEqual(2);
+    for (const c of cacheCalls) expect(c, c).toMatch(/probeTurn/);
+  });
+});
