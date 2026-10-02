@@ -153,9 +153,9 @@ tbl = sh[11].table
 rows = [
     ("호출 지점", "모델  ·  턴당"),
     ("동반자 — 수다 턴 (80%)", "2.5-flash"),
-    ("동반자 — 인지 확인 턴 (20%)", "3.8-flash  ·  동반자 합 $0.0038"),
+    ("동반자 — 인지 확인 턴 (20%)", "3.8-flash  ·  동반자 합 $0.0036"),
     ("분석기 1차 (선별 라우팅)", "2.5-flash"),
-    ("분석기 정밀 채점", "3.8-flash  ·  분석기 합 $0.0031"),
+    ("분석기 정밀 채점", "3.8-flash  ·  분석기 합 $0.0033"),
     ("턴당 합계", "$0.0069  ≈  9.6원"),
 ]
 for i, (a, b) in enumerate(rows):
@@ -269,12 +269,12 @@ set_lines(sh[19], ["수령액", "9,900원 − 수수료 15%"])
 bar(sh[20], sh[21], 8415 * s8)
 set_text(sh[21], "8,415원")
 set_lines(sh[22], ["최대 원가", "하루 30턴 × 30일"])
-set_text(sh[23], "4,750")
-set_text(sh[24], "3,890")
-sh[23].width = Emu(int(4750 * s8 * IN))
-sh[24].left = Emu(int((sh[23].left / IN + 4750 * s8) * IN))
-sh[24].width = Emu(int(3890 * s8 * IN))
-sh[25].left = Emu(int((sh[24].left / IN + 3890 * s8 + 0.15) * IN))
+set_text(sh[23], "4,458")
+set_text(sh[24], "4,182")
+sh[23].width = Emu(int(4458 * s8 * IN))
+sh[24].left = Emu(int((sh[23].left / IN + 4458 * s8) * IN))
+sh[24].width = Emu(int(4182 * s8 * IN))
+sh[25].left = Emu(int((sh[24].left / IN + 4182 * s8 + 0.15) * IN))
 set_text(sh[25], "8,640원")
 
 # 안 B
@@ -284,12 +284,12 @@ set_lines(sh[30], ["수령액", "19,900원 − 수수료 15%"])
 bar(sh[31], sh[32], 16915 * s8)
 set_text(sh[32], "16,915원")
 set_lines(sh[33], ["최대 원가", "하루 50턴 × 30일"])
-set_text(sh[34], "7,920")
-set_text(sh[35], "6,480")
-sh[34].width = Emu(int(7920 * s8 * IN))
-sh[35].left = Emu(int((sh[34].left / IN + 7920 * s8) * IN))
-sh[35].width = Emu(int(6480 * s8 * IN))
-sh[36].left = Emu(int((sh[35].left / IN + 6480 * s8 + 0.15) * IN))
+set_text(sh[34], "7,430")
+set_text(sh[35], "6,970")
+sh[34].width = Emu(int(7430 * s8 * IN))
+sh[35].left = Emu(int((sh[34].left / IN + 7430 * s8) * IN))
+sh[35].width = Emu(int(6970 * s8 * IN))
+sh[36].left = Emu(int((sh[35].left / IN + 6970 * s8 + 0.15) * IN))
 set_text(sh[36], "14,400원")
 set_text(sh[37], "※ '최대 원가'는 상한을 매일 끝까지 쓰는 최악 가정. 실측 중앙값(하루 15턴)이면 원가 4,320원이라 두 안 모두 흑자다. "
                  "안 A는 사용량이 늘수록 적자로 돌아서고, 안 B는 상한까지 써도 2026년 단가에선 흑자다. "
