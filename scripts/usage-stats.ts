@@ -10,32 +10,20 @@
 import "dotenv/config";
 import { prisma } from "../lib/prisma";
 import { createHash } from "node:crypto";
-import { isTestAccount } from "../lib/test-accounts";
+import { isInternalOrTestAccount } from "../lib/test-accounts";
 
 /**
- * ⚠ 결함(2026-10-02 발견·수정): 이 목록만으로는 **테스트 계정의 92%를 놓쳤다.**
- *   scripts/e2e-roles.mjs가 만드는 계정은 `role_<role>_<ts>@example.com` 형태인데
- *   여기엔 `@example.com` 패턴이 없어 전부 '실사용자'로 집계됐다.
- *   실측: 317계정 중 287개가 @example.com인데 이 목록은 24개만 테스트로 분류 — 285개 불일치.
+ * ⚠ 결함(2026-10-02 발견·수정): 예전엔 이 스크립트 자신의 목록으로 판정했고,
+ *   그 목록은 **테스트 계정의 92%를 놓쳤다.** scripts/e2e-roles.mjs가 만드는 계정은
+ *   `role_<role>_<ts>@example.com` 형태인데 해당 패턴이 없어 전부 '실사용자'로 집계됐다.
  *   그 결과 "실사용 5140건 / 테스트 1575건(23%)"이라는 **정반대 결론**이 나왔고,
  *   그 숫자가 일일 상한·가격 결정의 근거로 쓰였다. 측정이 거짓이면 그 위 판단이 전부 거짓이다.
  *
- * 수정: lib/test-accounts.ts(RFC 2606/6761 예약 도메인)와 **합집합**으로 판정한다.
- *
- * ⚠ 두 모듈의 기준이 다른 것은 **의도적**이며, 방향이 반대라서 그렇다:
- *   · lib/test-accounts.ts (응급 워치독용) — 보수적. 실사용자를 테스트로 오분류하면
- *     그 어르신의 응급이 감시에서 조용히 빠진다. 그래서 예약 도메인만 본다.
- *   · 여기(통계용) — 공격적. 테스트를 실사용자로 세면 사용량을 과대평가해
- *     상한·가격을 잘못 정한다. 그래서 합집합으로 더 많이 걸러낸다.
- *   이 주석이 사라지면 누군가 "일관성"을 이유로 하나로 합칠 텐데, 그러면 둘 중 하나가 틀려진다.
+ * 지표용 판정은 lib/test-accounts.ts의 isInternalOrTestAccount **하나만** 쓴다.
+ *   (한때 이 파일에 판정자가 있어 앱 코드가 쓸 수 없었고, 그 때문에 관리자 대시보드가
+ *    다른 기준을 써서 같은 질문에 6명 vs 16명으로 갈렸다 — 가이드 F3.)
  */
-const TEST_PATTERNS = [
-  /@maeum\.test$/i, /@test\.com$/i, /^test/i, /^convtest/i, /^modeltest/i,
-  /^notifytest/i, /^abc/i, /^rudtjrch/i, /demo/i, /^qa/i, /playwright/i,
-  /^role_/i,                 // e2e-roles.mjs 자동 생성 계정
-  /@(maeum\.app|maeum\.kr|firstcorea\.com|admin\.com)$/i,  // 사내·운영 계정(실사용자 아님)
-];
-export const isTest = (email: string) => isTestAccount(email) || TEST_PATTERNS.some((p) => p.test(email));
+export const isTest = (email: string) => isInternalOrTestAccount(email);
 const h = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 6);
 
 function pct(sorted: number[], p: number): number {

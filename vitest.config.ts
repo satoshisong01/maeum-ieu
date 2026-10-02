@@ -32,6 +32,11 @@ const SAFETY_CRITICAL = [
 export default defineConfig({
   test: {
     globals: true,
+    /**
+     * 유닛 테스트에서 실제 DB 연결을 불가능하게 만든다 — 목(doMock)이 빗나간 적이 있고,
+     * 그때 유닛 테스트가 운영 RDS에 쓰기를 시도했다. 근거는 해당 파일 주석 참조.
+     */
+    setupFiles: ["./__tests__/setup/no-real-db.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary", "html"],
@@ -46,13 +51,18 @@ export default defineConfig({
        * __tests__/gate-scripts.test.ts를 통해 포함된다(그게 없으면 숫자가 거짓이 된다).
        */
       thresholds: {
-        // 2026-10-02 경과: 41.3%(도입) → 57.2%(342건 포함해 정직화) → 80.5% → 85.3%.
-        //   emergency-llm 0→100%, emergency-notify 26→79%, korean-particle 65→100%.
-        //   남은 최저: emergency.ts 78.4%, emergency-notify.ts 79.1%.
-        lines: 97,
+        // 2026-10-02 경과(분기): 41.3%(도입) → 57.2%(342건 포함해 정직화) → 80.5% → 85.3%
+        //   → 92.9% → **93.2%**. emergency-llm 0→100%, emergency-notify 26→93.9%,
+        //   korean-particle 65→100%, test-accounts 87.5→100%.
+        // 현재 최저 3개(여기가 다음 작업 대상): daily-limit 88.2% · severity 88.9% ·
+        //   emergency.ts 89.7%. severity.ts는 라인 87.1%로 라인 기준 최저이기도 하다.
+        // ⚠ 아래 수치는 실측(93.18/97.24/98.16/100)의 **내림**이다. 실측에 딱 붙이지 않는
+        //   이유는 1건짜리 리팩터로도 레드가 되면 게이트를 끄게 되기 때문이고,
+        //   1pp 이상 벌리지 않는 이유는 그만큼 회귀를 눈감아 주기 때문이다.
+        lines: 98,
         functions: 100,
-        branches: 91,
-        statements: 96,
+        branches: 93,
+        statements: 97,
       },
     },
   },

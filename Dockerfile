@@ -34,9 +34,15 @@ RUN npm ci --no-audit --no-fund
 # ── 2) 빌드 ──────────────────────────────────────────────────────────────────
 FROM node:22.20.0-bookworm-slim AS builder
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1     # next.config.ts가 이 값으로만 standalone을 켠다 — Vercel 빌드는 영향받지 않는다
-    #   (이전 전까지 프로덕션이 Vercel에 떠 있으므로 살아 있는 배포를 건드리지 않기 위함)
-    BUILD_STANDALONE=1
+# next.config.ts가 BUILD_STANDALONE=1일 때만 standalone을 켠다 — Vercel 빌드는 영향받지 않는다
+#   (이전 전까지 프로덕션이 Vercel에 떠 있으므로 살아 있는 배포를 건드리지 않기 위함)
+# ⚠ `#`은 **줄의 첫 글자일 때만** 주석이다. 인자와 같은 줄에 쓰면 주석이 아니라 인자가 되고,
+#   ENV는 "can't find = in #"으로, 뒤따르는 줄은 "unknown instruction"으로 빌드가 깨진다
+#   — 실제로 그렇게 깨뜨렸다(2026-10-02).
+#   (Docker는 연속(\) 블록 **안의 단독 주석 줄**은 제거해 주지만, 그 차이가 한 글자라
+#    한 번 당한 뒤로는 사내 규칙으로 둘 다 금지한다. 설명은 전부 명령 **위**에 둔다.
+#    __tests__/dockerfile-syntax.test.ts가 이 규칙을 강제한다.)
+ENV NEXT_TELEMETRY_DISABLED=1     BUILD_STANDALONE=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -55,11 +61,12 @@ RUN npm run build
 # ── 3) 런타임 ────────────────────────────────────────────────────────────────
 FROM node:22.20.0-bookworm-slim AS runner
 WORKDIR /app
+# KEEP_ALIVE_TIMEOUT은 ALB idle timeout(기본 60s)보다 크게 — 위 주석 4) 참조.
+#   ALB를 바꾸면 여기도 함께 올린다. (설명을 ENV 줄 사이에 끼우지 않는 이유는 위 ⚠ 참조)
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    # ALB idle timeout(기본 60s)보다 크게 — 위 주석 4) 참조. ALB를 바꾸면 여기도 함께 올린다.
     KEEP_ALIVE_TIMEOUT=65000
 
 # root로 돌리지 않는다 — 컨테이너 탈출 시 피해 범위를 줄인다

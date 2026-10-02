@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/admin";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { isTestAccount } from "@/lib/test-accounts";
+import { isInternalOrTestAccount } from "@/lib/test-accounts";
 
 export async function GET() {
   const session = await getAdminSession();
@@ -112,7 +112,9 @@ export async function GET() {
         email: u.email ?? "",
         // 테스트 계정은 **숨기지 않는다**(관리자는 디버깅을 위해 봐야 한다).
         //   대신 플래그를 달아 아래 요약 수치에서 빼고, 화면에서 구분해 표시한다.
-        isTest: isTestAccount(u.email ?? ""),
+        // ⚠ 지표용 판정(사내·QA까지 제외)을 쓴다. 보수적 워치독 판정을 쓰면
+        //   사내·QA 계정 10개가 '실사용자'로 섞인다 — 2026-10-02에 실제로 그랬다.
+        isTest: isInternalOrTestAccount(u.email ?? ""),
         role: u.screeningMode ?? "user",
         createdAt: u.createdAt.toISOString(),
         guardians: guardianCount.get(u.id) ?? 0,
@@ -136,6 +138,12 @@ export async function GET() {
      *   같은 오염이 scripts/usage-stats.ts에도 있었고, 그 숫자가 일일 상한·가격 결정의
      *   근거로 쓰였다 — 대시보드도 같은 거짓을 경영 판단에 공급하고 있었다.
      *   (테이블 행은 그대로 내려보내고 isTest 플래그로 구분한다 — 관리자는 테스트도 봐야 한다.)
+     *
+     * ⚠ 이 수정은 **두 번에 걸렸다**. 1차(2026-10-02 오전)에는 집계 대상만 realRows로
+     *   바꾸고 판정자는 보수적인 isTestAccount를 그대로 썼다. 그래서 이 주석이 "6명"을
+     *   약속하는 동안 코드는 16명을 만들었다 — 사내·QA 계정 10개가 남아 있었다(가이드 F6:
+     *   주석이 코드보다 많은 걸 약속). 2차에서 판정자를 isInternalOrTestAccount로 바꿨다.
+     *   교훈: 지표 오염은 "어디서 집계하나"가 아니라 "무엇을 테스트로 보나"의 문제다.
      */
     const realRows = userRows.filter((u) => !u.isTest);
     const byRole = { user: 0, pro: 0, general: 0 } as Record<string, number>;
