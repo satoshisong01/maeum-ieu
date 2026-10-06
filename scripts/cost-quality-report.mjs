@@ -107,7 +107,7 @@ console.log(`
    자동으로 채우면 "통과했다고 적어두고 안 돌리는" 길이 열린다.
 
    npx vitest run --coverage              → 전수 통과 + 커버리지 래칫 충족
-   npx tsx scripts/safety-regression.ts   → 342/342
+   npx tsx scripts/safety-regression.ts   → 전수 통과(실패 0 — 건수 바닥은 __tests__/gate-scripts.test.ts)
    node scripts/e2e-safety-spots.mjs      → 17/17 (응급·자살·모더레이션·모드분리)
    node scripts/e2e-roles.mjs 30 user headless     → 실행 30/30, 이상 0, 5xx 0
    node scripts/e2e-roles.mjs 30 general headless  → 〃
