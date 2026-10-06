@@ -30,6 +30,8 @@ function LiveInner() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [emergency, setEmergency] = useState(false);
   const [error, setError] = useState("");
+  /** 오늘 대화 한도에 닿았는가 — 닿으면 응급 통로(클래식 음성) 버튼을 보인다 */
+  const [limitReached, setLimitReached] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const engineRef = useRef<LiveVoiceEngine | null>(null);
   const convRef = useRef<string | null>(null);
@@ -153,6 +155,7 @@ function LiveInner() {
             upsertBubble("assistant", dailyLimitMessage, true);
             engineRef.current?.stop();
             setState("stopped");
+            setLimitReached(true);
           }
         },
         onError: (m) => setError(m),
@@ -169,6 +172,9 @@ function LiveInner() {
     } catch (e) {
       setError((e as Error).message);
       setState("error");
+      // 동의가 없으면 동의 화면으로 — 여기서 멈추면 어르신은 "고장"으로만 안다
+      if ((e as Error & { needConsent?: boolean }).needConsent) router.push("/consent");
+      if ((e as Error & { dailyLimitReached?: boolean }).dailyLimitReached) setLimitReached(true);
     }
   };
 
@@ -264,10 +270,23 @@ function LiveInner() {
       <main className="mx-auto flex w-full min-h-0 max-w-2xl flex-1 flex-col gap-2 px-4 py-4">
         {emergency && (
           <p className="rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white">
-            🚨 응급 징후가 감지되었어요. 지금 바로 119에 전화해 주세요. 보호자에게도 알려드렸어요.
+            🚨 응급 징후가 감지되었어요. 지금 바로 119에 전화해 주세요. 보호자에게도 알림을 보내는 중이에요.
           </p>
         )}
         {error && <p className="rounded-xl bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">{error}</p>}
+        {/*
+          일일 한도 뒤의 응급 통로(2026-10-06 적대 감사) — 한도로 Live가 닫히면 그날은 음성으로 응급을 말할 곳이
+          없었다. 클래식 음성(/chat)은 한도 후에도 발화마다 응급을 판정한다(평범한 말엔 LLM 비용 없이 마무리 인사).
+          classic=1이 없으면 /chat이 다시 /live로 돌려보낸다(app/chat/page.tsx preferLive).
+        */}
+        {limitReached && (
+          <button
+            onClick={() => router.push("/chat?start=1&classic=1")}
+            className="rounded-2xl bg-red-600 px-5 py-4 text-lg font-bold text-white shadow active:bg-red-700"
+          >
+            🚨 급한 일이 있으세요? 여기를 눌러서 말씀해 주세요
+          </button>
+        )}
 
         {/* 통화 화면 — 상태 오브 + 펄스 애니메이션만. 대화 텍스트는 표시하지 않음(기록은 서버에 저장). */}
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 text-center">

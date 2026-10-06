@@ -14,6 +14,15 @@ import { renderProtocolForGuide, buildExamOrder } from "@/lib/screening/cist-ban
  * 사용자 호칭 결정. age/gender null이면 "선생님" — "회원님"은 prompt에서 금지된 단어라 fallback에 쓰면 안 됨.
  * (시스템 prompt와 코드 fallback 일관성 유지)
  */
+/**
+ * 일반인(general) 세션의 "인지 확인 질문 금지" 규칙 — **단일 출처.**
+ *   /api/chat(아래 general guideBlock)과 /api/live/token(Live 세션 지시문)이 같은 문구를 쓴다.
+ *   Live는 turnBlock을 쓰지 않아 이 규칙이 빠진 채 어르신용 "대여섯 턴마다 가벼운 확인" 지시만
+ *   받고 있었다 — 일반인이 인지 선별 질문을 받았다(2026-10-06 적대 감사).
+ */
+export const GENERAL_NO_COGNITIVE_RULE =
+  "- 인지 확인/시험 질문(요일·날짜·계산·단어암기·속담 뜻)은 **하지 마세요** — 이 사용자에겐 해당 없음.";
+
 export function getHonorific(age: number | null, gender: string | null): string {
   if (age == null || gender == null) return "선생님";
   if (age >= 60) return gender === "male" ? "할아버지" : gender === "female" ? "할머니" : "선생님";
@@ -235,7 +244,7 @@ export async function buildSystemPrompt(params: {
     // 질문 풀·인지 프로토콜 미주입(토큰 절감), 인지 확인 질문 금지.
     guideBlock = `\n[일반인 모드 — 마음 건강 동반자]
 이 모드의 목적: 사용자가 편하게 마음을 나누고, 원할 때 정신건강 자가점검을 하는 것.
-- 인지 확인/시험 질문(요일·날짜·계산·단어암기·속담 뜻)은 **하지 마세요** — 이 사용자에겐 해당 없음.
+${GENERAL_NO_COGNITIVE_RULE}
 - 따뜻하게 공감하고 일상·감정 이야기를 이어가세요. 잔소리·훈계 금지.
 - 사용자가 우울·불안·외로움·스트레스를 토로하면 충분히 들어준 뒤, 원하시면 자가점검을 안내하세요:
   "마음 건강 체크"(우울 PHQ-9) / "불안 체크"(GAD-7) / "외로움 체크"(UCLA-3) / "성격 검사"(BFI-10)

@@ -66,12 +66,19 @@ export class LiveVoiceEngine {
     });
     if (!tokRes.ok) {
       // 일일 대화량 상한은 오류가 아니라 '하루를 닫는 인사' — 어르신에게 기술 문구를 보이지 않는다.
-      const body = await tokRes.json().catch(() => null) as { dailyLimitReached?: boolean; message?: string } | null;
+      const body = await tokRes.json().catch(() => null) as { dailyLimitReached?: boolean; needConsent?: boolean; message?: string; error?: string } | null;
       if (body?.dailyLimitReached && body.message) {
         const err = new Error(body.message) as Error & { dailyLimitReached?: boolean };
         err.dailyLimitReached = true;
         throw err;
       }
+      // 동의 필요·역할 불가는 **사유를 그대로** 보여준다 — "토큰 발급 실패"로 뭉개면 어르신은 고장으로 안다
+      if (body?.needConsent) {
+        const err = new Error(body.error || "건강정보 수집 동의가 필요해요.") as Error & { needConsent?: boolean };
+        err.needConsent = true;
+        throw err;
+      }
+      if (tokRes.status === 403 && body?.error) throw new Error(body.error);
       throw new Error("토큰 발급 실패");
     }
     const { token, model } = await tokRes.json();
@@ -200,7 +207,9 @@ export class LiveVoiceEngine {
 
     if (sc.turnComplete) {
       const u = this.userBuf.trim(), a = (this.muteTurn ? stripRecallAnswerLeak(this.aiBuf) : this.aiBuf).trim();
-      if (u && a) this.cb.onTurnComplete(u, a);
+      // ⚠ 사용자 발화만 있어도 보고한다 — AI 전사가 비는 턴(빈 응답·안전 차단·누출 정리 후 빈 텍스트)에도
+      //   어르신의 말은 서버에서 응급 판정을 받아야 한다. 예전엔 `u && a`라 그런 턴의 응급이 사라졌다(2026-10-06).
+      if (u) this.cb.onTurnComplete(u, a);
       this.userBuf = ""; this.aiBuf = "";
       this.gateOpen = false; this.muteTurn = false;
       this.cb.onState("listening");

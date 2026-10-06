@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── 호출 순서 기록 — "한도를 저장 **전에** 센다"를 고정하기 위해 ──
 const calls: string[] = [];
 const pending: Promise<unknown>[] = [];
+let convFails = false;
 
 let session: { user: { id: string; name?: string; screeningMode?: string } } | null = null;
 let usage = { used: 0, limit: 200, exceeded: false, nearLimit: false, remaining: 200 };
@@ -28,7 +29,8 @@ vi.mock("@/lib/feature-flags", () => ({ isLiveBetaEnabledServer: () => true }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => ({ ok: true })) }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    conversation: { findUnique: vi.fn(async () => ({ userId: session?.user.id })) },
+    // convFails면 소유권 조회가 throw — 응급 판정 **전** DB 장애(최후 안전망 경로)를 흉내낸다
+    conversation: { findUnique: vi.fn(async () => { if (convFails) throw new Error("db down"); return { userId: session?.user.id }; }) },
     user: { findUnique: vi.fn(async () => ({ consentedAt: new Date("2026-01-01") })) },
     message: { findMany: vi.fn(async () => []) },
   },
@@ -50,7 +52,8 @@ vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: vi.fn(async () 
 const notifyGuardian = vi.fn<(p: { level: number }) => Promise<{ sent: boolean; channels: string[] }>>(
   async () => ({ sent: true, channels: ["push"] }));
 vi.mock("@/lib/chat/emergency-notify", () => ({ notifyGuardian: (p: { level: number }) => notifyGuardian(p) }));
-vi.mock("@/lib/chat/emergency-last-resort", () => ({ lastResortEmergency: vi.fn(async () => {}) }));
+const lastResortEmergency = vi.fn(async () => ({ fired: true, level: 3, category: "medical_acute", reply: "119" }));
+vi.mock("@/lib/chat/emergency-last-resort", () => ({ lastResortEmergency: () => lastResortEmergency() }));
 const extractAndSaveProfile = vi.fn(async () => { calls.push("profile"); });
 vi.mock("@/lib/chat/profile-extractor", () => ({ extractAndSaveProfile: () => extractAndSaveProfile() }));
 const maybeTriggerSummaryRollup = vi.fn(async () => { calls.push("summary"); });
@@ -80,6 +83,8 @@ beforeEach(() => {
   calls.length = 0;
   pending.length = 0;
   recentL1 = 0;
+  convFails = false;
+  lastResortEmergency.mockClear();
   usage = { used: 10, limit: 200, exceeded: false, nearLimit: false, remaining: 190 };
   session = { user: { id: "u-elder", name: "김어르신", screeningMode: "user" } };
   for (const f of [saveMessages, runCognitiveAnalysis, notifyGuardian, extractAndSaveProfile, maybeTriggerSummaryRollup, getDailyUsage]) f.mockClear();
@@ -190,23 +195,75 @@ describe("L1 24시간 누적 → L2 승격 — /api/chat과 같은 규칙", () =
 });
 
 describe("한도 대상 — /api/chat과 같은 범위(어르신만)", () => {
-  it.each(["pro", "general"])("%s 는 한도를 조회하지 않는다", async (role) => {
-    session = { user: { id: `u-${role}`, screeningMode: role } };
+  it("일반인은 한도를 조회하지 않는다", async () => {
+    session = { user: { id: "u-general", screeningMode: "general" } };
     usage = { used: 999, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
     const r = await call();
     expect(r.status).toBe(200);
-    // 🔒 pro·general은 목적·과금 주체가 다르다 — /api/chat은 mode === "user"에만 적용한다
+    // 🔒 general은 목적·과금 주체가 다르다 — /api/chat은 mode === "user"에만 적용한다
     expect(getDailyUsage).not.toHaveBeenCalled();
     expect(r.body.dailyLimitReached).toBeUndefined();
     expect(saveMessages).toHaveBeenCalledTimes(1);
   });
 
-  it("pro·general의 발화는 어르신 인지 분석에 들어가지 않는다", async () => {
-    for (const role of ["pro", "general"]) {
-      session = { user: { id: `u-${role}`, screeningMode: role } };
-      // 오류로 끝나도 "분석이 안 불렸다"는 참이 된다 — 정상 처리였는지 먼저 확인한다
-      expect((await call()).status, role).toBe(200);
-    }
+  it("일반인의 발화는 어르신 인지 분석에 들어가지 않는다", async () => {
+    session = { user: { id: "u-general", screeningMode: "general" } };
+    // 오류로 끝나도 "분석이 안 불렸다"는 참이 된다 — 정상 처리였는지 먼저 확인한다
+    expect((await call()).status).toBe(200);
     expect(runCognitiveAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+describe("전문가 계정 — Live엔 대리 귀속이 없다 (2026-10-06)", () => {
+  it("pro는 403이고 아무것도 저장되지 않는다", async () => {
+    session = { user: { id: "u-pro", screeningMode: "pro" } };
+    const r = await call(req("숨이 안 쉬어져", "119"));
+    // 🔒 이전: 대리 검진 중 Live로 넘어가면 기기 앞 환자의 발화·응급이 **검사자 계정**에 기록됐다
+    expect(r.status).toBe(403);
+    expect(saveMessages).not.toHaveBeenCalled();
+    expect(notifyGuardian).not.toHaveBeenCalled();
+  });
+});
+
+describe("AI 전사가 비어도 어르신 발화는 응급 판정을 받는다 (2026-10-06)", () => {
+  it("aiText 없이 와도 200 — L3면 저장·알림", async () => {
+    const res = await POST(new Request("http://localhost/api/live/turn", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: "c-1", userText: "숨이 안 쉬어져" }),   // aiText 없음
+    }));
+    await Promise.all(pending.splice(0));
+    const body = await res.json() as Record<string, unknown>;
+    // 🔒 이전: aiText가 비면 400 → Gemini가 출력 전사를 안 낸 턴의 응급이 판정·알림 없이 사라졌다
+    expect(res.status).toBe(200);
+    expect(body.emergencyLevel).toBe(3);
+    expect(notifyGuardian).toHaveBeenCalledTimes(1);
+    expect(saveMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("사용자 발화가 없으면 여전히 400", async () => {
+    const res = await POST(new Request("http://localhost/api/live/turn", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: "c-1", userText: "", aiText: "네" }),
+    }));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("최후 안전망 — 감지 결과를 클라에 돌려준다 (2026-10-06)", () => {
+  it("응급 판정 전 DB가 죽어도 500 응답에 emergencyLevel이 실린다 (119 배너용)", async () => {
+    convFails = true;
+    const r = await call(req("숨이 안 쉬어져", "119"));
+    expect(lastResortEmergency).toHaveBeenCalledTimes(1);
+    // 🔒 이전: 판정·알림은 하고 응답엔 등급 없이 500 → 장애 중엔 어르신 화면에 119 안내가 안 떴다
+    expect(r.status).toBe(500);
+    expect(r.body.emergencyLevel).toBe(3);
+  });
+
+  it("안전망이 응급을 못 찾았으면 등급을 싣지 않는다", async () => {
+    convFails = true;
+    lastResortEmergency.mockResolvedValueOnce({ fired: false, level: 0, category: "none", reply: "" } as never);
+    const r = await call(req("오늘 날씨 좋네", "네"));
+    expect(r.status).toBe(500);
+    expect(r.body.emergencyLevel).toBeUndefined();
   });
 });

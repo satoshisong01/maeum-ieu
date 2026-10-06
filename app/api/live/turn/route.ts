@@ -49,16 +49,31 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+  // 전문가(pro)도 막는다 — Live엔 대리 귀속이 없어, 기기 앞 환자의 발화·응급이 **검사자 계정**에
+  //   기록된다(2026-10-06 적대 감사). 토큰 발급(/api/live/token)과 같은 규칙.
+  if (mode === "pro") {
+    return NextResponse.json(
+      { error: "전문가 계정은 음성 대화를 쓸 수 없어요. 검진은 대리 검진 화면에서 진행해 주세요." },
+      { status: 403 },
+    );
+  }
 
   const rl = await checkRateLimit(`live-turn:${userId}`, 60, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({}));
   const userText = String(body?.userText || "").slice(0, 2000).trim();
-  const aiText = String(body?.aiText || "").slice(0, 4000).trim();
+  /**
+   * AI 전사는 **없어도 된다** — 사용자 발화만 있으면 처리한다(2026-10-06 적대 감사).
+   *   예전엔 aiText가 비면 400이었고 클라도 `if (u && a)`일 때만 보냈다. Gemini Live가 출력 전사를
+   *   내지 않는 턴(빈 응답·안전 차단·누출 정리 후 빈 텍스트)이면 어르신의 응급 발화가 판정·마킹·알림
+   *   없이 사라졌다. /api/chat은 모델이 실패해도 응급 처리를 따로 한다 — 응급 판정의 입력은 사용자 발화다.
+   */
+  const aiTextRaw = String(body?.aiText || "").slice(0, 4000).trim();
+  const aiText = aiTextRaw || "(음성 응답 — 전사 없음)";
   const conversationId = typeof body?.conversationId === "string" ? body.conversationId.slice(0, 100) : undefined;
-  if (!userText || !aiText || !conversationId) {
-    return NextResponse.json({ error: "userText/aiText/conversationId 필수" }, { status: 400 });
+  if (!userText || !conversationId) {
+    return NextResponse.json({ error: "userText/conversationId 필수" }, { status: 400 });
   }
   try {
     // 대화 소유권 검증 — 타인 대화에 끼워넣기 차단
@@ -179,12 +194,21 @@ export async function POST(req: Request) {
      *   응급 발화였어도 보호자 알림이 0건이었다. 한 경로만 고치면 F3 드리프트가 남는다.
      * 이 경로는 클라가 전사된 userText를 보내므로 재전사가 필요 없다(transcribe 미주입).
      */
-    await lastResortEmergency({
+    const sos = await lastResortEmergency({
       sos: { userId, text: userText },
       userName: session.user.name || "사용자",
       companionName: "민지",
       minLevel: 2,   // 이 경로는 대화 흐름이 없고 원래 L2+에서 알림을 보낸다
-    }).catch((err) => console.error("[live-turn] 최후 안전망 실패:", err));
-    return NextResponse.json({ error: "저장 중 오류가 발생했습니다." }, { status: 500 });
+    }).catch((err) => { console.error("[live-turn] 최후 안전망 실패:", err); return null; });
+    /**
+     * 안전망이 응급을 잡았으면 **등급을 클라에 돌려준다** — 클라는 emergencyLevel 3을 보고 119 안내 배너를
+     *   띄운다(app/live/page.tsx). 예전엔 판정·알림은 해 놓고 응답엔 등급 없이 500만 줘서, RDS 장애
+     *   (이 안전망이 존재하는 바로 그 상황) 중에 "숨이 안 쉬어져"라고 하면 보호자 알림은 시도되지만
+     *   어르신 화면엔 119 안내가 뜨지 않았다(2026-10-06 적대 감사). 상태 코드는 500 그대로 둔다(저장은 실패했다).
+     */
+    return NextResponse.json(
+      { error: "저장 중 오류가 발생했습니다.", ...(sos?.fired ? { emergencyLevel: sos.level } : {}) },
+      { status: 500 },
+    );
   }
 }

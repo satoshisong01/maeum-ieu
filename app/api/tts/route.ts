@@ -132,7 +132,14 @@ export async function POST(req: Request) {
 
   // 1차: Cloud TTS Neural2 (한국어 자연 음성, paid quota 후함)
   try {
-    const voice = (body?.voice || DEFAULT_VOICE_CLOUD).toString();
+    /**
+     * 음성은 **서버가 정한다** — 클라이언트가 보낸 voice는 무시한다(2026-10-06 적대 감사).
+     *   body.voice는 원래 Gemini 음성명(Leda)용이었는데 Cloud TTS로 옮길 때(94a8046) voice.name으로 그대로
+     *   이어져, 아무 계정이나 엉뚱한 voice를 보내 Cloud TTS를 일부러 실패시키고 **Gemini 폴백(프로젝트 공용,
+     *   모델당 하루 100회)**을 소진시킬 수 있었다 — 그날 Cloud TTS가 흔들리면 모든 어르신의 음성 출력이
+     *   폴백 없이 끊긴다. 더 비싼 음성 등급을 골라 단가를 올릴 수도 있었다. 웹·앱 클라이언트는 text만 보낸다.
+     */
+    const voice = DEFAULT_VOICE_CLOUD;
     const audio = await synthesizeWithCloudTts(text, voice);
     return NextResponse.json({
       audioBase64: audio.toString("base64"),

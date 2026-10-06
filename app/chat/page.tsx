@@ -11,6 +11,19 @@ import { classifyMedReply } from "@/lib/chat/medication";
 import { hasJongseong } from "@/lib/chat/korean-particle";
 import { isSessionEndUtterance } from "@/lib/chat/session-end";
 
+/**
+ * 음성 동선을 Live(/live)로 보낼지 — 베타가 켜져 있어도 `?classic=1`이면 이 화면의 클래식 음성을 쓴다.
+ *
+ * 왜(2026-10-06 적대 감사): Live 일일 한도로 토큰이 거절되면 그날은 음성으로 응급을 말할 통로가 없었다.
+ *   /live의 한도 화면이 여기로 보내려 해도, 아래 네 곳이 베타면 무조건 /live로 되돌려 보내 **순환**했다.
+ *   클래식 경로는 한도 후에도 발화마다 응급을 판정한다(평범한 발화엔 동반자 LLM 비용 없이 마무리 인사).
+ *   네 곳의 조건을 이 함수 하나로 모았다 — 한 곳만 바꾸면 나머지가 다시 되돌려 보낸다.
+ */
+function preferLive(): boolean {
+  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") return false;
+  return !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("classic") === "1");
+}
+
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
 const EXAM_DURATION_MS = 25 * 60 * 1000; // 전문가 검진 자동 종료(약 25분)
@@ -1060,7 +1073,7 @@ export default function ChatPage() {
     autoVoiceTriedRef.current = true;
     // 라이브 음성(Gemini Live)이 켜져 있으면 어르신 음성 동선은 /live가 기본(2026-07-20 전환).
     //   /live도 마이크·오디오는 [대화 시작하기] 탭(제스처)에서 열므로 autoplay 정책과 무관.
-    if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; }
+    if (preferLive()) { router.push("/live"); return; }
     void startConversation();
   }, [status, screeningMode, examMode, modeSelected, startConversation, router]);
 
@@ -1926,7 +1939,7 @@ export default function ChatPage() {
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
             <button
               type="button"
-              onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
+              onClick={() => { if (preferLive()) { router.push("/live"); return; } void startConversation(); }}
               className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full bg-white text-[#1a4e7a] shadow-xl shadow-blue-500/30 transition active:scale-95 hover:bg-blue-50"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2030,7 +2043,7 @@ export default function ChatPage() {
               <div className="flex items-stretch gap-2">
                 <button
                   type="button"
-                  onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
+                  onClick={() => { if (preferLive()) { router.push("/live"); return; } void startConversation(); }}
                   className="flex-1 rounded-full bg-[#007bff] px-3 py-3 text-base font-medium text-white shadow-lg transition hover:bg-[#0069d9]"
                 >
                   🎤 음성으로 대화하기
@@ -2115,7 +2128,7 @@ export default function ChatPage() {
               </form>
               <button
                 type="button"
-                onClick={() => { if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1") { router.push("/live"); return; } void startConversation(); }}
+                onClick={() => { if (preferLive()) { router.push("/live"); return; } void startConversation(); }}
                 className="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
               >
                 🎤 음성 대화로 전환

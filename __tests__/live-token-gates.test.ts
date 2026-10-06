@@ -1,70 +1,96 @@
 /**
  * /api/live/token 게이트 — **행위** 테스트(실제 라우트 핸들러를 호출한다).
  *
- * 2026-10-06 정정 두 가지를 고정한다:
- *   ① 보호자(guardian)가 **어르신 페르소나**로 세션을 받던 결함 — mode 판정이 "일반인 외에는 user"라
- *      보호자가 80/20 + 인지 확인 질문 세션을 받았다. /api/chat은 2026-10-01에 이미 403으로 막았다.
- *   ② 일일 한도 대상이 `!== "general"`이라 주석("/api/chat과 같은 상한")과 달리 pro까지 막고 있었다.
- *
- * 목 체제: 세션·플래그·레이트리밋·prisma·한도·프롬프트·날씨·Gemini 토큰 발급. 외부 호출은 없다.
+ * 2026-10-06 정정:
+ *   ① 보호자·전문가 차단 — 보호자는 어르신 페르소나를 받았고, 전문가는 대리 귀속이 없어 환자 발화가
+ *      검사자 계정에 기록됐다.
+ *   ② 동의 게이트 — 미동의 계정이 세션을 받으면 매 턴이 응급 판정 **전에** 403으로 버려졌다.
+ *   ③ 일일 한도 대상(어르신만) + conversationId를 빼도 한도 판정이 빠지지 않게.
+ *   ④ 역할별 지시문 — 일반인이 인지 확인 지시를 받았다.
+ *      ⚠ 이 파일의 첫 버전은 buildSystemPrompt에 넘긴 **mode 인자만** 확인했다. 실제 지시문은
+ *      mode와 무관했는데도 통과했다(적대 감사 지적, F5). 이제 **토큰에 실린 systemInstruction**을 본다.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let session: { user: { id: string; screeningMode?: string } } | null = null;
 let usage = { used: 0, limit: 200, exceeded: false, nearLimit: false, remaining: 200 };
+let consented = true;
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn(async () => session) }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/feature-flags", () => ({ isLiveBetaEnabledServer: () => true }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => ({ ok: true })) }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { conversation: { findUnique: vi.fn(async () => ({ userId: session?.user.id })) } },
+  prisma: {
+    user: { findUnique: vi.fn(async () => ({ consentedAt: consented ? new Date("2026-01-01") : null })) },
+    conversation: { findUnique: vi.fn(async (a: { where: { id?: string; userId?: string } }) =>
+      (a.where.userId ? { id: "c-own" } : { userId: session?.user.id })) },
+  },
 }));
-const getDailyUsage = vi.fn(async () => usage);
+const getDailyUsage = vi.fn<(convId: string) => Promise<typeof usage>>(async () => usage);
 vi.mock("@/lib/usage/daily-limit", () => ({
-  getDailyUsage: () => getDailyUsage(),
+  getDailyUsage: (convId: string) => getDailyUsage(convId),
   buildDailyLimitReplyForUser: vi.fn(async () => "어르신, 오늘 이야기 많이 나눴네요. 내일 또 만나요."),
 }));
 // 타입은 제네릭으로 준다 — 미사용 매개변수로 주면 린트 경고가 부채로 쌓인다(F10)
 const buildSystemPrompt = vi.fn<(a: { mode: string }) => Promise<{ stablePrompt: string }>>(
   async () => ({ stablePrompt: "STABLE" }));
-vi.mock("@/lib/chat/prompt", () => ({ buildSystemPrompt: (a: { mode: string }) => buildSystemPrompt(a) }));
+vi.mock("@/lib/chat/prompt", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/prompt")>()),   // GENERAL_NO_COGNITIVE_RULE는 실제 값
+  buildSystemPrompt: (a: { mode: string }) => buildSystemPrompt(a),
+}));
 vi.mock("@/lib/chat/weather", () => ({ getWeatherContext: vi.fn(async () => ({ promptText: "맑음", description: "맑음" })) }));
-const createToken = vi.fn(async () => ({ name: "tok-1" }));
-vi.mock("@google/genai", () => ({
-  Modality: { AUDIO: "AUDIO" },
+const createToken = vi.fn<(a: { config: { liveConnectConstraints: { config: { systemInstruction: string } } } }) => Promise<{ name: string }>>(
+  async () => ({ name: "tok-1" }));
+// 원본을 펼친다 — 실제 prompt.ts의 하위 의존성이 HarmCategory 등 다른 export를 쓴다(부분 목은 깨진다)
+vi.mock("@google/genai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@google/genai")>()),
   GoogleGenAI: class { authTokens = { create: createToken }; },
 }));
 
 process.env.GEMINI_API_KEY = "test-key";
 const { POST } = await import("@/app/api/live/token/route");
+const { GENERAL_NO_COGNITIVE_RULE } = await import("@/lib/chat/prompt");
 
-async function call() {
+async function call(body: Record<string, unknown> = { conversationId: "c-1" }) {
   const res = await POST(new Request("http://localhost/api/live/token", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversationId: "c-1" }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));
   return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
+/** 마지막으로 발급된 토큰의 세션 지시문 */
+const issuedInstruction = () => createToken.mock.calls.at(-1)![0].config.liveConnectConstraints.config.systemInstruction;
 
 beforeEach(() => {
   usage = { used: 10, limit: 200, exceeded: false, nearLimit: false, remaining: 190 };
+  consented = true;
   session = { user: { id: "u-elder", screeningMode: "user" } };
   for (const f of [getDailyUsage, buildSystemPrompt, createToken]) f.mockClear();
 });
 
-describe("보호자 계정 — 세션을 받지 못한다", () => {
-  it("guardian은 403이고 토큰도 프롬프트도 만들어지지 않는다", async () => {
-    session = { user: { id: "u-guardian", screeningMode: "guardian" } };
+describe("역할 차단", () => {
+  it.each(["guardian", "pro"])("%s 는 403 — 토큰도 프롬프트도 만들지 않는다", async (role) => {
+    session = { user: { id: `u-${role}`, screeningMode: role } };
     const r = await call();
+    // 🔒 guardian: 어르신 페르소나를 받았다 / pro: 대리 귀속이 없어 환자 발화가 검사자 계정에 기록됐다
     expect(r.status).toBe(403);
-    // 🔒 2026-10-06 이전: 보호자에게 **어르신 페르소나** 세션이 발급됐다
     expect(buildSystemPrompt).not.toHaveBeenCalled();
     expect(createToken).not.toHaveBeenCalled();
   });
 });
 
-describe("일일 한도 — 대상은 어르신만 (/api/chat과 같은 범위)", () => {
+describe("동의 게이트", () => {
+  it("미동의면 403 needConsent — 세션을 열지 않는다", async () => {
+    consented = false;
+    const r = await call();
+    // 🔒 이전: 세션은 열렸는데 매 턴이 /api/live/turn의 동의 게이트에서 **응급 판정 전에** 버려졌다
+    expect(r.status).toBe(403);
+    expect(r.body.needConsent).toBe(true);
+    expect(createToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("일일 한도 — 대상은 어르신만", () => {
   it("어르신이 한도를 넘으면 403 + 마무리 인사(오류 문구가 아니다)", async () => {
     usage = { used: 200, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
     const r = await call();
@@ -80,22 +106,44 @@ describe("일일 한도 — 대상은 어르신만 (/api/chat과 같은 범위)"
     expect(r.body.token).toBe("tok-1");
   });
 
-  it.each(["pro", "general"])("%s 는 한도를 조회하지 않는다", async (role) => {
-    session = { user: { id: `u-${role}`, screeningMode: role } };
+  it("conversationId를 빼도 한도 판정이 빠지지 않는다 (계정의 대화로 센다)", async () => {
+    usage = { used: 200, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
+    const r = await call({});
+    // 🔒 이전: conversationId가 없으면 한도 블록 자체를 건너뛰었다
+    expect(getDailyUsage).toHaveBeenCalledWith("c-own");
+    expect(r.status).toBe(403);
+  });
+
+  it("일반인은 한도를 조회하지 않는다", async () => {
+    session = { user: { id: "u-general", screeningMode: "general" } };
     usage = { used: 999, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
     const r = await call();
-    // 🔒 2026-10-06 이전: 조건이 `!== "general"`이라 pro도 어르신 한도로 막혔다
     expect(getDailyUsage).not.toHaveBeenCalled();
     expect(r.status).toBe(200);
   });
 });
 
-describe("페르소나 — 역할에 맞는 프롬프트", () => {
-  it("일반인은 general, 어르신은 user 프롬프트로 세션을 받는다", async () => {
+describe("역할별 세션 지시문 — **발급되는 지시문 자체**를 본다", () => {
+  const PROBE = "대여섯 턴에 한 번쯤";
+
+  it("어르신은 인지 확인 지시를 받는다", async () => {
+    expect((await call()).status).toBe(200);
+    expect(issuedInstruction()).toContain(PROBE);
+  });
+
+  it("일반인은 인지 확인 지시를 받지 않고, 금지 규칙을 받는다", async () => {
+    session = { user: { id: "u-general", screeningMode: "general" } };
+    expect((await call()).status).toBe(200);
+    // 🔒 이전: mode를 넘기기만 하고 지시문은 어르신과 똑같았다 — 일반인이 대여섯 턴마다 날짜·기억 질문을 받았다
+    expect(issuedInstruction()).not.toContain(PROBE);
+    expect(issuedInstruction()).toContain(GENERAL_NO_COGNITIVE_RULE);
+  });
+
+  it("두 역할 모두 위급 신호 안내는 유지된다", async () => {
+    await call();
+    expect(issuedInstruction()).toContain("119");
     session = { user: { id: "u-general", screeningMode: "general" } };
     await call();
-    session = { user: { id: "u-elder", screeningMode: "user" } };
-    await call();
-    expect(buildSystemPrompt.mock.calls.map((c) => c[0].mode)).toEqual(["general", "user"]);
+    expect(issuedInstruction()).toContain("119");
   });
 });

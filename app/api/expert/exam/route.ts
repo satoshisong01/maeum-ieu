@@ -8,7 +8,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { CONSENT_VERSION } from "@/lib/consent";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -32,6 +31,16 @@ export async function POST(req: Request) {
     // 일반인(general) 계정은 인지검진 비대상 — 인지 데이터가 잘못된 계정에 기록되지 않도록 차단(목적 분리)
     const patient = await prisma.user.findUnique({ where: { id: patientId }, select: { screeningMode: true } });
     if (patient?.screeningMode === "general") return NextResponse.json({ error: "일반인 계정은 인지검진 대상이 아닙니다." }, { status: 400 });
+
+    /**
+     * 환자 검진 동의(체크 + 성함 서명)가 **있어야** 세션을 연다 — 2026-10-06 적대 감사.
+     *   설계는 "UI 모달이 통제하고 서버는 기록"이었는데, 서버가 동의 없이도 세션을 열어 줘서 전문가가 API를
+     *   직접 부르면 모달을 건너뛰고 환자 계정에 검진 문답·점수를 쌓을 수 있었다. UI는 언제나
+     *   patientConsent: true를 보내므로(app/chat/page.tsx startExam — 모달 버튼이 유일한 호출부) 정상 동선은 그대로다.
+     */
+    if (body.patientConsent !== true) {
+      return NextResponse.json({ error: "환자 본인의 검진 동의가 필요합니다.", needExamConsent: true }, { status: 403 });
+    }
     // 진행 중이던 기존 세션 자동 종료 — 고아 세션 누적 방지(다중 클릭·중간 재시작).
     //   ⚠ ended_at은 검진 상한(시작+30분)으로 캡(2026-07-07 감사 blocker): now()로 찍으면 며칠 전 고아 세션의
     //   문답 창이 [이전 검진~현재]로 확장돼 그 사이 일상 대화 원문이 전문가 화면 '문답 기록'에 노출됨.
@@ -46,15 +55,21 @@ export async function POST(req: Request) {
         `INSERT INTO exam_session (id, patient_user_id, expert_user_id, conversation_id) VALUES ($1, $2, $3, $4)`,
         id, patientId, expertId, conversationId,
       );
-      // 환자 검진 동의(건강 민감정보 + 전문가 제공) 기록 — 환자가 동의 화면에서 체크+성함 서명한 경우.
-      //   감사 증빙(expert_access_log) + 미동의였다면 정식 건강정보 동의(consentedAt)도 이때 성립.
-      if (body.patientConsent === true) {
-        prisma.$executeRawUnsafe(
-          `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, $4)`,
-          `eal_${randomUUID()}`, expertId, patientId, "exam_consent",
-        ).catch(() => {});
-        await prisma.user.updateMany({ where: { id: patientId, consentedAt: null }, data: { consentedAt: new Date(), consentVersion: CONSENT_VERSION } }).catch(() => {});
-      }
+      /**
+       * 환자 검진 동의 기록 — **검진 동의로만** 남긴다(감사 증빙: expert_access_log).
+       *
+       * ⚠ 결함(2026-10-06 적대 감사): 예전엔 여기서 정식 건강정보 동의(consentedAt, 약관 v1.1)까지 찍었다.
+       *   그런데 검진 모달이 고지하는 것은 "검진 문항 답변·점수를 담당 전문가에게"뿐이고, v1.1은
+       *   **일상 대화 수집·응급 신호·보호자 연락처·보호자 제공**까지 포함한다. 모달 동의 하나로 v1.1이
+       *   기록되면 앱은 /consent를 건너뛰고, 고지하지 않은 수집이 시작됐다(고지 범위 초과 동의 기록).
+       *   전체 동의는 환자가 직접 /consent에서 한다 — 진료실에서 검진만 받은 환자가 집에서 앱을 처음 쓸 때
+       *   동의 화면을 한 번 더 보게 되는 것은 의도된 비용이다.
+       * 감사 기록 실패는 삼키지 않고 남긴다(예전엔 .catch(() => {})로 흔적이 없었다).
+       */
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO expert_access_log (id, expert_user_id, patient_user_id, action) VALUES ($1, $2, $3, $4)`,
+        `eal_${randomUUID()}`, expertId, patientId, "exam_consent",
+      ).catch((e) => console.error("[exam] 검진 동의 감사 기록 실패 — 세션은 열림:", e instanceof Error ? e.message : e));
       return NextResponse.json({ sessionId: id });
     } catch {
       // 동시 시작 경합(부분 unique uq_es_open 위반) — 이미 열린 세션을 반환(고아·중복 방지)

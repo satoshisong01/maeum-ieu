@@ -15,7 +15,7 @@ import { authOptions } from "@/lib/auth";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { buildSystemPrompt } from "@/lib/chat/prompt";
+import { buildSystemPrompt, GENERAL_NO_COGNITIVE_RULE } from "@/lib/chat/prompt";
 import { getTimeContext } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
 import { getDailyUsage, buildDailyLimitReplyForUser } from "@/lib/usage/daily-limit";
@@ -50,10 +50,35 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+  /**
+   * 전문가(pro)도 Live를 쓰지 않는다 — Live엔 대리 귀속(proxyPatientId)이 없다(2026-10-06 적대 감사).
+   *   대리 검진 중 "음성 대화로 전환"을 누르면 **검사자 본인 세션**의 Live로 넘어가, 기기 앞의 환자가
+   *   하는 말과 응급이 **검사자 계정**에 기록됐다(환자의 가족 이름·건강 사실이 검사자 프로필로,
+   *   응급 알림은 검사자의 보호자 설정 기준으로). /chat도 pro 본인 대화는 /expert로 돌려보낸다.
+   *   검진은 대리 검진 화면(/api/chat 대리 경로)에서만 한다.
+   */
+  if (session.user.screeningMode === "pro") {
+    return NextResponse.json(
+      { error: "전문가 계정은 음성 대화를 쓸 수 없어요. 검진은 대리 검진 화면에서 진행해 주세요." },
+      { status: 403 },
+    );
+  }
 
   // 토큰 발급 남용 방지 — 계정당 분당 10회(세션 재접속 여유 포함)
   const rl = await checkRateLimit(`live-token:${userId}`, 10, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
+
+  /**
+   * 건강정보 수집 동의 — /api/chat과 같은 게이트(어르신·일반인). 2026-10-06 적대 감사.
+   *   이 게이트가 없어서, 미동의 계정이 정상 동작하는 음성 대화를 하는데 서버엔 아무것도 남지 않았다:
+   *   매 턴의 /api/live/turn이 동의 게이트에서 403으로 **응급 판정 전에** 버려져, "가슴이 너무 아파"라고
+   *   해도 보호자 알림 0건이었다. 안전망이 작동하는 것처럼 보이면서 실제로는 꺼져 있는 상태다.
+   *   세션을 시작하기 전에 막고, 클라는 동의 화면으로 보낸다.
+   */
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { consentedAt: true } });
+  if (!me?.consentedAt) {
+    return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
+  }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
@@ -73,8 +98,13 @@ export async function POST(req: Request) {
   // ⚠ 대상은 /api/chat과 같다 — **어르신(user)만**. 원래 조건이 `!== "general"`이라
   //   위 주석("/api/chat과 같은 상한")과 달리 pro·guardian까지 막고 있었다(2026-10-06 정정).
   const role = session.user.screeningMode;
-  if (conversationId && role !== "general" && role !== "pro") {
-    const usage = await getDailyUsage(conversationId, userId);
+  // ⚠ conversationId를 빼고 요청하면 예전엔 한도 판정이 **통째로** 빠졌다(2026-10-06 적대 감사).
+  //   어르신은 대화가 계정당 하나이므로(Conversation.userId 유일) 없으면 찾아서 센다.
+  const limitConvId = conversationId
+    ?? (await prisma.conversation.findUnique({ where: { userId }, select: { id: true } }).catch(() => null))?.id;
+  // (pro·guardian은 위에서 이미 막혔다 — 남는 건 user·general이고, 한도는 어르신만)
+  if (limitConvId && role !== "general") {
+    const usage = await getDailyUsage(limitConvId, userId);
     if (usage.exceeded) {
       // 403이지만 클라이언트는 error 대신 message를 읽어 평소 말풍선으로 띄운다 —
       //   어르신에게 "토큰 발급 실패"를 보여주지 않는다.
@@ -95,13 +125,26 @@ export async function POST(req: Request) {
     const weather = await getWeatherContext(); // 좌표 없음 — 기본 지역 폴백(세션 시작 시점 스냅샷)
     const { stablePrompt } = await buildSystemPrompt({ userId, conversationId, timeCtx, weather, mode });
 
+    /**
+     * 인지 확인 지시는 **어르신(user)만**. 일반인은 금지 규칙을 받는다(/api/chat과 같은 문구 — 단일 출처).
+     *
+     * 결함(2026-10-06 적대 감사): mode를 계산해 buildSystemPrompt에 넘기기만 하고, 실제로 쓰는 stablePrompt는
+     *   mode와 무관했다(일반인 가이드는 Live가 버리는 turnBlock에만 있다). 그 위에 아래 지시가 **역할 구분 없이**
+     *   붙어, 일반인(정신건강 자가점검 사용자)이 대여섯 턴마다 날짜·요일·기억 확인 질문을 받았다
+     *   ('general: 인지 선별 차단' 위반). 기존 테스트는 mode 인자만 확인해 이걸 못 잡았다 — 이제 발급되는
+     *   지시문 자체를 검사한다(__tests__/live-token-gates.test.ts).
+     */
+    const cognitiveGuide = mode === "user"
+      ? `- 대여섯 턴에 한 번쯤 날짜·요일·식사·최근 기억 같은 가벼운 확인을 수다에 자연스럽게 섞으세요. 검사하는 느낌 절대 금지.
+- 사용자가 외워달라던 단어·계산 답 등 평가성 항목은 사용자가 못 떠올려도 정답을 절대 먼저 말하지 마세요.`
+      : GENERAL_NO_COGNITIVE_RULE;
+
     const liveGuide = `
 
 [라이브 음성 대화 — 세션 지시]
 - 현재 한국 시각: ${timeCtx.dateStr} (${timeCtx.timeLabel}). 날씨: ${weather.promptText || weather.description}
 - 실시간 음성 대화입니다. 기본 2문장 이내(120자)로 짧게, 질문은 한 번에 하나만.
-- 대여섯 턴에 한 번쯤 날짜·요일·식사·최근 기억 같은 가벼운 확인을 수다에 자연스럽게 섞으세요. 검사하는 느낌 절대 금지.
-- 사용자가 외워달라던 단어·계산 답 등 평가성 항목은 사용자가 못 떠올려도 정답을 절대 먼저 말하지 마세요.
+${cognitiveGuide}
 - 위급 신호(가슴 통증·호흡곤란·쓰러짐·자살 암시)가 보이면 공감 후 즉시 119·보호자 연락을 부드럽지만 단호하게 권하세요.`;
 
     let systemInstruction = `${stablePrompt}${liveGuide}`;
