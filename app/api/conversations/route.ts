@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Session } from "next-auth";
-import { isObservationContent } from "@/lib/chat/observation";
+import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
 
 /**
  * 대화 소유자 결정 — 기본은 본인. 전문가 대리 검사 시 proxyPatientId(연결된 환자)로 귀속.
@@ -33,12 +33,14 @@ export async function GET(req: Request) {
   //   동의서 §4: 일상 대화 원문은 보호자·전문가에게 비공개 — 검진 플로우는 conversation.id만 필요.
   const isProxyAccess = ownerId !== session.user.id;
 
+  // 상시 감시 조각은 DB에서부터 뺀다 — 예전엔 목록만 JS로 걸러, 같은 응답의 lastMessageAt(재방문 인사·날짜 안내
+  //   판단 근거)은 감시 조각 시각을 그대로 썼다(2026-10-06 재검토). 거르는 곳을 한 군데로.
   const conv = await prisma.conversation.findUnique({
     where: { userId: ownerId },
     include: {
       messages: isProxyAccess
-        ? { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, role: true, content: true, createdAt: true } } // lastMessageAt 계산용 1건만(내용 미반환)
-        : { orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } },
+        ? { where: EXCLUDE_OBSERVATION, orderBy: { createdAt: "desc" }, take: 1, select: { id: true, role: true, content: true, createdAt: true } } // lastMessageAt 계산용 1건만(내용 미반환)
+        : { where: EXCLUDE_OBSERVATION, orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } },
     },
   });
 
@@ -50,7 +52,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     conversation: { id: conv.id },
-    messages: isProxyAccess ? [] : conv.messages.filter((m) => !isObservationContent(m.content)).map((m) => ({
+    messages: isProxyAccess ? [] : conv.messages.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,

@@ -23,6 +23,9 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { toObservationContent } from "@/lib/chat/observation";
 
 const MAX_AUDIO_B64 = 3_000_000; // ~2MB WAV (30초 16k mono ≈ 960KB) 상한
+/** 감시 전사 상한 — 대화용(LLM_TIMEOUT_MS.stt)보다 넉넉하게. 클라 요청 상한(app/observe/page.tsx)은 이보다 커야 한다 */
+//   (route 파일은 HTTP 메서드·세그먼트 설정 외 export를 Next 빌드 타입 검사가 거부할 수 있어 export하지 않는다)
+const OBSERVE_STT_TIMEOUT_MS = Math.max(LLM_TIMEOUT_MS.stt, 25_000);
 
 async function transcribe(audioB64: string, mimeType: string): Promise<string> {
   const parts: Part[] = [
@@ -32,10 +35,11 @@ async function transcribe(audioB64: string, mimeType: string): Promise<string> {
   const res = await getGenAI().models.generateContent({
     model: process.env.STT_MODEL || "gemini-2.5-flash",
     contents: [{ role: "user", parts }],
-    // ⚠ 타임아웃 — /api/chat 전사와 같은 상한(LLM_TIMEOUT_MS.stt). 없으면 Gemini가 매달리는 동안 요청이
-    //   끝나지 않고, 클라는 처리 중에 들어온 조각을 버린다 — 그 사이의 "넘어져서 못 일어나" 같은
-    //   발화가 서버에 닿지도 못하고 기기에서 폐기됐다(2026-10-06 적대 감사).
-    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.stt) },
+    // ⚠ 타임아웃 — 없으면 Gemini가 매달리는 동안 요청이 끝나지 않았다(2026-10-06 적대 감사).
+    //   단, 대화용 상한(LLM_TIMEOUT_MS.stt, 15초)을 그대로 쓰지 않는다: 감시는 **아무도 기다리지 않는** 경로라
+    //   느려도 결국 성공할 전사(응급일 수 있다)를 끊는 손해가 더 크다. 클라에 대기열이 생겨(lib/voiceprint/
+    //   segment-queue) "처리 중 조각 폐기"도 이미 사라졌다. 그래서 더 넉넉히, 그래도 매달림은 끝나게(재검토 반영).
+    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(OBSERVE_STT_TIMEOUT_MS) },
   });
   logUsage("observe-stt", res);
   return extractText(res, { isUserSpeech: true }).trim();

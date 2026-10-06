@@ -24,6 +24,11 @@ export interface LiveVoiceCallbacks {
   onAiTranscript: (text: string) => void;
   onTurnComplete: (userText: string, aiText: string) => void;
   onError: (msg: string) => void;
+  /**
+   * **재연결** 중 일일 한도로 거절됐다(첫 연결 실패는 start()가 던진다). 화면이 첫 연결 실패와 같은
+   *   처리(응급 통로 버튼·읽어 주기)를 하게 따로 알린다 — onError만 있던 시절엔 문구만 떴다(2026-10-06).
+   */
+  onDailyLimit?: (msg: string) => void;
 }
 
 interface LiveSessionLike {
@@ -111,10 +116,16 @@ export class LiveVoiceEngine {
             this.userBuf = ""; this.aiBuf = "";
             this.resetPlayback();
             this.connect().catch((err) => {
-              // 대화량 상한이면 재연결을 멈춘다 — 그렇지 않으면 마무리 인사가 3번 반복된다.
-              if ((err as { dailyLimitReached?: boolean })?.dailyLimitReached) this.stopped = true;
-              this.cb.onError(String((err as Error)?.message || err));
-              this.cb.onState((err as { dailyLimitReached?: boolean })?.dailyLimitReached ? "stopped" : "error");
+              const msg = String((err as Error)?.message || err);
+              this.cb.onError(msg);
+              if ((err as { dailyLimitReached?: boolean })?.dailyLimitReached) {
+                // 대화량 상한이면 재연결을 멈춘다 — 그렇지 않으면 마무리 인사가 3번 반복된다.
+                //   stop()으로 닫는다: 예전엔 stopped 플래그만 세워 **마이크가 켜진 채** 남았다(2026-10-06).
+                this.stop();
+                this.cb.onDailyLimit?.(msg);
+              } else {
+                this.cb.onState("error");
+              }
             });
           } else {
             this.cb.onState("stopped");
@@ -125,6 +136,15 @@ export class LiveVoiceEngine {
   }
 
   /** 지시 텍스트 턴 주입 — 모델이 다음 발화로 수행(인사·복약 리마인더·재참여 공용). 실패해도 무해 */
+  /**
+   * 사용자가 **지금 말하는 중인가**(다음 턴의 전사가 쌓이고 있는가).
+   *   턴 보고(onTurnComplete) 직후 버퍼를 비우므로, 그 뒤에 쌓인 전사가 있으면 새 발화가 진행 중이다.
+   *   일일 한도로 세션을 닫기 전에 본다 — 늦게 도착한 '직전 턴' 한도 신호로 말하던 응급을 버리지 않게(2026-10-06).
+   */
+  hasPendingUserSpeech(): boolean {
+    return this.userBuf.trim().length > 0;
+  }
+
   injectInstruction(text: string) {
     try {
       (this.session as unknown as { sendClientContent?: (p: unknown) => void })?.sendClientContent?.({

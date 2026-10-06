@@ -118,9 +118,32 @@ describe("텍스트 대리 턴 — 마지막 답이 비어도 일반 대화로 �
 });
 
 describe("대리 신원으로 일반 인사를 만들 수 없다", () => {
-  it.each(["isReturningGreeting", "isReEngage"])("%s → 409, LLM 미호출", async (flag) => {
-    const r = await call({ [flag]: true, messages: [{ role: "user", content: "안녕" }] });
-    // 🔒 두 인사 모두 환자의 시스템 프롬프트로 LLM을 불러 그 응답을 돌려준다
+  it("isReturningGreeting → 409, LLM 미호출", async () => {
+    const r = await call({ isReturningGreeting: true, messages: [{ role: "user", content: "안녕" }] });
+    // 🔒 재방문 인사는 환자의 시스템 프롬프트로 LLM을 불러 그 응답을 돌려준다
+    expect(r.status).toBe(409);
+    expect(llmCalls).toEqual([]);
+  });
+
+  it("isReEngage(검진 중 20초 침묵) → 현재 문항의 정적 재질문, LLM 미호출 · 검진 상태 불변", async () => {
+    const { renderDomainReask } = await import("@/lib/screening/exam-runner");
+    const { prisma } = await import("@/lib/prisma");
+    const exec = vi.mocked(prisma.$executeRawUnsafe);
+    exec.mockClear();
+    const r = await call({ isReEngage: true, messages: [{ role: "user", content: "" }] });
+    // 🔒 예전 재참여 인사는 환자의 프롬프트로 LLM을 불렀다(누출) / 409로만 막으면 검진이 안내 없이 멈췄다
+    expect(r.status).toBe(200);
+    expect(llmCalls).toEqual([]);
+    const firstDomain = (JSON.parse(examRow!.item_order!) as string[])[0];
+    expect(String(r.body.text)).toContain(renderDomainReask(firstDomain));
+    // 재참여는 답이 아니다 — 재질문 횟수·진행·채점을 건드리지 않는다
+    expect(exec).not.toHaveBeenCalled();
+    expect(saveMessages).not.toHaveBeenCalled();
+  });
+
+  it("isReEngage + 문항 미배정 → 여전히 409 (읽어 줄 문항이 없다)", async () => {
+    examRow = { id: "es-4", item_order: null, current_item: 0, reask_count: 0, answered_domains: 0 };
+    const r = await call({ isReEngage: true });
     expect(r.status).toBe(409);
     expect(llmCalls).toEqual([]);
   });

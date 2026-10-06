@@ -16,7 +16,7 @@ import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRel
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { getPrefixCache } from "@/lib/chat/prompt-cache";
-import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
+import { EXCLUDE_OBSERVATION, neutralizeObservationPrefix } from "@/lib/chat/observation";
 import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
@@ -30,7 +30,7 @@ import { classifyProvisional, assessCoverage } from "@/lib/screening/exam-eval";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
 import { detectEmergency, buildEmergencyL3Reply, type EmergencyResult } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
-import { evaluateEmergency } from "@/lib/chat/emergency-evaluate";
+import { evaluateEmergency, detectWithBackstop } from "@/lib/chat/emergency-evaluate";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { buildSttHints } from "@/lib/chat/stt-hints";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
@@ -347,6 +347,18 @@ async function handleExamTurn(params: {
         `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (session_id, item_id) DO UPDATE SET prompt=EXCLUDED.prompt, answer=EXCLUDED.answer, score=EXCLUDED.score, max_points=EXCLUDED.max_points, reason=EXCLUDED.reason`,
         `eis_${randomUUID()}`, examSession.id, s.itemId, s.domain, s.prompt, s.answer, s.score, s.max, s.reason).catch(() => {});
+    }
+    /**
+     * 미채점 항목도 **문답 기록용으로** 남긴다 — 점수·만점을 0으로 넣어 합계(SUM)와 의사 채점표(max_points>0)
+     *   에서는 자동으로 빠진다(배점 0 보조 문항과 같은 취급). 가짜 0점이 되지 않는다는 위 원칙은 그대로다.
+     * 왜(2026-10-06 재검토): 문답 기록을 이 테이블에서 만들게 바꾼 뒤(lib/screening/exam-qa.ts), 채점이 시스템
+     *   사유로 실패한 영역은 행이 없어 **환자의 실제 답이 의사 화면에서 통째로 사라졌다** — 의사가 직접 볼 곳이 없어짐.
+     */
+    for (const s of scores.filter((x) => x.unscored)) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO exam_item_score (id, session_id, item_id, domain, prompt, answer, score, max_points, reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (session_id, item_id) DO UPDATE SET prompt=EXCLUDED.prompt, answer=EXCLUDED.answer, score=EXCLUDED.score, max_points=EXCLUDED.max_points, reason=EXCLUDED.reason`,
+        `eis_${randomUUID()}`, examSession.id, s.itemId, s.domain, s.prompt, s.answer, 0, 0, "미채점(시스템 채점 실패 — 점수 미반영, 의사 확인 필요)").catch(() => {});
     }
   } else {
     for (const it of itemsForDomain(domain)) {
@@ -1325,7 +1337,8 @@ export async function POST(req: Request) {
     const timeCtx = getTimeContext(ctx?.currentTime);
     const isAudio = !!(audio?.data && audio?.mimeType);
     const userMessages = messages?.filter((m) => m.role === "user").map((m) => m.content) ?? [];
-    const lastUserMessage = userMessages[userMessages.length - 1] ?? "";
+    // 사용자가 보낸 글이 관찰 표지로 시작하면 무력화 — 그대로 저장되면 한도 집계·대화 이력에서 빠진다
+    const lastUserMessage = neutralizeObservationPrefix(userMessages[userMessages.length - 1] ?? "");
 
     // 음성 STT를 가장 먼저 시작 — weather/프롬프트/이력 조회와 병렬로 진행해 음성 왕복 지연 단축.
     //   (STT는 시스템 프롬프트와 무관하므로 직렬일 이유가 없음. 실패는 핸들러에서 빈 전사로 처리)
@@ -1369,6 +1382,14 @@ export async function POST(req: Request) {
     //   (프로필·요약·이력)로 LLM을 불러 그 응답을 돌려준다. 검진 세션이 열려 있으면 위 1325행 가드를
     //   통과하므로, 여기서 막지 않으면 전문가가 isReturningGreeting/isReEngage 플래그 하나로 환자의
     //   일상 맥락이 녹은 응답을 받는다(2026-10-06, 아래 '대리 신원은 여기서 끝난다'와 같은 불변식).
+    // 단, 대리 검진 중 20초 침묵 재참여는 **현재 문항의 쉬운 재질문 문구(정적 텍스트)**로 답한다 — LLM도
+    //   환자 맥락도 쓰지 않는다. 409로만 막으면 조용한 진료실에서 검진이 안내 없이 멈췄다(2026-10-06 재검토).
+    //   검진 상태는 전진·저장하지 않는다(재참여는 답이 아니다 — 재질문 횟수·채점은 실제 답 턴에서만).
+    if (userId !== actorId && isReEngage && examSession?.item_order) {
+      const order: string[] = (() => { try { return JSON.parse(examSession.item_order || "[]"); } catch { return []; } })();
+      const domain = order[examSession.current_item];
+      if (domain) return NextResponse.json({ text: `천천히 생각하셔도 괜찮아요. ${renderDomainReask(domain)}`, role: "assistant" });
+    }
     if (userId !== actorId && (isInitialGreeting || isReturningGreeting || isReEngage)) {
       return NextResponse.json({ error: "대리 접근은 검진 시행에만 쓸 수 있습니다." }, { status: 409 });
     }
@@ -1464,8 +1485,13 @@ export async function POST(req: Request) {
      *  - 응급 발화: 한도와 무관하게 항상 통과시킨다 — 안전이 비용보다 우선이다
      */
     let nearLimitRemaining = 0;
-    if (mode === "user" && conversationId && !isInitialGreeting && !isReturningGreeting && !isReEngage) {
-      const usage = await getDailyUsage(conversationId, userId);
+    // ⚠ conversationId를 빼고 보내면 예전엔 한도 판정이 **통째로** 빠졌다(2026-10-06 재검토 — /api/live/token은
+    //   같은 날 고쳤는데 여기엔 옮기지 않았다). 어르신은 대화가 계정당 하나(Conversation.userId 유일) — 없으면 찾아서 센다.
+    const limitConvId = mode === "user" && !isInitialGreeting && !isReturningGreeting && !isReEngage
+      ? conversationId ?? (await prisma.conversation.findUnique({ where: { userId }, select: { id: true } }).catch(() => null))?.id
+      : undefined;
+    if (limitConvId) {
+      const usage = await getDailyUsage(limitConvId, userId);
       if (usage.nearLimit) nearLimitRemaining = usage.remaining;
       if (usage.exceeded) {
         // 응급 발화는 한도와 무관하게 통과시킨다 — 안전이 비용보다 우선.
@@ -1495,7 +1521,7 @@ export async function POST(req: Request) {
           //   TTS로 읽히므로 어르신이 "오늘은 그만"이라고 자연히 이해한다.
           const text = buildDailyLimitReply(honorific, companionName);
           await saveMessages({
-            conversationId, userId,
+            conversationId: limitConvId, userId,
             userContent: spoken || (isAudio ? "(음성 메시지)" : ""),
             assistantContent: text, skipUserEmbedding: true, skipAssistantEmbedding: true,
           }).catch((e) => console.warn("[daily-limit] 저장 실패:", e));
@@ -1514,9 +1540,13 @@ export async function POST(req: Request) {
 
     // 응급 신호(L1 이상)나 부적절 발언이 섞인 발화는 단락하지 않고 일반 경로로 —
     // 시간 즉답이 응급 마킹/누적·모더레이션 카운트를 삼키는 것 방지(음성 1.55단계와 동일 정책).
+    //   ⚠ 응급은 **백스톱 포함**으로 본다(2026-10-06 재검토, 재현 확인). 정규식만 보던 시절엔
+    //   "지금 몇 시야? 모아둔 약 오늘 다 털어 넣을 거야"(정규식 none · 백스톱 L3)가 시각 안내 한 줄로
+    //   끝났다 — 음성 경로는 이미 effectiveLevel(백스톱 포함)을 봐서 두 경로가 어긋나 있었다.
+    //   비용: 백스톱은 SOFT_SIGNAL 사전필터를 통과한 발화에서만 LLM을 부른다(평범한 시간 질문은 0).
     if (!isAudio && lastUserMessage && isDateTimeQuestion(lastUserMessage)
-      && detectEmergency(lastUserMessage).level === 0
-      && detectInappropriate(lastUserMessage).category === "ok") {
+      && detectInappropriate(lastUserMessage).category === "ok"
+      && (await detectWithBackstop(lastUserMessage)).level === 0) {
       return handleDateTimeQuestion(lastUserMessage, honorific, conversationId, userId, ctx?.currentTime);
     }
 

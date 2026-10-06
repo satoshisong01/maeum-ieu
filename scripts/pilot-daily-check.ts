@@ -73,11 +73,14 @@ async function main() {
   }
 
   /**
-   * ── [2]~[6]은 **실사용 지표**다 — 테스트·사내·QA 계정을 뺀다 ──
+   * ── [2]·[3]·[4]·[6]은 **실사용 지표**다 — 테스트·사내·QA 계정을 뺀다 ──
    *
    * [1] 워치독과 판정 방향이 반대다(lib/test-accounts.ts 참조):
    *   · [1]은 경보다 — 실사용자를 테스트로 오분류하면 그 응급이 감시에서 빠진다 → 보수적.
-   *   · [2]~[6]은 지표다 — 테스트를 실사용으로 세면 판단이 틀린다 → 공격적.
+   *   · [2]·[3]·[4]·[6]은 지표다 — 테스트를 실사용으로 세면 판단이 틀린다 → 공격적.
+   *   · ⚠ [5](미연결 어르신)는 지표가 아니라 **조치 목록**이다 — [1]이 "보호자 미연결 → [5]에서 안내"로
+   *     넘긴 어르신을 받는 곳이라 [1]과 같은 보수적 판정을 쓴다. 처음엔 [5]에도 지표용(공격적) 판정을 걸어,
+   *     사내 패턴에 걸린 실사용 어르신이 [1]에서도 [5]에서도 사라질 수 있었다(2026-10-06 재검토).
    *
    * 결함(2026-10-02 감사, 2026-10-06 수정): 여기만 필터가 없었다. 단순 부풀림보다 나쁜 것은
    *   **경보가 가려지는 것**이었다:
@@ -89,7 +92,7 @@ async function main() {
   const allUsers = await prisma.user.findMany({ select: { id: true, email: true, createdAt: true } });
   const excluded = new Set(allUsers.filter((u) => isInternalOrTestAccount(u.email)).map((u) => u.id));
   const isReal = (userId: string) => !excluded.has(userId);
-  console.log(`\n(지표 [2]~[6]은 테스트·사내 계정 ${excluded.size}개를 뺀 실사용 기준 — 전체 ${allUsers.length}계정)`);
+  console.log(`\n(지표 [2]·[3]·[4]·[6]은 테스트·사내 계정 ${excluded.size}개를 뺀 실사용 기준 — 전체 ${allUsers.length}계정. [5]는 조치 목록이라 예약 도메인만 제외)`);
 
   // ── 2) 응급 발생·발송 현황 (24h) ──
   const emg = (await prisma.message.findMany({
@@ -123,8 +126,9 @@ async function main() {
   else console.log(`  ✅ 정상 범위`);
 
   // ── 5) 보호자 연결 현황 — 온보딩 빠짐 감지 ──
-  const patients = (await prisma.user.findMany({ where: { screeningMode: "user" }, select: { id: true, name: true, createdAt: true } }))
-    .filter((p) => isReal(p.id));
+  // 조치 목록 — [1]과 같은 보수적 판정(예약 도메인만 제외). 위 주석 ⚠ 참조.
+  const patients = (await prisma.user.findMany({ where: { screeningMode: "user" }, select: { id: true, name: true, createdAt: true, email: true } }))
+    .filter((p) => !isTestAccount(p.email));
   const recentPatients = patients.filter((p) => p.createdAt >= since);
   const unlinked: string[] = [];
   for (const pt of recentPatients) {

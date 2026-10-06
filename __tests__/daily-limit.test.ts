@@ -189,7 +189,10 @@ describe("라우트 게이트 계약", () => {
   });
 
   it("어르신(user) 모드에만 적용된다", () => {
-    expect(src).toMatch(/mode === "user"[\s\S]{0,160}getDailyUsage/);
+    // 한도 대상 대화 ID는 user 모드에서만 정해지고(그 외엔 undefined), 한도는 그 ID로만 센다.
+    //   (2026-10-06: conversationId를 빼고 보내도 계정의 대화를 찾아 세도록 바뀌며 모양이 달라졌다)
+    expect(src).toMatch(/const limitConvId = mode === "user" && !isInitialGreeting && !isReturningGreeting && !isReEngage\s*\?/);
+    expect(src).toMatch(/if \(limitConvId\) \{\s*const usage = await getDailyUsage\(limitConvId, userId\);/);
   });
 
   it("인사 턴은 제외된다 — 앱을 열자마자 막히면 고장으로 오해한다", () => {

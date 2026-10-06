@@ -4,6 +4,7 @@ import type { TimeContext, WeatherContext, ScreeningMode } from "./types";
 import { sliceProtocolForDomain, renderSystemPrompt, COMPANION_DEFAULTS } from "./constants";
 import { prisma } from "@/lib/prisma";
 import { toKstDateString } from "./time";
+import { EXCLUDE_OBSERVATION } from "./observation";
 import { getFullProfile, renderProfileForPrompt, type FullProfile } from "./profile";
 import { getRecentSummaries, renderSummariesForPrompt } from "./summarizer";
 import { sampleQuestionsForDomain, isBankReady } from "@/lib/screening/question-bank";
@@ -30,6 +31,23 @@ export function getHonorific(age: number | null, gender: string | null): string 
   return "선생님";
 }
 
+/**
+ * 사용자 호칭 — **단일 출처**. 동반자 프롬프트·한도 마무리 인사·복약 알림이 모두 이것을 쓴다.
+ *   명시 호칭 > 연령·성별 기반 > (그게 일반 기본값 "선생님"이고 이름이 있으면) "OOO님".
+ *   ("선생님"은 동반자 프롬프트가 금지 호칭으로 지정한다 — 이름이 있으면 이름으로 부르는 게 자연스럽다)
+ * 결함(2026-10-06 재검토): 이 규칙이 세 곳에 복사돼 있었고 복약 알림 복사본은 이름 폴백이 없어,
+ *   프롬프트가 금지한 "선생님"이 복약 알림 목소리로 나갔다. 복사본은 서로 어긋난다 — 한 곳에 둔다.
+ */
+export function resolveHonorific(
+  u: { name?: string | null; age?: number | null; gender?: string | null; userHonorific?: string | null } | null | undefined,
+): string {
+  const explicit = u?.userHonorific?.trim();
+  if (explicit) return explicit;
+  const derived = getHonorific(u?.age ?? null, u?.gender ?? null);
+  const name = u?.name?.trim();
+  return derived === "선생님" && name ? `${name}님` : derived;
+}
+
 function buildEnvBlock(timeCtx: TimeContext, weather: WeatherContext): string {
   return `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신뢰하세요]
 - 현재 한국 시각: ${timeCtx.dateStr}
@@ -41,7 +59,8 @@ function buildEnvBlock(timeCtx: TimeContext, weather: WeatherContext): string {
 
 async function getDateAwareBlock(conversationId: string, todayKst: string): Promise<string> {
   const last = await prisma.message.findFirst({
-    where: { conversationId },
+    // 상시 감시 조각은 대화가 아니다 — 세면 오늘 감시를 켠 날 "오랜만이에요" 날짜 안내가 사라진다
+    where: { conversationId, ...EXCLUDE_OBSERVATION },
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
@@ -128,7 +147,8 @@ export async function buildSystemPrompt(params: {
     conversationId ? getDateAwareBlock(conversationId, todayKstEarly) : Promise.resolve(""),
     getTodayAssessedDomains(userId),
     conversationId && mode !== "pro"
-      ? prisma.message.count({ where: { conversationId, role: "user" } })
+      // 확인 턴 산술(5턴에 1번)의 턴 수 — 감시 조각을 세면 확인 턴과 정밀 채점 턴이 어긋난다
+      ? prisma.message.count({ where: { conversationId, role: "user", ...EXCLUDE_OBSERVATION } })
       : Promise.resolve(0),
     getFullProfile(userId),
     getRecentSummaries(userId),
@@ -138,10 +158,7 @@ export async function buildSystemPrompt(params: {
   const userName = user?.name?.trim() || "사용자";
   // 호칭 결정: 명시 호칭 > 연령·성별 기반(할머니/할아버지 등). 둘 다 없어 일반 기본값("선생님")이 되는데
   //   이름이 있으면 "OOO님"으로 부르는 게 자연스러움(특히 검진 — 환자를 일반 "선생님"으로 부르면 어색).
-  const explicitHonorific = user?.userHonorific?.trim();
-  const derivedHonorific = getHonorific(user?.age ?? null, user?.gender ?? null);
-  const honorific = explicitHonorific
-    || (derivedHonorific === "선생님" && user?.name?.trim() ? `${userName}님` : derivedHonorific);
+  const honorific = resolveHonorific(user);
   const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
   const companionRelation = user?.companionRelation?.trim() || COMPANION_DEFAULTS.relation;
 

@@ -20,7 +20,7 @@ import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
 import { isLiveBetaEnabledServer } from "@/lib/feature-flags";
 import { getDailyUsage, buildDailyLimitReplyForUser } from "@/lib/usage/daily-limit";
-import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
+import { EXCLUDE_OBSERVATION, neutralizeObservationPrefix } from "@/lib/chat/observation";
 
 export async function POST(req: Request) {
   // 라이브 베타 서버 게이트(2026-07-07 감사) — UI 링크 숨김과 짝. 플래그 없으면 저장 경로도 차단.
@@ -62,7 +62,8 @@ export async function POST(req: Request) {
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
 
   const body = await req.json().catch(() => ({}));
-  const userText = String(body?.userText || "").slice(0, 2000).trim();
+  // 관찰 표지로 시작하는 전사는 무력화 — 그대로 저장되면 한도 집계·대화 이력에서 빠진다(lib/chat/observation)
+  const userText = neutralizeObservationPrefix(String(body?.userText || "").slice(0, 2000).trim());
   /**
    * AI 전사는 **없어도 된다** — 사용자 발화만 있으면 처리한다(2026-10-06 적대 감사).
    *   예전엔 aiText가 비면 400이었고 클라도 `if (u && a)`일 때만 보냈다. Gemini Live가 출력 전사를

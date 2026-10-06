@@ -42,13 +42,17 @@ const saveMessages = vi.fn<(a: Record<string, unknown>) => Promise<{ userMsgId: 
 //   처음엔 saveMessages만 목으로 둬서 L1 턴이 "없는 함수 호출"로 **500**이 났는데, L1 테스트는
 //   dailyLimitReached가 없는지만 봐서 오류 응답에도 통과했다(2026-10-06 실측). 상태 코드를 같이 본다.
 let recentL1 = 0;
+// 인자를 받아 둔다 — "어느 대화의 L1을 세는지"를 보지 않으면 엉뚱한 키를 넘겨도 녹색이다(2026-10-06 재검토)
+const countRecentL1Signals = vi.fn<(conversationId: string) => Promise<number>>(async () => recentL1);
 vi.mock("@/lib/chat/messages", () => ({
   saveMessages: (a: Record<string, unknown>) => saveMessages(a),
-  countRecentL1Signals: vi.fn(async () => recentL1),
+  countRecentL1Signals: (c: string) => countRecentL1Signals(c),
 }));
 const runCognitiveAnalysis = vi.fn(async () => { calls.push("cognitive"); });
 vi.mock("@/lib/chat/cognitive-run", () => ({ runCognitiveAnalysis: () => runCognitiveAnalysis() }));
-vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: vi.fn(async () => null) }));
+// 백스톱은 조절 가능해야 한다 — 항상 null이면 "한도 예외에 백스톱이 포함된다"를 검증할 수 없다
+const backstop = vi.fn<(text: string) => Promise<{ level: 0 | 1 | 2 | 3; category: string; evidence: string } | null>>(async () => null);
+vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: (t: string) => backstop(t) }));
 const notifyGuardian = vi.fn<(p: { level: number }) => Promise<{ sent: boolean; channels: string[] }>>(
   async () => ({ sent: true, channels: ["push"] }));
 vi.mock("@/lib/chat/emergency-notify", () => ({ notifyGuardian: (p: { level: number }) => notifyGuardian(p) }));
@@ -58,9 +62,10 @@ const extractAndSaveProfile = vi.fn(async () => { calls.push("profile"); });
 vi.mock("@/lib/chat/profile-extractor", () => ({ extractAndSaveProfile: () => extractAndSaveProfile() }));
 const maybeTriggerSummaryRollup = vi.fn(async () => { calls.push("summary"); });
 vi.mock("@/lib/chat/summary-trigger", () => ({ maybeTriggerSummaryRollup: () => maybeTriggerSummaryRollup() }));
-const getDailyUsage = vi.fn(async () => { calls.push("usage"); return usage; });
+const getDailyUsage = vi.fn<(conversationId: string, userId: string) => Promise<typeof usage>>(
+  async () => { calls.push("usage"); return usage; });
 vi.mock("@/lib/usage/daily-limit", () => ({
-  getDailyUsage: () => getDailyUsage(),
+  getDailyUsage: (c: string, u: string) => getDailyUsage(c, u),
   buildDailyLimitReplyForUser: vi.fn(async () => "어르신, 오늘 민지랑 이야기 많이 나눴네요. 내일 또 만나요."),
 }));
 
@@ -87,7 +92,9 @@ beforeEach(() => {
   lastResortEmergency.mockClear();
   usage = { used: 10, limit: 200, exceeded: false, nearLimit: false, remaining: 190 };
   session = { user: { id: "u-elder", name: "김어르신", screeningMode: "user" } };
-  for (const f of [saveMessages, runCognitiveAnalysis, notifyGuardian, extractAndSaveProfile, maybeTriggerSummaryRollup, getDailyUsage]) f.mockClear();
+  backstop.mockReset();
+  backstop.mockImplementation(async () => null);
+  for (const f of [saveMessages, runCognitiveAnalysis, notifyGuardian, extractAndSaveProfile, maybeTriggerSummaryRollup, getDailyUsage, countRecentL1Signals]) f.mockClear();
 });
 
 describe("보호자 계정 — /api/chat과 같은 403", () => {
@@ -161,6 +168,36 @@ describe("세션 중 일일 한도 — 유료 후처리만 끊는다", () => {
     expect(r.status, "오류 응답이면 아래 단언은 공허하다").toBe(200);
     expect(r.body.dailyLimitReached).toBeUndefined();
   });
+
+  it("한도 초과 + **백스톱만** 잡는 응급도 통과 — 한도 판정이 정규식만 보면 안 된다", async () => {
+    usage = { used: 250, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
+    const { detectEmergency } = await import("@/lib/chat/emergency");
+    const hidden = "모아둔 약 오늘 다 털어 넣을 거야";
+    expect(detectEmergency(hidden).level, "전제: 정규식은 못 잡아야 이 테스트가 백스톱 경로를 본다").toBe(0);
+    backstop.mockImplementation(async () => ({ level: 3, category: "suicidal", evidence: "llm" }));
+    const r = await call(req(hidden, "무슨 일 있으세요?"));
+    expect(r.status).toBe(200);
+    // 🔒 백스톱을 건너뛰고 한도를 먼저 적용하면 이 턴이 마무리 인사로 끝나고 통화가 끊긴다
+    expect(r.body.emergencyLevel).toBe(3);
+    expect(r.body.dailyLimitReached).toBeUndefined();
+    expect(notifyGuardian).toHaveBeenCalledTimes(1);
+  });
+
+  it("한도 초과 + L1 누적 승격(L2)도 통과하고 알린다", async () => {
+    usage = { used: 250, limit: 200, exceeded: true, nearLimit: false, remaining: 0 };
+    recentL1 = 2;
+    const r = await call(req("요즘 입맛이 하나도 없어", "식사를 잘 못 하셨구나"));
+    expect(r.status).toBe(200);
+    expect(r.body.emergencyLevel).toBe(2);
+    expect(r.body.dailyLimitReached).toBeUndefined();
+    expect(notifyGuardian.mock.calls[0]?.[0].level).toBe(2);
+  });
+
+  it("한도는 **이 대화·이 사용자**로 센다", async () => {
+    await call();
+    // 🔒 인자를 버리는 목이면 순서를 뒤바꿔도 녹색이었다(2026-10-06 재검토)
+    expect(getDailyUsage).toHaveBeenCalledWith("c-1", "u-elder");
+  });
 });
 
 describe("L1 24시간 누적 → L2 승격 — /api/chat과 같은 규칙", () => {
@@ -175,6 +212,8 @@ describe("L1 24시간 누적 → L2 승격 — /api/chat과 같은 규칙", () =
     expect(saveMessages.mock.calls[0][0].emergencyLevel).toBe(2);
     expect(notifyGuardian).toHaveBeenCalledTimes(1);
     expect(notifyGuardian.mock.calls[0][0].level).toBe(2);
+    // 🔒 **이 대화**의 L1을 센다 — 다른 키를 넘겨도 목이 같은 수를 돌려주면 녹색이었다
+    expect(countRecentL1Signals).toHaveBeenCalledWith("c-1");
   });
 
   it("누적이 모자라면 L1로 저장만 하고 알리지 않는다", async () => {

@@ -52,14 +52,17 @@ export async function GET(req: Request) {
   const uid = await resolveTarget(session as never, targetUserId);
   if (!uid) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
 
-  const withEmbedding = new URL(req.url).searchParams.get("withEmbedding") === "1";
+  // 성문 **벡터**(생체정보)는 본인에게만 — 상시 감시가 본인 기기 안에서 화자 게이팅할 때만 쓴다.
+  //   연결된 전문가는 등록 여부·표본 수만 보면 된다. 예전엔 targetUserId로 환자 벡터를 그대로 받을 수
+  //   있었다(2026-10-06 재검토 — 쓰는 화면은 없지만 최소 수집·최소 제공 원칙)
+  const withEmbedding = new URL(req.url).searchParams.get("withEmbedding") === "1" && uid === session.user.id;
   const cols = withEmbedding ? "updated_at, sample_secs, sample_count, embedding" : "updated_at, sample_secs, sample_count";
   const rows = await prisma.$queryRawUnsafe<{ updated_at: Date; sample_secs: number | null; sample_count: number; embedding?: unknown }[]>(
     `SELECT ${cols} FROM speaker_voiceprint WHERE user_id = $1`, uid,
   );
   const r = rows[0];
   const out: Record<string, unknown> = { enrolled: !!r, sampleCount: r?.sample_count ?? 0, updatedAt: r?.updated_at ?? null, sampleSecs: r?.sample_secs ?? null, threshold: VOICEPRINT_THRESHOLD };
-  // 본인 성문 벡터 반환 — 상시 감시가 기기 안에서 화자 게이팅(비환자 오디오 미전송)하도록. 본인/권한자 한정.
+  // 본인 성문 벡터 반환 — 상시 감시가 기기 안에서 화자 게이팅(비환자 오디오 미전송)하도록. 본인 한정(위 withEmbedding).
   if (withEmbedding && r?.embedding) out.embedding = r.embedding;
   return NextResponse.json(out);
 }

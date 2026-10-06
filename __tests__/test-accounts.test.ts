@@ -68,17 +68,26 @@ describe("워치독이 이 제외를 실제로 쓴다", () => {
       ["[3] 발화", /userMsgs = \(await prisma\.message\.findMany[\s\S]{0,200}\.filter\(\(m\) => isReal\(/],
       ["[3] 신규 가입", /newUsers = allUsers\.filter\(\(u\) => [^\n]*isReal\(u\.id\)/],
       ["[4] 폴백률", /aiMsgs = \(await prisma\.message\.findMany[\s\S]{0,200}\.filter\(\(m\) => isReal\(/],
-      ["[5] 미연결 어르신", /patients = \(await prisma\.user\.findMany[\s\S]{0,200}\.filter\(\(p\) => isReal\(p\.id\)\)/],
       ["[6] 인지분석", /assessRows\.filter\(\(r\) => isReal\(r\.user_id\)\)/],
     ] as const) {
       expect(metrics, `${name} 지표에 실사용 필터가 없다`).toMatch(re);
     }
   });
 
+  it("[5] 미연결 어르신은 **조치 목록**이라 [1]처럼 보수적 판정을 쓴다", async () => {
+    const src = await (await import("node:fs/promises")).readFile("scripts/pilot-daily-check.ts", "utf-8");
+    const sec5 = src.slice(src.indexOf("// ── 5)"), src.indexOf("// ── 6)"));
+    // 🔒 [1]이 "보호자 미연결 → [5]에서 안내"로 넘긴 어르신을 받는 곳 — 지표용(공격적) 판정을 쓰면
+    //   사내 패턴에 걸린 실사용 어르신이 [1]에서도 [5]에서도 사라진다(2026-10-06 재검토)
+    expect(sec5).toMatch(/\.filter\(\(p\) => !isTestAccount\(p\.email\)\)/);
+    expect(sec5).not.toMatch(/isReal\(|isInternalOrTestAccount/);
+  });
+
   it("pilot-daily-check의 [1] 워치독은 **보수적 판정을 유지**한다", async () => {
     const src = await (await import("node:fs/promises")).readFile("scripts/pilot-daily-check.ts", "utf-8");
     // 구간 끝은 지표 블록 설명의 시작 — 그 아래 excluded 집합(지표용)은 워치독이 아니다
-    const end = src.indexOf("[2]~[6]은 **실사용 지표**");
+    // 범위 표기("[2]~[6]" → "[2]·[3]·[4]·[6]")가 바뀌어도 깨지지 않게 문구 꼬리로 찾는다
+    const end = src.indexOf("은 **실사용 지표**다");
     expect(end, "지표 블록 경계를 못 찾음").toBeGreaterThan(0);
     const watchdog = src.slice(src.indexOf("// ── 1)"), end);
     // 🔒 워치독에 지표용 판정이 들어가면, 사내 계정으로 테스트 중인 진짜 응급 미발송이 감시에서 빠진다
@@ -146,6 +155,18 @@ describe("실사용 지표에서 테스트 트래픽이 빠져 있다", () => {
     // 🔒 users: realRows 로 바뀌면 관리자가 테스트 계정 상태를 볼 수 없게 된다
     expect(src).toMatch(/users: userRows/);
     expect(src).toMatch(/isTest: isInternalOrTestAccount/);
+  });
+
+  it("admin 응급 요약은 **보수적** 판정으로 테스트만 빼고, 거른 뒤에 15건을 자른다 (2026-10-06)", async () => {
+    const fs = await import("node:fs/promises");
+    const src = await fs.readFile("app/api/admin/overview/route.ts", "utf-8");
+    // 🔒 행동해야 하는 목록 — 공격적 판정을 쓰면 실사용 어르신의 미발송 응급이 사라질 수 있다([5]와 같은 원칙)
+    expect(src).toMatch(/const realEmerg = emergRecent\.filter\(\(e\) => !isTestAccount\(e\.conversation\.user\.email\)\);/);
+    expect(src).toMatch(/emergUnnotified = realEmerg\.filter/);
+    expect(src).toMatch(/emerg7d: realEmerg\.length/);
+    // 🔒 DB에서 15건으로 자른 뒤 거르면 e2e 합성 응급이 실제 응급을 목록 밖으로 밀어낸다
+    expect(src).toMatch(/emergencies: realEmerg\.slice\(0, 15\)/);
+    expect(src).not.toMatch(/take: 15,/);
   });
 
   it("usage-stats가 공유 판정을 쓴다 (자체 목록으로 되돌아가면 실패)", async () => {

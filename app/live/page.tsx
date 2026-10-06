@@ -75,6 +75,19 @@ function LiveInner() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [bubbles]);
 
+  /**
+   * 안내 문장을 **소리로도** 읽어 준다 — Live 엔진이 멈춘 뒤라 모델 음성으로는 말할 수 없다.
+   *   어르신은 음성 위주라 화면 글씨만으로는 "왜 끊겼는지"를 모른다. 브라우저 내장 음성(가능할 때만).
+   */
+  const speakNotice = (text: string) => {
+    try {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ko-KR";
+      window.speechSynthesis.speak(u);
+    } catch { /* 읽어 주기는 보조 수단 — 실패해도 화면 안내는 남는다 */ }
+  };
+
   const upsertBubble = (role: "user" | "assistant", text: string, final = false) => {
     setBubbles((prev) => {
       const next = [...prev];
@@ -151,14 +164,29 @@ function LiveInner() {
             engineRef.current?.stop();
             setState("stopped");
           } else if (dailyLimitMessage) {
-            // 일일 한도 — 마무리 인사를 남기고 닫는다(위 복약 캡처는 이미 끝났다)
+            /**
+             * 일일 한도 — 마무리 인사를 남기고 닫는다(위 복약 캡처는 이미 끝났다).
+             *
+             * ⚠ 2026-10-06 재검토로 고친 두 가지(첫 구현의 결함):
+             *   ① 이 화면은 말풍선을 **그리지 않는다**(통화 화면). 처음엔 upsertBubble로만 넣어 마무리 인사가
+             *      화면에도 소리로도 안 나왔고, 어르신은 통화가 그냥 끊긴 줄로 알았다 → 안내 영역에 띄우고 읽어 준다.
+             *   ② 한도 신호는 **직전 턴**의 회송 응답이라 늦게 온다. 그 사이 어르신이 다음 말을 하고 있으면
+             *      바로 닫을 때 그 발화(응급일 수 있다)가 서버에 가지 않고 버려졌다 → 말하는 중이면 닫지 않는다.
+             *      그 발화가 끝나 회송되면 서버가 다시 판정한다(응급이면 통과, 아니면 다시 한도 신호).
+             */
+            if (engineRef.current?.hasPendingUserSpeech()) return;
             upsertBubble("assistant", dailyLimitMessage, true);
+            setError(dailyLimitMessage);
+            speakNotice(dailyLimitMessage);
             engineRef.current?.stop();
             setState("stopped");
             setLimitReached(true);
           }
         },
         onError: (m) => setError(m),
+        // 15분 재연결 중 한도 거절 — 아래 첫 연결 실패(catch)와 같은 처리. 예전엔 onError만 받아
+        //   안내 문구만 뜨고 응급 통로 버튼이 없었다(2026-10-06 재검토)
+        onDailyLimit: (m) => { setLimitReached(true); speakNotice(m); },
       });
       engineRef.current = engine;
 
@@ -174,7 +202,10 @@ function LiveInner() {
       setState("error");
       // 동의가 없으면 동의 화면으로 — 여기서 멈추면 어르신은 "고장"으로만 안다
       if ((e as Error & { needConsent?: boolean }).needConsent) router.push("/consent");
-      if ((e as Error & { dailyLimitReached?: boolean }).dailyLimitReached) setLimitReached(true);
+      if ((e as Error & { dailyLimitReached?: boolean }).dailyLimitReached) {
+        setLimitReached(true);
+        speakNotice((e as Error).message);
+      }
     }
   };
 
@@ -278,13 +309,18 @@ function LiveInner() {
           일일 한도 뒤의 응급 통로(2026-10-06 적대 감사) — 한도로 Live가 닫히면 그날은 음성으로 응급을 말할 곳이
           없었다. 클래식 음성(/chat)은 한도 후에도 발화마다 응급을 판정한다(평범한 말엔 LLM 비용 없이 마무리 인사).
           classic=1이 없으면 /chat이 다시 /live로 돌려보낸다(app/chat/page.tsx preferLive).
+          ⚠ armed=1 — 클래식 음성은 원래 **호출어 대기**로 시작한다. 처음엔 그대로 보내서, 문구대로 곧장 말한
+          응급("숨이 안 쉬어져")이 호출어 인식기에만 들리고 버려졌다(2026-10-06 재검토). 이 통로는 호출어 없이
+          바로 듣는다(app/chat/page.tsx armedStartRef — 검진 시작과 같은 방식으로 세션을 연다).
+          ⚠ tel:119 링크는 넣지 않는다 — 앱(MaeumApp WebView)에 tel: 처리가 없어 Android에서 오류 페이지로
+          넘어갈 수 있다. 응급 순간에 화면을 깨뜨리는 버튼보다 없는 편이 낫다(앱에 처리 추가 후 재검토).
         */}
         {limitReached && (
           <button
-            onClick={() => router.push("/chat?start=1&classic=1")}
+            onClick={() => router.push("/chat?start=1&classic=1&armed=1")}
             className="rounded-2xl bg-red-600 px-5 py-4 text-lg font-bold text-white shadow active:bg-red-700"
           >
-            🚨 급한 일이 있으세요? 여기를 눌러서 말씀해 주세요
+            🚨 급한 일이 있으세요? 누르고 바로 말씀해 주세요
           </button>
         )}
 

@@ -108,3 +108,38 @@ describe("삭제는 언제나 허용", () => {
     expect(writes.filter((w) => w.startsWith("DELETE FROM")).length).toBe(2);
   });
 });
+
+describe("진입 링크 — 서버가 받는 계정에만 보인다", () => {
+  it("마이페이지의 /voiceprint 링크는 어르신(user) 계정 조건 안에 있다", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile("app/mypage/page.tsx", "utf-8");
+    const at = src.indexOf('href="/voiceprint"');
+    expect(at).toBeGreaterThan(-1);
+    // 🔒 조건이 빠지면 보호자·전문가·일반인이 30초 낭독을 마친 **뒤에** 403을 받는다(위 '본인 등록' 참조)
+    const before = src.slice(Math.max(0, at - 400), at);
+    expect(before).toMatch(/\{screeningMode === "user" && \(\s*<Link\s*$/);
+  });
+});
+
+describe("성문 벡터 조회 — 본인에게만 (2026-10-06 재검토)", () => {
+  async function get(qs: string) {
+    const { GET } = await import("@/app/api/voiceprint/route");
+    const res = await GET(new Request(`http://localhost/api/voiceprint${qs}`));
+    return { status: res.status, body: await res.json() as Record<string, unknown> };
+  }
+
+  it("본인은 withEmbedding=1로 벡터를 받는다 (상시 감시의 기기 내 화자 게이팅)", async () => {
+    const r = await get("?withEmbedding=1");
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body.embedding)).toBe(true);
+  });
+
+  it("연결된 전문가는 환자의 등록 여부만 보고 벡터는 받지 않는다", async () => {
+    session = { user: { id: "u-pro", screeningMode: "pro" } };
+    const r = await get("?targetUserId=u-elder&withEmbedding=1");
+    expect(r.status).toBe(200);
+    expect(r.body.enrolled).toBe(true);
+    // 🔒 생체정보 최소 제공 — 쓰는 화면이 없는데도 벡터를 그대로 내주던 길
+    expect(r.body.embedding).toBeUndefined();
+  });
+});

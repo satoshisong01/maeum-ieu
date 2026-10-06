@@ -10,6 +10,7 @@ import { useWakeWord } from "./useWakeWord";
 import { classifyMedReply } from "@/lib/chat/medication";
 import { hasJongseong } from "@/lib/chat/korean-particle";
 import { isSessionEndUtterance } from "@/lib/chat/session-end";
+import { shouldPreferLive } from "@/lib/chat/live-preference";
 
 /**
  * 음성 동선을 Live(/live)로 보낼지 — 베타가 켜져 있어도 `?classic=1`이면 이 화면의 클래식 음성을 쓴다.
@@ -20,8 +21,8 @@ import { isSessionEndUtterance } from "@/lib/chat/session-end";
  *   네 곳의 조건을 이 함수 하나로 모았다 — 한 곳만 바꾸면 나머지가 다시 되돌려 보낸다.
  */
 function preferLive(): boolean {
-  if (process.env.NEXT_PUBLIC_SHOW_LIVE_BETA !== "1") return false;
-  return !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("classic") === "1");
+  // 판정은 lib/chat/live-preference(행위 테스트 대상) — 여기는 빌드 플래그와 현재 주소만 넘긴다
+  return shouldPreferLive(process.env.NEXT_PUBLIC_SHOW_LIVE_BETA, typeof window !== "undefined" ? window.location.search : "");
 }
 
 type Message = { id: string; role: "user" | "assistant"; content: string; createdAt?: string };
@@ -1060,6 +1061,8 @@ export default function ChatPage() {
   //   마이크 거부/실패 시 micDenied → 기존 선택 화면(글씨로 대화하기 포함)이 그대로 안내.
   //   검진(대리) 모드는 '검진 시작' 버튼+동의 절차가 따로 있어 제외.
   const autoVoiceTriedRef = useRef(false);
+  /** 한도 뒤 응급 통로로 들어왔다(?armed=1) — 아래 effect가 호출어 없이 세션을 연다 */
+  const armedStartRef = useRef(false);
   useEffect(() => {
     if (autoVoiceTriedRef.current) return;
     if (status !== "authenticated" || screeningMode !== "user" || examMode || modeSelected) return;
@@ -1074,8 +1077,26 @@ export default function ChatPage() {
     // 라이브 음성(Gemini Live)이 켜져 있으면 어르신 음성 동선은 /live가 기본(2026-07-20 전환).
     //   /live도 마이크·오디오는 [대화 시작하기] 탭(제스처)에서 열므로 autoplay 정책과 무관.
     if (preferLive()) { router.push("/live"); return; }
+    armedStartRef.current = new URLSearchParams(window.location.search).get("armed") === "1";
     void startConversation();
   }, [status, screeningMode, examMode, modeSelected, startConversation, router]);
+
+  /**
+   * 한도 뒤 응급 통로(/live의 🚨 버튼 → ?classic=1&armed=1) — **호출어 없이 바로 듣는다.**
+   *
+   * 결함(2026-10-06 재검토): 이 통로가 평소처럼 호출어 대기로 열려, 버튼 문구대로 곧장 말한 응급
+   *   ("숨이 안 쉬어져")이 호출어 인식기에만 들리고 서버에 가지 않았다.
+   * 마이크·대화가 준비되면 검진 시작(startExam)처럼 세션을 연다. 인사가 재생 중이면 startRecording이
+   *   turnLock 동안 기다렸다 시작한다. ⚠ 인사 끝의 자동 청취에 기대면 안 된다 — 직전까지 Live를 쓰던
+   *   어르신은 마지막 대화가 2시간 안이라 재인사 자체가 없다. (armedStartRef는 위 자동 시작 effect가 세운다)
+   */
+  useEffect(() => {
+    if (!armedStartRef.current || !micAllowed || !alwaysOn || !conversationId || sessionActive) return;
+    armedStartRef.current = false;
+    sessionActiveRef.current = true; setSessionActive(true);
+    wakeArmedRef.current = true; setWakeArmed(true);
+    setTimeout(() => { if (!unmountedRef.current) startRecordingRef.current(); }, 250);
+  }, [micAllowed, alwaysOn, conversationId, sessionActive]);
 
   // 검진 종료(시간 만료) — 세션 정리 + 안내. 수동 종료는 배너 '검사 종료' 링크(/expert)로.
   const endExam = useCallback(() => {

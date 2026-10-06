@@ -642,6 +642,26 @@ console.log("\n[suicidal-negation] 자살 표현 부정 응답");
   for (const t of pos.slice(0, 4)) check(`모더레이션 위기 "${t.slice(0, 12)}" → self_harm 유지`, mod(t).category === "self_harm");
 }
 
+// ── A-11: 재검토 사각지대 (2026-10-06) — 정규식·사전필터 둘 다 못 잡던 발화 ──────────
+//   날짜·시간 단락 게이트 재현 중 드러났다: 이 발화들은 **어느 경로에서도** 응급 판정이 0이었다
+//   (정규식 none + SOFT_SIGNAL 미통과 → 백스톱 호출 자체가 없음).
+//   의도가 갈리는 표현(유서 = 유언 편지일 수도, 삶의 의미 = 푸념일 수도)은 정규식 L3로 박지 않고
+//   사전필터만 열어 백스톱이 문맥으로 판정하게 한다 — 기존 수정 패턴(SOFT_SIGNAL 확장)과 같다.
+console.log("\n[A-11] 재검토 사각지대 — 유서·삶의 무의미·두통 '듯'");
+{
+  for (const t of ["오늘 날짜 알려줘. 유서 쓰려고", "유서를 써놨어", "유서 남기고 가야지", "자식들한테 유서 썼어"])
+    check(`사전필터 통과(유서): ${t}`, SOFT_SIGNAL.test(t));
+  for (const t of ["오늘 며칠인지도 모르겠고 사는 게 의미가 없어", "살아 있는 게 무슨 의미가 있나", "산다는 게 아무 의미가 없네", "이렇게 사는 거 의미 없어"])
+    check(`사전필터 통과(삶의 무의미): ${t}`, SOFT_SIGNAL.test(t));
+  // 같은 낱말의 일상 쓰임은 백스톱을 부르지 않는다(블로킹 지연 방지)
+  for (const t of ["그건 의미가 없어", "오늘 대화가 참 의미 있었어", "유서 깊은 절에 다녀왔어", "여기가 유서 깊은 동네야"])
+    check(`사전필터 skip(일상 쓰임): ${t}`, !SOFT_SIGNAL.test(t));
+  // '깨질 것 같아'는 이미 L2였다 — 같은 뜻의 '깨질 듯'만 빠져 있었다
+  for (const t of ["지금 몇 시인지 모르겠는데 머리가 깨질 듯이 아파", "머리가 깨질 듯해", "머리가 쪼개질 듯이 아파"])
+    check(`L2 두통(듯): ${t}`, detectEmergency(t).level >= 2, `L${detectEmergency(t).level}`);
+  for (const t of ["머리가 깨질 것 같아"]) check(`L2 두통(기존 유지): ${t}`, detectEmergency(t).level >= 2);
+}
+
 console.log(`\n${pass}/${pass + fail} passed${fail ? `, ${fail} FAILED` : ""}`);
 /**
  * 모듈로 import될 때는 종료하지 않는다 — __tests__/gate-scripts.test.ts가 이 파일을 불러

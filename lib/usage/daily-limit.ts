@@ -118,16 +118,14 @@ export function buildDailyLimitReply(honorific: string, companionName: string): 
  */
 export async function buildDailyLimitReplyForUser(userId: string): Promise<string> {
   const { prisma } = await import("@/lib/prisma");
-  const { getHonorific } = await import("@/lib/chat/prompt");
+  const { resolveHonorific } = await import("@/lib/chat/prompt");
   const { COMPANION_DEFAULTS } = await import("@/lib/chat/constants");
   const u = await prisma.user.findUnique({
     where: { id: userId },
     select: { name: true, age: true, gender: true, userHonorific: true, companionName: true },
   }).catch(() => null);
-  const derived = getHonorific(u?.age ?? null, u?.gender ?? null);
-  const honorific = u?.userHonorific?.trim()
-    || (derived === "선생님" && u?.name?.trim() ? `${u.name.trim()}님` : derived);
-  return buildDailyLimitReply(honorific, u?.companionName?.trim() || COMPANION_DEFAULTS.name);
+  // 호칭은 동반자 프롬프트와 같은 함수로 — 복사본은 서로 어긋난다(2026-10-06 재검토)
+  return buildDailyLimitReply(resolveHonorific(u), u?.companionName?.trim() || COMPANION_DEFAULTS.name);
 }
 
 /**

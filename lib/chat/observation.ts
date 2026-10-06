@@ -29,3 +29,15 @@ export function isObservationContent(content: string | null | undefined): boolea
 
 /** Prisma where 절 조각 — 관찰 기록을 뺀다. `where: { ..., ...EXCLUDE_OBSERVATION }` */
 export const EXCLUDE_OBSERVATION = { NOT: { content: { startsWith: OBSERVATION_PREFIX } } } as const;
+
+/**
+ * 사용자가 **직접 보낸** 글(채팅·Live 전사)이 표지로 시작하면 표지 효력을 없앤다.
+ *
+ * 결함(2026-10-06 재검토): 표지는 본문 접두사 하나뿐이라, 어르신 계정이 "[관찰] …"로 시작하는 글을
+ *   보내면 그 글이 관찰 기록으로 취급됐다 — 일일 한도 집계에서 빠지고(상한 우회), 동반자 대화 이력과
+ *   대화 화면에서도 사라졌다. 저장 경계에서 대괄호를 전각으로 바꿔, 사람 눈엔 같게 보이고 판정에서만 빠진다.
+ *   (상시 감시 경로는 이 함수를 쓰지 않는다 — toObservationContent가 표지를 붙인다.)
+ */
+export function neutralizeObservationPrefix(text: string): string {
+  return isObservationContent(text) ? `［관찰］${text.slice(OBSERVATION_PREFIX.length)}` : text;
+}

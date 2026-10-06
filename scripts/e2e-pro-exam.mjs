@@ -216,6 +216,37 @@ async function main() {
     check("결과 화면이 0점 보조 문항을 필터", /itemRows\.filter\(\(it\) => it\.max_points > 0\)/.test(src));
   } finally { c3.release(); }
 
+  /**
+   * [6] 의사 결과 화면 — **실제 API**로 문답 기록을 확인한다(2026-10-06).
+   *
+   * 예전엔 이 단계가 소스 grep뿐이라, 문답 기록 출처를 바꾼 코드가 실서버에서 한 번도 돌지 않았다.
+   * 그리고 실제 누출 시나리오를 재현한다: 검진 진행 중 환자 대화에 **일상 대화 한 줄**을 끼워 넣고,
+   * 그 줄이 문답 기록에 나오지 않아야 한다. 예전 구현(시간 창 안의 모든 메시지)은 이걸 그대로 보여줬다 —
+   * 실데이터 대조에서 두 세션에 검진 외 메시지 27건이 실제로 노출돼 있었다.
+   */
+  console.log("\n[6] 의사 결과 화면(실제 API) — 일상 대화가 문답 기록에 섞이지 않는다");
+  const LEAK_MARK = `[e2e] 일상 대화 누출 확인용 ${Date.now()}`;
+  const c4 = await db.connect();
+  try {
+    await c4.query(
+      `INSERT INTO "Message" (id, "conversationId", role, content, "createdAt") VALUES ($1, $2, 'user', $3, now())`,
+      [`e2e_leak_${Date.now()}`, conversationId, LEAK_MARK]);
+    const det = await pro.req(`/api/expert/patients/${ptId}`);
+    check("상세 API 200", det.status === 200, `status=${det.status}`);
+    const dj = await det.json().catch(() => ({}));
+    const ex = (dj.examSessions || []).find((e) => e.id === sessionId);
+    check("이번 세션이 결과 화면에 있다", !!ex);
+    const qa = ex?.qa || [];
+    check("문답 기록이 비어 있지 않다", qa.length > 0, `qa=${qa.length}`);
+    // 🔒 핵심: 검진 중에 생긴 일상 대화가 전문가 화면에 나오면 동의서 §4 위반이다
+    check("검진 중 일상 대화가 문답 기록에 없다", !qa.some((m) => String(m.content).includes(LEAK_MARK)));
+    check("상시 감시 혼잣말이 문답 기록에 없다", !qa.some((m) => String(m.content).startsWith("[관찰]")));
+    check("문답이 질문·답 쌍으로 번갈아 나온다", qa.every((m, i) => i === 0 || m.role !== qa[i - 1].role || m.role === "user"));
+  } finally {
+    await c4.query(`DELETE FROM "Message" WHERE content = $1`, [LEAK_MARK]).catch(() => {});
+    c4.release();
+  }
+
   await pro.req("/api/expert/exam", { method: "POST", body: JSON.stringify({ action: "end", sessionId }) }).catch(() => {});
   await db.end();
 

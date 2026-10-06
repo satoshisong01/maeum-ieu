@@ -27,17 +27,43 @@ describe("/chat — classic=1이면 /live로 되돌려 보내지 않는다", () 
     expect(viaHelper.length, "음성 진입점 네 곳이 모두 preferLive를 써야 한다").toBeGreaterThanOrEqual(4);
   });
 
-  it("preferLive는 classic=1을 존중한다", () => {
+  /**
+   * 판정은 **행위**로 본다. 예전 구조 테스트는 소스에 `get("classic") === "1"`이 있는지만 봐서,
+   *   반환값의 `!`를 지워 classic=1에서도 /live로 보내는 변이가 녹색이었다(2026-10-06 재검토).
+   */
+  it.each([
+    ["베타 켜짐 · 기본 주소", "1", "", true],
+    ["베타 켜짐 · classic=1 (한도 뒤 응급 통로)", "1", "?start=1&classic=1", false],
+    ["베타 켜짐 · classic=0", "1", "?classic=0", true],
+    ["베타 꺼짐", undefined, "", false],
+    ["베타 꺼짐 · classic=1", "0", "?classic=1", false],
+  ] as const)("%s → Live %s", async (_name, flag, search, expected) => {
+    const { shouldPreferLive } = await import("@/lib/chat/live-preference");
+    expect(shouldPreferLive(flag, search)).toBe(expected);
+  });
+
+  it("화면의 preferLive는 그 판정에 빌드 플래그와 **현재 주소**를 넘긴다", () => {
     const fn = chat.slice(chat.indexOf("function preferLive"), chat.indexOf("export default function ChatPage"));
-    expect(fn).toMatch(/get\("classic"\) === "1"/);
-    expect(fn).toMatch(/NEXT_PUBLIC_SHOW_LIVE_BETA !== "1"\) return false/);
+    // 🔒 다른 값을 넘기면(예: 고정 문자열) 행위 테스트가 녹색이어도 화면은 순환한다
+    expect(fn).toMatch(/return shouldPreferLive\(process\.env\.NEXT_PUBLIC_SHOW_LIVE_BETA, typeof window !== "undefined" \? window\.location\.search : ""\);/);
   });
 });
 
 describe("/live — 한도 화면에 응급 통로가 있다", () => {
-  it("한도에 닿으면 클래식 음성(classic=1)으로 가는 버튼을 보인다", () => {
+  it("한도에 닿으면 클래식 음성(classic=1)으로, **호출어 없이 바로 듣는**(armed=1) 버튼을 보인다", () => {
     expect(live).toMatch(/\{limitReached && \(/);
-    expect(live).toMatch(/router\.push\("\/chat\?start=1&classic=1"\)/);
+    // 🔒 armed=1이 빠지면 호출어 대기로 열려, 버튼 문구대로 곧장 말한 응급이 서버에 가지 않는다(2026-10-06 재검토)
+    expect(live).toMatch(/router\.push\("\/chat\?start=1&classic=1&armed=1"\)/);
+  });
+
+  it("/chat은 armed=1이면 마이크·대화가 준비된 뒤 세션을 바로 연다 (인사 끝 자동 청취에 기대지 않는다)", () => {
+    expect(chat).toMatch(/armedStartRef\.current = new URLSearchParams\(window\.location\.search\)\.get\("armed"\) === "1";/);
+    const at = chat.indexOf("if (!armedStartRef.current || !micAllowed || !alwaysOn || !conversationId || sessionActive) return;");
+    expect(at, "준비 조건을 모두 보는 effect가 있어야 한다").toBeGreaterThan(-1);
+    const body = chat.slice(at, at + 400);
+    expect(body).toMatch(/sessionActiveRef\.current = true; setSessionActive\(true\);/);
+    expect(body).toMatch(/wakeArmedRef\.current = true; setWakeArmed\(true\);/);
+    expect(body).toMatch(/startRecordingRef\.current\(\)/);
   });
 
   it("세션 시작 거절과 세션 중 도달 두 경우 모두 한도 상태를 켠다", () => {

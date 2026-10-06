@@ -76,3 +76,28 @@ describe("실패 모드 — 안내를 못 하는 것보다 기본 호칭이 낫�
     expect(await buildDailyLimitReplyForUser("u")).toMatch(/^선생님,/);
   });
 });
+
+describe("호칭 규칙은 한 곳에만 (2026-10-06 재검토)", () => {
+  it("resolveHonorific — 명시 > 유도 > (선생님이면) 이름님", async () => {
+    const { resolveHonorific } = await import("@/lib/chat/prompt");
+    expect(resolveHonorific({ name: "김순자", age: 80, gender: "female", userHonorific: "순자 언니" })).toBe("순자 언니");
+    expect(resolveHonorific({ name: "김순자", age: 80, gender: "female", userHonorific: "  " })).toBe("할머니");
+    expect(resolveHonorific({ name: "박철수", age: null, gender: null })).toBe("박철수님");
+    expect(resolveHonorific({ name: " ", age: null, gender: null })).toBe("선생님");
+    expect(resolveHonorific(null)).toBe("선생님");
+  });
+
+  it("동반자 프롬프트·한도 인사·복약 알림이 모두 그 함수를 쓰고, 규칙 복사본이 없다", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const sites = ["lib/chat/prompt.ts", "lib/usage/daily-limit.ts", "app/api/medications/trigger/route.ts"];
+    for (const f of sites) {
+      const src = await readFile(f, "utf-8");
+      expect(src, `${f}는 resolveHonorific을 써야 한다`).toMatch(/resolveHonorific\(/);
+    }
+    // 🔒 "선생님이면 이름님" 조합을 다시 인라인으로 쓰면 그 복사본은 언젠가 어긋난다(복약 알림이 그랬다)
+    for (const f of sites.slice(1)) {
+      const src = await readFile(f, "utf-8");
+      expect(src, `${f}에 호칭 규칙 복사본`).not.toMatch(/=== "선생님"/);
+    }
+  });
+});

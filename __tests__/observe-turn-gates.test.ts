@@ -31,13 +31,15 @@ const messageCreate = vi.fn<(a: { data: { emergencyLevel: number | null; content
 let recentL1 = 0;
 /** 동의 조회 결과 — Error면 DB 장애를 흉내낸다 */
 let consentRow: { consentedAt: Date | null } | null | Error = { consentedAt: new Date("2026-01-01") };
+// L1 집계 조회 인자 — "어느 대화의 L1을 세는지"를 확인한다(2026-10-06 재검토: 인자를 안 보면 엉뚱한 키도 녹색)
+const countArgs: { where?: { conversationId?: string } }[] = [];
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: { findUnique: vi.fn(async () => { if (consentRow instanceof Error) throw consentRow; return consentRow; }) },
     conversation: { findUnique: vi.fn(async () => ({ id: "c-obs" })), create: vi.fn(async () => ({ id: "c-obs" })) },
     message: {
       create: (a: { data: { emergencyLevel: number | null; content: string } }) => messageCreate(a),
-      count: vi.fn(async () => recentL1),
+      count: vi.fn(async (a: { where?: { conversationId?: string } }) => { countArgs.push(a); return recentL1; }),
     },
   },
 }));
@@ -53,7 +55,10 @@ vi.mock("@/lib/chat/llm", async (importOriginal) => ({
   extractText: () => transcript,          // 전사 결과를 테스트가 정한다
   logUsage: () => {},
 }));
-vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: vi.fn(async () => null) }));
+// 백스톱은 조절 가능해야 한다 — 항상 null이면 "응급 판정(백스톱 포함)이 STT 게이트보다 먼저"를
+//   정규식에 잡히는 발화로만 검증하게 된다(2026-10-06 재검토)
+const backstop = vi.fn<(t: string) => Promise<{ level: 0 | 1 | 2 | 3; category: string; evidence: string } | null>>(async () => null);
+vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: (t: string) => backstop(t) }));
 const notifyGuardian = vi.fn<(p: { level: number; content: string }) => Promise<{ sent: boolean }>>(
   async () => ({ sent: true }));
 vi.mock("@/lib/chat/emergency-notify", () => ({ notifyGuardian: (p: { level: number; content: string }) => notifyGuardian(p) }));
@@ -82,6 +87,34 @@ beforeEach(() => {
   session = { user: { id: "u-elder", name: "김어르신", screeningMode: "user" } };
   messageCreate.mockClear();
   notifyGuardian.mockClear();
+  countArgs.length = 0;
+  backstop.mockReset();
+  backstop.mockImplementation(async () => null);
+});
+
+describe("백스톱만 잡는 응급 — STT 저신뢰여도 버리지 않는다", () => {
+  const HIDDEN = "따라갈래 영감 따라갈래 영감 따라갈래 영감 따라갈래 영감";
+
+  it("전제: STT 게이트 탈락 + 정규식 0 (백스톱만이 이 응급을 볼 수 있다)", () => {
+    expect(evaluateSttConfidence(HIDDEN).pass).toBe(false);
+    expect(detectEmergency(HIDDEN).level).toBe(0);
+  });
+
+  it("백스톱이 L3면 저장·알림 (게이트가 정규식만 보고 먼저 버리면 안 된다)", async () => {
+    backstop.mockImplementation(async () => ({ level: 3, category: "suicidal", evidence: "llm" }));
+    const r = await call(HIDDEN);
+    expect(r.status).toBe(200);
+    // 🔒 STT 게이트를 백스톱보다 먼저 두거나 정규식 결과로만 판정하면 { skipped: true }로 끝난다
+    expect(r.body.skipped).toBeUndefined();
+    expect(r.body.emergencyLevel).toBe(3);
+    expect(notifyGuardian).toHaveBeenCalledTimes(1);
+  });
+
+  it("백스톱도 응급이 아니면 그대로 버린다 (비용·노이즈 보호)", async () => {
+    const r = await call(HIDDEN);
+    expect(r.body.skipped).toBe(true);
+    expect(messageCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("보속증 외침 — STT 저신뢰여도 응급은 버리지 않는다", () => {
@@ -118,13 +151,11 @@ describe("저신뢰 + 응급 아님 — 기존처럼 버린다 (비용·노이�
   });
 
   it("빈 전사는 저장하지 않고, 유료 백스톱도 부르지 않는다", async () => {
-    const { detectEmergencyLLM } = await import("@/lib/chat/emergency-llm");
-    vi.mocked(detectEmergencyLLM).mockClear();
     const r = await call("");
     expect(r.body.skipped).toBe(true);
     expect(messageCreate).not.toHaveBeenCalled();
     // 🔒 상시 감시는 침묵·잡음 조각이 잦다 — 빈 전사마다 LLM을 부르면 비용이 조각 수만큼 샌다
-    expect(detectEmergencyLLM).not.toHaveBeenCalled();
+    expect(backstop).not.toHaveBeenCalled();
   });
 });
 
@@ -154,6 +185,8 @@ describe("L1 혼잣말 24시간 누적 → L2 승격 — /api/chat과 같은 규
     expect(messageCreate.mock.calls[0][0].data.emergencyLevel).toBe(2);
     expect(notifyGuardian).toHaveBeenCalledTimes(1);
     expect(notifyGuardian.mock.calls[0][0].level).toBe(2);
+    // 🔒 **이 어르신의 대화**(c-obs) L1을 센다 — 목이 인자를 안 보면 엉뚱한 키도 녹색이었다
+    expect(countArgs.some((a) => a.where?.conversationId === "c-obs")).toBe(true);
   });
 
   it("누적이 모자라면 L1로 저장만 한다", async () => {
@@ -162,6 +195,18 @@ describe("L1 혼잣말 24시간 누적 → L2 승격 — /api/chat과 같은 규
     expect(r.status).toBe(200);
     expect(messageCreate.mock.calls[0][0].data.emergencyLevel).toBe(1);
     expect(notifyGuardian).not.toHaveBeenCalled();
+  });
+});
+
+describe("서버·클라 상한의 관계", () => {
+  it("클라 요청 상한 > 서버 감시 전사 상한 + 백스톱(8s)", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const server = await readFile("app/api/observe/turn/route.ts", "utf-8");
+    const client = await readFile("app/observe/page.tsx", "utf-8");
+    const s = Number(server.match(/OBSERVE_STT_TIMEOUT_MS = Math\.max\(LLM_TIMEOUT_MS\.stt, ([\d_]+)\)/)![1].replace(/_/g, ""));
+    const c = Number(client.match(/TURN_TIMEOUT_MS = ([\d_]+);/)![1].replace(/_/g, ""));
+    // 🔒 클라가 먼저 끊으면 서버는 계속 처리해 알림은 나가지만, 어르신 화면엔 응급 안내가 뜨지 않는다
+    expect(c, `클라 ${c}ms vs 서버 ${s}+8000ms`).toBeGreaterThan(s + 8_000);
   });
 });
 

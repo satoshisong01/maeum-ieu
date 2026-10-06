@@ -38,8 +38,12 @@ export default function ObservePage() {
    *   lib/voiceprint/segment-queue.ts에 있고 테스트로 고정돼 있다(순서 처리·넘치면 오래된 것부터 버림).
    */
   const queueRef = useRef<SegmentQueue<Float32Array> | null>(null);
-  /** 서버 상한(전사 15s + 백스톱 8s + DB) 위로 여유 — 이보다 오래 매달리면 다음 조각으로 넘어간다 */
-  const TURN_TIMEOUT_MS = 30_000;
+  /**
+   * 서버 상한(감시 전사 25s + 백스톱 8s + DB) 위로 여유 — 이보다 오래 매달리면 다음 조각으로 넘어간다.
+   *   ⚠ 서버가 전사 상한을 늘리면(app/api/observe/turn OBSERVE_STT_TIMEOUT_MS) 이것도 같이 올린다 —
+   *   클라가 먼저 끊으면 서버는 계속 처리해 알림은 나가지만 화면에 응급 안내가 안 뜬다.
+   */
+  const TURN_TIMEOUT_MS = 45_000;
 
   useEffect(() => { if (status === "unauthenticated") router.replace("/login"); }, [status, router]);
   useEffect(() => () => { monRef.current?.stop(); queueRef.current?.stop(); }, []);

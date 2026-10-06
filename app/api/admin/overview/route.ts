@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/admin";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { isInternalOrTestAccount } from "@/lib/test-accounts";
+import { isInternalOrTestAccount, isTestAccount } from "@/lib/test-accounts";
 
 export async function GET() {
   const session = await getAdminSession();
@@ -70,7 +70,9 @@ export async function GET() {
       prisma.message.findMany({
         where: { emergencyLevel: { gte: 2 }, createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } },
         orderBy: { createdAt: "desc" },
-        take: 15,
+        // 테스트 계정을 걸러낸 뒤 15건을 보여 준다(아래 realEmerg) — 거르기 전에 자르면 e2e 합성 응급이
+        //   실제 응급을 목록 밖으로 밀어낸다
+        take: 200,
         select: {
           emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, createdAt: true,
           conversation: { select: { user: { select: { name: true, email: true } } } },
@@ -152,7 +154,14 @@ export async function GET() {
     const active7d = realRows.filter((u) => u.lastAt && new Date(u.lastAt) >= weekAgo).length;
     const msgs7dTotal = realRows.reduce((s, u) => s + u.msgs7d, 0);
     const secs7dTotal = realRows.reduce((s, u) => s + u.secs7d, 0);
-    const emergUnnotified = emergRecent.filter((e) => !e.notifiedAt).length;
+    /**
+     * 응급 요약은 **보수적** 판정(isTestAccount)으로 테스트만 뺀다(2026-10-06 재검토).
+     *   e2e:safety·e2e:roles가 만든 합성 응급(@example.com)이 '미발송' 경고를 상시 켜고, 15행 목록에서
+     *   실제 응급을 밀어냈다. 지표와 달리 여기는 **행동해야 하는 목록**이라, 사내·QA 패턴까지 빼는
+     *   공격적 판정을 쓰면 실사용 어르신의 미발송 응급이 사라질 수 있다(pilot-daily-check [5]와 같은 원칙).
+     */
+    const realEmerg = emergRecent.filter((e) => !isTestAccount(e.conversation.user.email));
+    const emergUnnotified = realEmerg.filter((e) => !e.notifiedAt).length;
 
     return NextResponse.json({
       summary: {
@@ -163,11 +172,11 @@ export async function GET() {
         active7d,
         msgs7dTotal,
         secs7dTotal,
-        emerg7d: emergRecent.length,
+        emerg7d: realEmerg.length,
         emergUnnotified,
       },
       users: userRows,
-      emergencies: emergRecent.map((e) => ({
+      emergencies: realEmerg.slice(0, 15).map((e) => ({
         level: e.emergencyLevel,
         evidence: e.emergencyEvidence ?? "",
         notified: !!e.notifiedAt,

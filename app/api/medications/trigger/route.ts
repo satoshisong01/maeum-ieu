@@ -16,7 +16,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { findDueSlot, buildMedicationReminder } from "@/lib/chat/medication";
 import { saveGreetingMessage } from "@/lib/chat/messages";
-import { getHonorific } from "@/lib/chat/prompt";
+import { resolveHonorific } from "@/lib/chat/prompt";
 import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
 
 export async function POST(req: Request) {
@@ -50,9 +50,11 @@ export async function POST(req: Request) {
   // 사용자 호칭/동반자 조회
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { age: true, gender: true, userHonorific: true, companionName: true },
+    select: { name: true, age: true, gender: true, userHonorific: true, companionName: true },
   });
-  const honorific = user?.userHonorific?.trim() || getHonorific(user?.age ?? null, user?.gender ?? null);
+  // 동반자 프롬프트와 같은 호칭 규칙 — 예전 복사본엔 이름 폴백이 없어, 프롬프트가 금지한 "선생님"이
+  //   복약 알림 목소리로 나갔다(2026-10-06 재검토)
+  const honorific = resolveHonorific(user);
   const companionName = user?.companionName?.trim() || COMPANION_DEFAULTS.name;
 
   const text = buildMedicationReminder(due.label, due.slotTime, honorific, companionName);

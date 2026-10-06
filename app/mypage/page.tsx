@@ -264,10 +264,13 @@ export default function MyPage() {
                   {screeningMode === "guardian" ? "👨‍👩‍👧 가족 상태 보기 →" : "🩺 환자 관리 페이지 열기 →"}
                 </Link>
               )}
-              {/* 목소리 등록(화자식별) — 베타. 본인/보호자 계정에서 진입 */}
-              <Link href="/voiceprint" className="mt-2 block rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-                🎙 목소리 등록·확인 (베타) →
-              </Link>
+              {/* 목소리 등록(화자식별) — 베타. 어르신 본인 계정만: 서버가 동의한 어르신만 등록·대조를 받는다
+                  (app/api/voiceprint). 다른 역할에 보이면 30초 낭독을 다 마친 뒤에야 403을 받는다. */}
+              {screeningMode === "user" && (
+                <Link href="/voiceprint" className="mt-2 block rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                  🎙 목소리 등록·확인 (베타) →
+                </Link>
+              )}
               {/* 라이브 음성 대화(베타) — 헤더에서 설정으로 통합(2026-09-08). 어르신 계정 + 노출 플래그일 때만 */}
               {screeningMode === "user" && process.env.NEXT_PUBLIC_SHOW_LIVE_BETA === "1" && (
                 <Link href="/live" className="mt-2 block rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-center text-sm font-semibold text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
