@@ -170,3 +170,27 @@ describe("probeTurn → 실제 모델 선택", () => {
     for (const c of cacheCalls) expect(c, c).toMatch(/probeTurn/);
   });
 });
+
+describe("확인 질문 다음 턴 — 채점식 칭찬·의도 노출 금지 (B6, 2026-10-06)", () => {
+  it("직전이 확인 턴이면 수다 지시에 '평가·채점식 칭찬 금지'와 '확인 의도 비노출'이 붙는다", async () => {
+    // userMsgCount 3 → 이번 턴 4, 직전 턴 3 = 확인 턴
+    const r = await build("user", 3);
+    expect(r.prevProbeTurn).toBe(true);
+    // 🔒 직접 운전: "몰라, 열한 시쯤 됐었나" → "기억하시는지 궁금해서 여쭤봤어요. 잘 기억해주셔서 대단하세요!"
+    expect(r.turnBlock).toMatch(/채점하듯 칭찬하지 말고/);
+    expect(r.turnBlock).toMatch(/확인 의도를 말하지 말고/);
+  });
+
+  it("평범한 수다 턴엔 붙지 않는다", async () => {
+    const r = await build("user", 0);
+    expect(r.prevProbeTurn).toBe(false);
+    expect(r.turnBlock).not.toMatch(/채점하듯 칭찬하지 말고/);
+  });
+
+  it("수다 후보는 '이야기를 먼저 이어가고, 끊겼을 때만 연결 문장으로' (B8)", async () => {
+    const r = await build("user", 0);
+    // 🔒 예전 "매 턴 다른 것" 지시로 점심 이야기 중 "이부자리 색"으로 튀었다
+    expect(r.turnBlock).not.toMatch(/매 턴 다른 것/);
+    expect(r.turnBlock).toMatch(/먼저 이어가세요/);
+  });
+});

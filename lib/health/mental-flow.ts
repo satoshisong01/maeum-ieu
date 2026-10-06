@@ -89,9 +89,23 @@ export async function handleMentalFlow(params: {
   userContent: string;
   honorific: string;
   companionName: string;
+  /**
+   * 응급 L3로 판정된 턴에서만 쓴다 — **위기 문항(PHQ-9 9번)의 양성 답일 때만** 기록·진행하고, 그 외엔
+   *   아무것도 바꾸지 않고 null(세션 시작·중단·재질문 없음).
+   *   왜(2026-10-06 직접 운전): L3 즉답이 점검 흐름보다 먼저 나가 9번 답("며칠 정도요… 사라지고 싶다는 생각이")이
+   *   기록되지 않았고, 다음 턴에 **같은 자살 사고 문항을 다시 물었다.** 위기 직후 같은 질문의 반복은 임상적으로도
+   *   부적절하다. 이 모드는 답을 기록하고, 점검 흐름의 위기 안내(109·1577-0199)가 담긴 응답을 돌려준다.
+   */
+  onlyCrisisAnswer?: boolean;
 }): Promise<MentalFlowResult | null> {
   const { userId, userContent, honorific, companionName } = params;
   const session = await getActiveSession(userId);
+  if (params.onlyCrisisAnswer) {
+    const item = session && session.current_item > 0 ? (SCALES[session.scale] ?? SCALES.PHQ9).items[session.current_item - 1] : undefined;
+    if (!item?.crisis) return null;
+    // 분류만 먼저 — 양성(빈도 ≥ 1)이 아니면 상태를 건드리지 않는다(재질문·retry_used 소모 없음)
+    if ((await classifyAnswer(userContent, (SCALES[session!.scale] ?? SCALES.PHQ9).answerType)) < 1) return null;
+  }
 
   // ── 세션 없음: 트리거 발화면 시작(동의 단계) — 과거 경험 서술은 제외
   if (!session) {
@@ -136,8 +150,8 @@ export async function handleMentalFlow(params: {
   const scale = SCALES[session.scale] ?? SCALES.PHQ9;
   const items = scale.items;
 
-  // ── 중단 의사
-  if (ESCAPE_RE.test(userContent)) {
+  // ── 중단 의사 (위기 답 기록 모드에선 보지 않는다 — "다 그만하고 싶다" 같은 위기 표현을 점검 중단으로 읽지 않게)
+  if (!params.onlyCrisisAnswer && ESCAPE_RE.test(userContent)) {
     await setSession(session.id, `status = 'aborted'`);
     return { status: "aborted", reply: `알겠어요 ${honorific}, 부담 갖지 마세요. 하고 싶어지실 때 "마음 건강 체크"라고 말씀해 주시면 언제든 다시 시작할게요.` };
   }

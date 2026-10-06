@@ -5,6 +5,7 @@
 import { nameSubj } from "@/lib/chat/korean-particle";
 import { WORD_GAME_GUARDRAIL } from "@/lib/chat/constants";
 import { extractLastAiMessage } from "@/lib/chat/history-text";
+import { findRegisteredWordsInHistory } from "@/lib/chat/recall-registration";
 import {
   DECEASED_FIGURES as DECEASED_FIGURES_HINT,
   SURREAL_BEINGS_LOOSE as SURREAL_BEINGS_HINT,
@@ -144,11 +145,21 @@ export function buildFamilyQueryGuard(userText: string, family: Array<{ name: st
  */
 export function buildRecallVerificationHint(historyText: string, userText: string, companionName: string): string {
   if (!userText) return "";
-  const recallAsk = /(방금|아까|좀\s*전|먼저)?\s*(외운|외워준|외워주신|들려준|말해준|알려준)\s*(단어|세\s*단어|세\s*가지|단어\s*세|단어들)|단어\s*다시|단어\s*뭐였|단어\s*뭐죠|단어\s*기억\s*나|세\s*단어\s*기억|세\s*가지\s*기억/;
+  const recallAsk = /(방금|아까|좀\s*전|먼저)?\s*(외운|외워준|외워주신|들려준|말해준|알려준)\s*(단어|세\s*단어|세\s*가지|단어\s*세|단어들)|단어\s*다시|단어\s*뭐였|단어\s*뭐죠|단어\s*기억\s*나|세\s*단어\s*기억|세\s*가지\s*기억|불러\s*준\s*(?:거|것|단어)|(?:아까|방금|좀\s*전)[^.?!]{0,12}(?:세|3)\s*(?:개|가지)\s*(?:뭐|기억|생각|다시)/;
   if (!recallAsk.test(userText)) return "";
-  const aiPresented = /외워\s*(드릴게요|드릴게|드리겠어요|두세요|두시면|두시고|볼까요|봐주세요)|단어\s*세\s*(가지|개)\s*(을|를|만)?\s*(말씀|드리|말해|읽어)|단어\s*세\s*(가지|개)\s*(외워|기억)/.test(historyText);
-  if (aiPresented) return "";
+  /**
+   * 등록이 있었는지 — 질문 풀의 우회 표현 등록("제가 부르면 받아주세요. 백로, 옹기, 부삽.")까지 본다
+   *   (lib/chat/recall-registration, 질문 풀 전수 검증). 예전엔 아래 명시 표현만 봐서, 실제로 불러 준
+   *   단어를 "외워드린 적이 없다"고 동반자에게 알렸다 → "혹시 어디서 다른 단어를 들으셨을까요?"(2026-10-06 직접 운전)
+   */
+  const aiPresented = !!findRegisteredWordsInHistory(historyText)
+    || /외워\s*(드릴게요|드릴게|드리겠어요|두세요|두시면|두시고|볼까요|봐주세요)|단어\s*세\s*(가지|개)\s*(을|를|만)?\s*(말씀|드리|말해|읽어)|단어\s*세\s*(가지|개)\s*(외워|기억)/.test(historyText);
   const subj = nameSubj(companionName);
+  if (aiPresented) {
+    // 실제로 불러 드린 단어를 묻는 것 — 부정하지 말고, 정답 대신 **스스로 떠올려 보시게** 권한다.
+    //   (그래야 이 턴의 답이 회상 시도로 채점된다. 정답을 알려주면 기억 확인이 무효가 된다)
+    return `\n[🧠 회상 요청 — 정답 비공개, 매우 중요]\n사용자가 아까 기억력 놀이에서 들은 단어를 물으셨어요. 그 단어는 **이번 대화에서 ${subj} 직접 불러드린 것이 맞습니다** — 부정하거나 "어디서 들으셨어요?"라고 묻지 마세요.\n- 단어를 알려주지 마세요(알려주면 기억 확인이 무효가 됩니다). 첫 글자·뜻 같은 힌트도 주지 마세요.\n- "생각나시는 것 하나라도 말씀해 보시겠어요? 천천히 떠올려 보셔도 돼요" 하고 **스스로 떠올려 보시게** 권하세요.\n- 그래도 안 떠오른다고 하시면 "괜찮아요, 그럴 때도 있죠"로 따뜻하게 받고 다른 이야기로 넘어가세요(정답 채워주기 금지).\n`;
+  }
   return `\n[🚫 회상 검증 — 매우 중요, 환각 절대 금지]\n이번 대화에서 ${subj} 단어를 외워드린 적이 한 번도 없습니다. 그런데 사용자가 "방금 외운 단어"를 물으셨어요.\n절대 임의로 "나무, 자동차, 모자" 같은 단어를 만들어 답하지 마세요 (없는 기억 만들기 = 환각, 신뢰 붕괴).\n대신 이렇게 답하세요: "어, ${subj} 아직 단어를 외워드린 적이 없는 것 같아요. 지금 새로 외워드릴까요? 그럼 [실제 새 단어 3개] — 이렇게 세 개 외워주세요." 또는 "혹시 어디서 들으신 거 같으세요? 지금부터 함께 단어 외우기 해볼까요?"\n`;
 }
 
@@ -172,4 +183,49 @@ export function buildInfoRequestHint(userText: string, companionName: string): s
 - 만약 메모리/이력에 답이 명확히 없으면 "${nameSubj(companionName)} 정확히 기억이 안 나네요. 다시 알려주시겠어요?" 라고 솔직히 인정.
 - 절대 추측하지 마세요. 메모리에 없는 정보를 지어내면 어르신 신뢰가 무너집니다.
 - ⛔ 단 하나의 예외: **기억력 게임으로 외워드린 단어(검사용 항목)**는 여기 해당 없음 — 사용자가 직접 물어도 정답을 알려주지 말고 "괜찮아요, 천천히 떠올려보셔요~" 식 격려로만(회상 평가 무효화 방지).\n`;
+}
+
+/**
+ * 확인 턴인데 건강 이상 호소(L2 — 누적 승격 포함)가 겹치면 이번 턴은 인지 확인을 미룬다.
+ *
+ * 결함(2026-10-06 직접 운전): "입맛이 하나도 없어서 오늘도 아침은 굶었어"(L1 세 번째 → L2 승격) 턴에
+ *   "…보호자분께 꼭 말씀하셔야 해요. 그나저나 어제 불 끄고 누우실 때 벽시계가 몇 시를 가리키고 있던가요?"
+ *   — 상태 확인과 인지 퀴즈가 한 응답에 섞였다. 몸이 불편한 순간의 답은 채점도 오염된다.
+ * 영역은 오늘 남은 목록에 그대로 남아 다음 확인 턴에 다시 나온다(놓치는 영역 없음).
+ * L3는 동반자 LLM 없이 즉답하므로 여기 오지 않는다. L1(단발 식욕·기력 저하)은 공감 뒤 확인을 허용한다.
+ */
+export function buildProbeHoldHint(probeTurn: boolean, effectiveLevel: number): string {
+  if (!probeTurn || effectiveLevel < 2) return "";
+  return `\n[⏸ 이번 턴은 인지 확인 보류 — 건강 이상 호소 우선]\n시스템 지시의 '인지 확인을 슬쩍 끼우는 턴'은 이번 턴에 **적용하지 마세요**. 날짜·시계·단어·계산 같은 확인 질문을 하지 말고, 상태 확인과 도움 권유에만 집중하세요.\n`;
+}
+
+/**
+ * 부모 지칭 — 사용자가 말한 '엄마/아버지' 등의 행위를 사용자 본인('할머니')의 것으로 바꿔 말하지 않게.
+ *
+ * 결함(2026-10-06 직접 운전, 5번 중 3번): "엄마가 해주던 호박죽" → "할머니가 해주시던 따뜻한 호박죽",
+ *   "엄마는 콩국수도 잘 하셨어" → "할머니가 정성껏 만들어주신 콩국수", "엄마가 누렁이를 아꼈지" →
+ *   "할머니가 누렁이를 챙겨주셨군요". 손녀 페르소나에서 사용자의 '엄마'를 사용자 호칭으로 옮기는 혼동이다.
+ *   시스템 프롬프트의 정적 규칙만으로는 재발해서, 해당 턴에만 짧게 다시 짚는다(후처리 fixParentReferent는
+ *   관형형만 결정적으로 고친다 — 문장 끝 '챙겨주셨군요'류는 이 힌트가 막는다).
+ */
+// ⚠ '할아버지'(배우자를 부르는 말로 흔하다)의 '아버지'는 제외 — 그건 부모가 아니다
+const PARENT_MENTION_RE = /엄마|어머니|어머님|(?<!할)(?:아버지|아버님)|아빠/;
+export function buildParentReferentHint(userText: string, honorific: string): string {
+  if (!userText || !PARENT_MENTION_RE.test(userText)) return "";
+  return `\n[인물 지칭 — 이번 턴]\n사용자가 말한 '엄마·어머니·아버지' 같은 분은 **${honorific} 본인이 아닙니다**. 그분이 한 일을 "${honorific}가/께서 ~해주셨군요"처럼 ${honorific}이 한 것으로 바꿔 말하지 마세요. 사용자가 쓴 지칭 그대로 높여서("어머님께서", "아버님께서") 부르세요.\n- 예: 사용자 "엄마가 해주던 호박죽" → "어머님께서 해주시던 호박죽"(❌ "${honorific}가 해주시던 호박죽")\n`;
+}
+
+/**
+ * 일반인 — 자기 마음 상태를 모르겠다는 말에 자가점검을 한 번 제안하게.
+ *
+ * 결함(2026-10-06 직접 운전): "이게 우울한 건지 그냥 피곤한 건지 저도 모르겠어요"에 동반자는 취미만 되물었고,
+ *   사용자가 다음 턴에 직접 "우울증인지 확인할 방법 있어요?"라고 물은 뒤에야 안내했다. 일반인 모드의 목적이
+ *   바로 이 안내인데(가이드블록), 정적 지시만으로는 그 순간을 놓쳤다.
+ * 이미 제안했거나 점검을 한 대화면 넣지 않는다 — "한 번 거절하면 다시 권하지 않는다" 원칙.
+ */
+const MOOD_UNCERTAIN_RE = /우울(?:한|증)?\s*(?:건지|건가|거\s*같|것\s*같|인가|인지)|우울해|불안(?:한|증)?\s*(?:건지|건가|거\s*같|것\s*같|인가|인지)|불안해/;
+export function buildMentalCheckOfferHint(mode: string, userText: string, historyText: string): string {
+  if (mode !== "general" || !userText || !MOOD_UNCERTAIN_RE.test(userText)) return "";
+  if (/마음\s*건강\s*체크|불안\s*체크|자가\s*점검/.test(historyText)) return "";
+  return `\n[자가점검 제안 — 이번 턴]\n먼저 충분히 공감한 뒤, 응답 끝에 **한 번만** 부드럽게 제안하세요: "원하시면 '마음 건강 체크'(우울 자가점검)를 같이 해볼 수 있어요." 강요하지 말고, 싫다고 하시면 이 대화에서 다시 권하지 마세요.\n`;
 }

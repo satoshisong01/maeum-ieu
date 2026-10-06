@@ -35,8 +35,8 @@ describe("게이트 스크립트 (단일 명령으로 통합)", () => {
     // 🔒 한 건이라도 실패하면 과거에 고친 안전망 결함이 되살아난 것이다
     expect(mod.summary.fail, "safety-regression 실패 — 위 콘솔의 ✗ 라인을 보라").toBe(0);
     // 케이스 수가 줄면 누군가 커버리지를 삭제한 것 — 수치를 바닥으로 고정한다
-    //   (342 → 358: 2026-10-06 재검토 사각지대 A-11 — 유서·삶의 무의미·두통 '듯')
-    expect(mod.summary.pass).toBeGreaterThanOrEqual(358);
+    //   (342 → 358: 2026-10-06 재검토 사각지대 A-11 — 유서·삶의 무의미·두통 '듯' / → 364: 직접 운전 B4 정답 후처리 잔여)
+    expect(mod.summary.pass).toBeGreaterThanOrEqual(364);
   }, 60_000);
 
   it("regex-battery — 한국어 후처리 정규식이 정상 발화를 망가뜨리지 않는다", async () => {

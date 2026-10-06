@@ -9,6 +9,7 @@ import type { CognitiveAnalysisResult } from "./types";
 import { COGNITIVE_DOMAINS } from "./constants";
 import { normalizeDialect } from "./dialect-normalize";
 import { DECEASED_FIGURES, SURREAL_BEINGS_STRICT as SURREAL_BEINGS, RECENT_TIME_CONTACT } from "./lexicons";
+import { findRegisteredWordsInHistory } from "./recall-registration";
 
 const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문가입니다.
 아래 대화에서 사용자(고령자)의 발화만 분석하여 인지 이상 여부를 JSON으로 반환하세요.
@@ -22,7 +23,9 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
 
 ⛔ **중복 채점 금지**: 하나의 발화에 담긴 같은 오류를 여러 영역에 나눠 채점하지 마세요. 그 오류가 가장 직접적으로 속하는 **단일 영역에만** 점수를 줍니다.
    - 예: "올해가 1988년이지(서울 올림픽)" → 이건 연도 오인지 = **orientation_time 한 영역만** 채점. 같은 발화를 judgment(과거를 현재로 묘사)로 또 채점하지 마세요.
-⛔ **AI에게 되묻는 것 ≠ 사용자 기억 결손**: 사용자가 동반자(AI)에게 "내가 아까 뭐라고 했지?/무슨 단어였지?/내가 무슨 얘기 했더라?"처럼 **AI의 기억을 확인·요청**하는 것은 대화이지 사용자의 회상 실패가 아닙니다 → memory_delayed로 채점하지 마세요(무판정). memory_delayed는 **AI가 회상 문항을 냈고(예: "아까 외운 단어 뭐였죠?") 사용자가 직접 회상하지 못한 경우에만** 채점합니다.
+⛔ **AI에게 되묻는 것 ≠ 사용자 기억 결손**: 사용자가 동반자(AI)에게 "내가 아까 뭐라고 했지?/무슨 단어였지?/내가 무슨 얘기 했더라?/우리 강아지 이름 기억나니?"처럼 **AI의 기억을 확인·요청**하는 것은 대화이지 사용자의 회상 실패가 아닙니다 → memory_delayed로 채점하지 마세요(무판정). memory_delayed는 **AI가 회상 문항을 냈고(예: "아까 외운 단어 뭐였죠?") 사용자가 직접 회상하지 못한 경우**에 채점합니다.
+   ✅ **단 하나의 예외 — 자발적 회상 실패**: [최근 대화 맥락]에 **AI가 기억력 놀이로 단어(3개·5개)를 불러 준 발화**가 있고, 사용자가 그 단어를 **스스로 떠올리려다 못 떠올림을 분명히 말하면**("아까 그 세 단어 뭐였더라? 하나도 생각이 안 나") AI가 묻기 전에 드러난 회상 실패입니다 → 아래 5번의 등록 단어 회상 기준 그대로 채점하세요(하나도 못 떠올리거나 엉뚱한 단어를 대면 score 2, 일부만 맞히면 개수대로). note에 "자발적 회상 실패(AI 요청 전)"라고 적으세요.
+   ⛔ 단어를 **묻기만** 하고 못 떠올린다는 말이 없으면("아까 그 단어 뭐였지?") 무판정 — 동반자가 회상을 권한 뒤의 답으로 채점합니다.
 
 [필수 판단 기준 — 하나라도 해당되면 isAnomaly: true]
 
@@ -60,6 +63,9 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - ✅ **정상도 반드시 기록**: 직전 AI가 판단력 질문(지갑 주우면?/불나면?/공통점?/약 깜빡하면? 등)을 했고 사용자가 **적절히 답하면 judgment score 0으로 반드시 cognitiveCheck를 생성**하세요 (재질문 방지·기록 누락 방지). 예: AI "지갑 주우면?" → 사용자 "경찰서에 갖다줘야지" → {"domain":"judgment","score":0,"evidence":"적절한 사회적 판단","note":"정상"}
 
 4. 즉시 기억력 (memory_immediate): ⛔ **매우 보수적으로 판단 — 기본값은 절대 체크 금지**
+   - ✅ **단, 단어 등록 과제는 예외** — AI가 외울 단어(낱말 3·5개)를 불러 주고 사용자가 **그 직후 되받아 말한** 턴은
+     memory_immediate로 채점합니다(정확히 따라 하면 score 0). "외워 보세요"·"따라 해 보세요"·"제가 부르면 받아주세요" 같은
+     놀이 표현 모두 해당합니다. 이건 아래 '같은 말 반복' 판정과 무관하고, 언어 영역의 문장 따라말하기도 아닙니다.
    - 이 영역을 이상(score 1 이상)으로 체크하려면 **세 조건 모두** 만족해야 함:
      (a) [이번 턴 사용자 발화]와 [최근 대화 맥락]의 직전 사용자 발화가 **글자 그대로 80% 이상 동일**
      (b) 그 사이에 AI의 응답이 한 번 있었고
@@ -88,6 +94,7 @@ const PROMPT = `당신은 30년 경력의 고령자 인지 기능 선별 전문�
    - 가족 이름, 과거 경험 기억 못함 → score 2
    - AI가 "아까 외워주신 단어 세 개"(나무/자동차/모자 등 MMSE-K 3단어) 회상 요청 → 사용자가 0~1개만 회상 → score 2, 2개 → score 1
    - AI가 MoCA-K 5단어(얼굴/비단/교회/카네이션/빨강) 회상 요청 → 사용자가 0~1개 회상 → score 2, 2~3개 → score 1
+   - 외울 단어는 **놀이 표현**으로 제시됐을 수 있습니다("제가 부르면 받아주세요. 백로, 옹기, 부삽."). 그 단어를 **나중에** 떠올리는 턴이 memory_delayed입니다(제시 직후 되받아 말하기는 4번 즉시 기억). 사용자가 스스로 떠올리려다 실패한 경우(위 '자발적 회상 실패')도 같은 개수 기준으로 채점합니다.
    - ⏱️ **시간 경과로 단어를 잊는 건 정상 — 오래전 등록은 채점 제외**:
      · 회상 실패를 채점하기 전, 최근 맥락에서 그 **단어를 외운(등록한) AI 발화의 시간 라벨**을 확인하세요.
      · 등록 발화가 보이고 그 라벨이 **[어제]/[N일 전]/[1주일 전]/[오래 전]** 등 오래 전이면 → 시간이 지나 잊는 건 누구나 정상입니다. **무판정(cognitiveCheck 미생성)**, 절대 score 1/2로 잡지 마세요. (지연회상은 임상적으로 등록 후 수분~수시간 내에만 유효한 검사입니다.)
@@ -631,7 +638,13 @@ export async function analyzeCognitive(params: {
     const lastAiQuestion = extractLastAiMessage(recentHistory);
     //   서버 확정값(probeContext)을 최우선 — 질문 풀이 우회 표현이라 정규식만으론 미탐이 남는다(2026-09-30).
     //   정규식 감지는 probeContext가 없는 경로(스크립트·구 호출부)의 폴백으로 유지.
+    // 자발적 회상 — 맥락에서 불러 준 단어를 사용자가 스스로 떠올리려는 턴(2026-10-06 직접 운전).
+    //   서버의 확인 턴 산술 밖이라 lite로 새는데, 바로 그 턴이 기억력 저하의 결정적 증거다 → 정밀 채점.
+    //   (분석기가 보는 맥락과 같은 범위 — recentHistory — 에서 등록을 찾는다)
+    const spontaneousRecall = !!findRegisteredWordsInHistory(recentHistory)
+      && /단어|외운|외웠|외워|불러\s*준|(?:세|3)\s*(?:개|가지)/.test(params.userMessage);
     const isProbeTurn = params.probeContext === true
+      || spontaneousRecall
       || detectCognitiveQuestions(params.assistantResponse).length > 0
       || (lastAiQuestion ? detectCognitiveQuestions(lastAiQuestion).length > 0 : false);
     const twoStage = process.env.COGNITIVE_TWO_STAGE !== "0" && primaryModelName !== ANALYZER_LITE_MODEL;

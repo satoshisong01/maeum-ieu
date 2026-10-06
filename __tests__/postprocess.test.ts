@@ -264,6 +264,22 @@ describe("fixParentReferent — 부모 행위주체 복원", () => {
     const t = "선생님께서 만들어주시는 음식이 최고죠.";
     expect(fixParentReferent(t, "어머니랑 아버지가 만들어주시던 음식", "선생님")).toBe(t);
   });
+  /**
+   * 2026-10-06 직접 운전: "엄마가 해주던 호박죽" → "할머니가 해주시던 따뜻한 호박죽"(5번 중 3번).
+   *   '-주시는'만 고치던 패턴이라 과거 관형형('-주시던'·'-주신')은 그대로 나갔다.
+   */
+  it.each([
+    ["할머니가 해주시던 따뜻한 호박죽이 많이 생각나시는군요.", "엄마가 해주던 호박죽이 생각나네.", "어머님께서 해주시던 따뜻한 호박죽이 많이 생각나시는군요."],
+    ["할머니가 만들어주신 콩국수라 더 맛있었겠어요.", "엄마는 콩국수도 잘 하셨어.", "어머님께서 만들어주신 콩국수라 더 맛있었겠어요."],
+  ])("과거 관형형도 복원: %s", async (ai, user, expected) => {
+    const { fixParentReferent } = await import("@/lib/chat/postprocess");
+    expect(fixParentReferent(ai, user, "할머니")).toBe(expected);
+  });
+  it("사용자→AI 감사 표현(말씀해주신·알려주신)은 관형형이어도 건드리지 않는다", async () => {
+    const { fixParentReferent } = await import("@/lib/chat/postprocess");
+    const t = "할머니가 말씀해주신 덕분에 민지도 알게 됐어요. 할머니가 알려주신 방법대로 해볼게요.";
+    expect(fixParentReferent(t, "우리 엄마는 늘 그렇게 하셨어", "할머니")).toBe(t);
+  });
 });
 
 describe("postProcessReply (파이프라인 스모크)", () => {

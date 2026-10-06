@@ -84,6 +84,27 @@ console.log("\n[A-2] recall answer strip — no broken fragment");
   // 과거 보고형("말씀드렸었죠") + "생각나" — 회상 컨텍스트 어휘 누락으로 정답 노출되던 갭 (2026-06-11)
   const c5 = stripRecallAnswerLeak("할머니, 아까 지윤이가 '하늘', '자동차', '모자' 이렇게 세 단어를 말씀드렸었죠. 혹시 그 단어들이 생각나시는지 말씀해주시겠어요?");
   check("과거 보고형 정답 누출 없음", !c5.includes("하늘") && !c5.includes("자동차") && !c5.includes("모자"), c5);
+  // 2026-10-06 직접 운전: 어르신이 "아까 그 세 단어 뭐였더라?"라고 묻자 동반자가 정답을 말하려 했다
+  //   ① 따옴표 정답을 지우고 "아까 불러드린 단어는." 비문이 남았다
+  //   ② '세 개' 표지 없이 맨 나열로 말하면 정답이 **그대로** 나갔다
+  //   ③ "'부삽'였어요"의 '였어요'가 계사 목록에 없어 꼬리가 남았다
+  const LEAK_WORDS = ["백로", "옹기", "부삽"];
+  const leaks = (s: string) => LEAK_WORDS.some((w) => s.includes(w));
+  const dangling = (s: string) => /(?:단어|건|거|것)(?:들)?\s*(?:은|는)?\s*[.!?]/.test(s) || /^\s*였/.test(s) || /\s였어요/.test(s);
+  const d1 = stripRecallAnswerLeak("어, 할머니! 민지가 아까 불러드린 단어는 '백로', '옹기', '부삽'이에요. 혹시 어디서 다른 단어를 들으셨을까요?");
+  check("① 따옴표 정답 제거 뒤 '단어는.' 비문 없음", !leaks(d1) && !dangling(d1) && d1.includes("혹시"), d1);
+  const d2 = stripRecallAnswerLeak("아까 불러드린 단어는 백로, 옹기, 부삽이었어요. 기억나세요?");
+  check("② '세 개' 표지 없는 맨 나열도 정답 제거", !leaks(d2) && !dangling(d2), d2);
+  const d3 = stripRecallAnswerLeak("할머니, 아까 말씀드린 건 백로, 옹기, 부삽이었죠. 천천히 떠올려 보세요.");
+  check("② '건' 주제어 + 맨 나열 정답 제거", !leaks(d3) && !dangling(d3) && d3.includes("천천히"), d3);
+  const d4 = stripRecallAnswerLeak("제가 불러드린 단어는 '백로', '옹기', '부삽'였어요.");
+  check("③ '였어요' 꼬리·빈 응답 없이 정리", !leaks(d4) && !dangling(d4) && d4.trim().length > 0, d4);
+  // 같은 낱말 나열이라도 회상 맥락이 아니면 건드리지 않는다
+  const d5 = stripRecallAnswerLeak("요즘 장에 가면 사과, 배, 감이 제철이에요.");
+  check("회상 맥락 아닌 나열 보존", d5.includes("사과") && d5.includes("감"), d5);
+  // 주제어 '건'을 낱말 안의 '건'(건강)으로 오인하지 않는다 — 회상 어휘(기억나)가 있어도
+  const d6 = stripRecallAnswerLeak("건강, 돈, 가족이 제일 중요하다고 하신 거 기억나세요?");
+  check("'건강'의 '건'을 주제어로 오인하지 않음", d6.includes("건강") && d6.includes("가족"), d6);
   // 등록(미래형 '불러드릴게요') 발화는 여전히 단어 보존
   const c6 = stripRecallAnswerLeak("단어 세 개를 불러드릴게요. 하늘, 자동차, 모자예요. 잘 기억해주세요!");
   check("등록 발화 단어 보존", c6.includes("하늘") && c6.includes("모자"), c6);

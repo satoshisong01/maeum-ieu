@@ -380,8 +380,11 @@ export function fixParentReferent(text: string, userText: string, honorific: str
   if (mother && father) return text; // 둘 다 언급 — 어느 쪽인지 모호하므로 보존
   const parent = mother ? "어머님" : "아버님";
   const esc = honorific.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // 관형형 '-주시는'에 더해 과거 관형형 '-주시던/-주신'까지(2026-10-06 직접 운전: "엄마가 해주던 호박죽" →
+  //   "할머니가 해주시던 호박죽"이 5번 중 3번). ⚠ 사용자→AI 감사·전달 표현("말씀해주신 덕분에", "알려주신
+  //   방법")은 사용자 본인의 행위라 제외한다 — 앞쪽 부정 전방탐색.
   return text.replace(
-    new RegExp(`(?<![가-힣])${esc}(?:께서|이|가)\\s*([가-힣]{0,4}주시는)`, "g"),
+    new RegExp(`(?<![가-힣])${esc}(?:께서|이|가)\\s*((?!말씀|얘기|이야기|알려|들려)[가-힣]{0,4}주(?:시는|시던|신))`, "g"),
     `${parent}께서 $1`,
   );
 }

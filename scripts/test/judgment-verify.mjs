@@ -26,6 +26,16 @@ const ENV = `[현재 환경 정보 — 실시간 서버 데이터, 반드시 신
 
 const H = (q) => `AI: ${q}`; // AI 질문(맥락) 헬퍼
 
+/**
+ * 질문 풀의 우회 표현 등록 + 정확한 복창 — 자발적 회상 케이스의 맥락(2026-10-06 직접 운전 실발화).
+ *   케이스에 h(이력 전체)를 주면 judge가 H(q) 대신 그것을 쓴다.
+ */
+const REG_HISTORY = [
+  "AI: 심심풀이로 재미 삼아 하나 해볼까요? 하얀 백로 보니 셋이 사뿐 내려앉네요. 제가 부르면 할머니가 받아주세요. 백로, 옹기, 부삽.",
+  "사용자: 백로, 옹기, 부삽. 이렇게?",
+  "AI: 맞아요 할머니, 정확하게 잘 하셨어요! 민지가 불러드린 단어들 잘 들어주셔서 고맙습니다.",
+].join("\n");
+
 // ─────────────────────────────────────────────────────────────────────────
 // 정상(score 0) — 20 케이스
 const NORMAL = [
@@ -62,6 +72,9 @@ const NORMAL = [
   { d: "attention_calculation", q: "50에서 8을 빼면 얼마예요?", a: "오십에서 여덟 빼면 마흔둘이지. 사십이." },
   { d: "attention_calculation", q: "오천 원짜리 두부 사고 만 원 내면 거스름돈이 얼마죠?", a: "오천 원 받겠네. 만 원에서 오천 원 빼면 오천 원이니까." },
   { d: "attention_calculation", q: "손주 셋한테 사탕 두 개씩 나눠주려면 몇 개 필요해요?", a: "셋한테 두 개씩이면 여섯 개 있어야지." },
+  // ── 자발적 회상(2026-10-06 직접 운전) — AI의 기억을 묻는 것·묻기만 하는 것은 채점하지 않는다 ──
+  { d: "memory_delayed", h: `AI: 텃밭에서 복실이가 졸졸 따라다니는 모습이 그려져요.\n사용자: 우리 강아지 복실이가 옆에서 졸졸 따라다니고.\nAI: 복실이도 할머니 옆이 제일 좋은가 봐요.`, q: "(맥락: 강아지 이름을 앞서 말함)", a: "근데 아까 내가 우리 강아지 이름 뭐라고 했는지 기억나니?" },
+  { d: "memory_delayed", h: REG_HISTORY, q: "(맥락: 우회 표현으로 세 단어 등록·복창)", a: "아까 그 세 단어 뭐였지?" },
 ];
 
 // 경증(score 1) — 설계된 경계 도메인(시간/장소/지연기억/언어/계산)
@@ -102,6 +115,8 @@ const MILD = [
   { d: "language", q: "과일 이름 최대한 많이 대보세요.", a: "사과… 배… 감… 귤… 음 그담은 영 생각이 잘 안 나네, 네댓 개 했나." },
   { d: "language", q: "'백지장도 맞들면 낫다'가 무슨 뜻이에요?", a: "종이를 같이 든다는 건가… 정확한 속뜻은 가물가물해서 잘 모르겠네." },
   { d: "attention_calculation", q: "100에서 7씩 빼보세요.", a: "구십삼… 팔십육… 칠십구… 그담이 칠십삼인가 칠십이인가, 영 헷갈리네." },
+  // 자발적 회상(2026-10-06): 세 단어 중 둘만 스스로 떠올림 → MMSE-K 회상 2개 = 경계
+  { d: "memory_delayed", h: REG_HISTORY, q: "(맥락: 우회 표현으로 세 단어 등록·복창)", a: "아까 그 세 단어가 백로하고 옹기였나… 하나는 영 생각이 안 나네." },
 ];
 
 // 중증(score 2) — 명백한 이상
@@ -148,6 +163,9 @@ const SEVERE = [
   { d: "attention_calculation", q: "사과 한 봉지에 오천 원인데 만 원 내면 얼마 거슬러 받으세요?", a: "오천 원짜리 사고 만 원 줬으니 거스름돈 삼만 원 받아야지." },
   { d: "attention_calculation", q: "칠천 원짜리 생선 사고 만 원 내시면 얼마 받으셔야 돼요?", a: "칠천 원짜리에 만 원 냈으면 칠천 원 도로 받아야 맞지." },
   { d: "attention_calculation", q: "손주 둘한테 만 원씩 주려면 모두 얼마가 필요할까요?", a: "둘한테 만 원씩 주면… 오천 원이면 되겠네. 응 오천 원." },
+  // 자발적 회상 실패(2026-10-06 직접 운전 실발화) — AI가 묻기 전에 드러난 회상 실패. 등록 직후라 더 무겁다
+  { d: "memory_delayed", h: REG_HISTORY, q: "(맥락: 우회 표현으로 세 단어 등록·복창)", a: "근데 아까 그 세 단어 뭐였더라? 하나도 생각이 안 나. 좀 알려줘 봐." },
+  { d: "memory_delayed", h: REG_HISTORY, q: "(맥락: 우회 표현으로 세 단어 등록·복창)", a: "아까 그 세 단어 말이야, 사과하고 연필하고… 그거 맞지?" },
 ];
 
 // 고위험(종합등급) — 누적 프로파일. 각 프로파일의 답변들을 분석 → overallAvg → 등급.
@@ -273,7 +291,7 @@ const PROFILES = [
 ];
 
 async function judge(c) {
-  const out = await analyzeCognitive({ userMessage: c.a, assistantResponse: "네, 그러시군요.", historyText: H(c.q), envBlock: ENV });
+  const out = await analyzeCognitive({ userMessage: c.a, assistantResponse: "네, 그러시군요.", historyText: c.h ?? H(c.q), envBlock: ENV });
   const checks = out.cognitiveChecks || [];
   return { isAnomaly: !!out.isAnomaly, checks, note: out.analysisNote || "" };
 }

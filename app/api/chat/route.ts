@@ -19,7 +19,7 @@ import { getPrefixCache } from "@/lib/chat/prompt-cache";
 import { EXCLUDE_OBSERVATION, neutralizeObservationPrefix } from "@/lib/chat/observation";
 import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
-import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
+import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint, buildProbeHoldHint, buildParentReferentHint, buildMentalCheckOfferHint } from "@/lib/chat/hints";
 import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
 import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
 import { getDailyUsage, buildDailyLimitReply, buildNearLimitPromptHint } from "@/lib/usage/daily-limit";
@@ -619,6 +619,7 @@ async function handleAudioMessage(params: {
     return handleEmergencyL3({
       result: emergency.result, userContent: transcription,
       conversationId, userId, honorific, companionName, transcription,
+      replyOverride: await mentalCrisisReply(mode, userId, transcription, honorific, companionName),
     });
   }
 
@@ -739,6 +740,9 @@ async function handleAudioMessage(params: {
   const recentUserTexts = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
   const hintBlock = [
     intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
+    buildProbeHoldHint(probeTurn, emergency.effectiveLevel),
+    buildParentReferentHint(transcription, honorific),
+    buildMentalCheckOfferHint(mode, transcription, historyText),
     buildEngagementHint(detectLowEngagement(transcription, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
   const currentUserMsg = transcription || "(음성을 인식하지 못했습니다)";
@@ -831,6 +835,21 @@ async function handleAudioMessage(params: {
  *   신호가 경로에 따라 보호자 알림이 되기도 하고 영원히 묻히기도 했다. 이제 세 경로가 한 함수를 쓴다.
  */
 
+/**
+ * 일반인 정신건강 점검 중 **위기 문항(PHQ-9 9번)**의 양성 답이면, 그 답을 기록하고 점검 흐름의 응답을 돌려준다.
+ *   L3 위기 대응(응급 마킹·보호자 알림)은 호출부의 handleEmergencyL3가 그대로 한다 — 말만 바뀐다.
+ * 결함(2026-10-06 직접 운전): L3 즉답이 먼저 나가 9번 답이 버려졌고, 다음 턴에 같은 자살 사고 문항을 다시 물었다.
+ * 실패하면 undefined — 기본 L3 안내로 간다(위기 대응이 점검 기록보다 우선).
+ */
+async function mentalCrisisReply(mode: "user" | "pro" | "general", userId: string, userContent: string, honorific: string, companionName: string): Promise<string | undefined> {
+  if (mode !== "general") return undefined;
+  const r = await handleMentalFlow({ userId, userContent, honorific, companionName, onlyCrisisAnswer: true }).catch((e) => {
+    console.error("[mental] 위기 문항 답 기록 실패 — 기본 L3 안내로:", e instanceof Error ? e.message : e);
+    return null;
+  });
+  return r?.crisis ? r.reply : undefined;
+}
+
 async function handleEmergencyL3(params: {
   result: EmergencyResult;
   userContent: string;
@@ -839,9 +858,12 @@ async function handleEmergencyL3(params: {
   honorific: string;
   companionName: string;
   transcription?: string;
+  /** 위기 대응(응급 마킹·보호자 알림)은 그대로 하고 말만 바꿀 때 — 일반인 점검의 위기 문항 답 */
+  replyOverride?: string;
 }): Promise<NextResponse> {
   const { result, userContent, conversationId, userId, honorific, companionName, transcription } = params;
-  const reply = buildEmergencyL3Reply(honorific, companionName, result.category);
+  // 일반인 정신건강 점검의 위기 문항 양성 답이면 점검 흐름의 응답(위기 상담 안내 + 결과·돌봄)을 쓴다 — 아래 저장·알림은 동일
+  const reply = params.replyOverride ?? buildEmergencyL3Reply(honorific, companionName, result.category);
 
   /**
    * 저장 실패가 '119 안내'와 '보호자 알림'을 함께 삼키지 않게 분리한다(2026-10-01).
@@ -1011,6 +1033,7 @@ async function handleTextMessage(params: {
     return handleEmergencyL3({
       result: emergency.result, userContent,
       conversationId, userId, honorific, companionName,
+      replyOverride: await mentalCrisisReply(mode, userId, userContent, honorific, companionName),
     });
   }
 
@@ -1066,6 +1089,9 @@ async function handleTextMessage(params: {
   const recentUserTexts = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
   const hintBlock = [
     intentHint, repetitionHint, wordGameHint, nameAnswerHint, recallVerifyHint, anomalyHint, familyQueryGuard, infoRequestHint, emergency.hint,
+    buildProbeHoldHint(probeTurn, emergency.effectiveLevel),
+    buildParentReferentHint(userContent, honorific),
+    buildMentalCheckOfferHint(mode, userContent, historyText),
     buildEngagementHint(detectLowEngagement(userContent, recentUserTexts)),
   ].filter((s) => s && s.trim()).join("\n\n");
 
