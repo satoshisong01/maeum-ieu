@@ -49,6 +49,42 @@ describe("워치독이 이 제외를 실제로 쓴다", () => {
     // 🔒 조용히 버리면 "테스트라서 뺀 건지, 버그로 빠진 건지" 구별이 안 된다
     expect(src).toMatch(/테스트 계정 \$\{testSkipped\}건/);
   });
+
+  /**
+   * [2]~[6] 지표 — 세 번째 집계 지점(2026-10-06 수정).
+   * 실측: 10-02 기존 보고는 "발화 271건 · L3 3건"이었는데 **실사용은 0건**이었다.
+   *   "발화 0건" 경보(실사용이 끊긴 장애 신호)가 테스트 트래픽에 가려 울릴 수 없었다.
+   * ⚠ 이 스크립트는 import 시점에 DB를 친다(main 실행) — 그래서 행위 대신 구조를 고정하고,
+   *   행위는 실 DB 실행(읽기 전용)으로 확인했다. 변이 검증 완료.
+   */
+  it("pilot-daily-check의 지표 [2]~[6]이 지표용 판정으로 실사용만 센다", async () => {
+    const src = await (await import("node:fs/promises")).readFile("scripts/pilot-daily-check.ts", "utf-8");
+    expect(src).toMatch(/excluded = new Set\(allUsers\.filter\(\(u\) => isInternalOrTestAccount\(u\.email\)\)/);
+    const metrics = src.slice(src.indexOf("// ── 2) 응급 발생"), src.indexOf("═══════ 판정"));
+    expect(metrics.length, "지표 구간을 못 찾음").toBeGreaterThan(500);
+    // 🔒 각 지표 쿼리가 실사용 필터를 거친다 — 하나라도 빠지면 그 지표가 다시 테스트로 오염된다
+    for (const [name, re] of [
+      ["[2] 응급", /emg = \(await prisma\.message\.findMany[\s\S]{0,300}\.filter\(\(m\) => isReal\(/],
+      ["[3] 발화", /userMsgs = \(await prisma\.message\.findMany[\s\S]{0,200}\.filter\(\(m\) => isReal\(/],
+      ["[3] 신규 가입", /newUsers = allUsers\.filter\(\(u\) => [^\n]*isReal\(u\.id\)/],
+      ["[4] 폴백률", /aiMsgs = \(await prisma\.message\.findMany[\s\S]{0,200}\.filter\(\(m\) => isReal\(/],
+      ["[5] 미연결 어르신", /patients = \(await prisma\.user\.findMany[\s\S]{0,200}\.filter\(\(p\) => isReal\(p\.id\)\)/],
+      ["[6] 인지분석", /assessRows\.filter\(\(r\) => isReal\(r\.user_id\)\)/],
+    ] as const) {
+      expect(metrics, `${name} 지표에 실사용 필터가 없다`).toMatch(re);
+    }
+  });
+
+  it("pilot-daily-check의 [1] 워치독은 **보수적 판정을 유지**한다", async () => {
+    const src = await (await import("node:fs/promises")).readFile("scripts/pilot-daily-check.ts", "utf-8");
+    // 구간 끝은 지표 블록 설명의 시작 — 그 아래 excluded 집합(지표용)은 워치독이 아니다
+    const end = src.indexOf("[2]~[6]은 **실사용 지표**");
+    expect(end, "지표 블록 경계를 못 찾음").toBeGreaterThan(0);
+    const watchdog = src.slice(src.indexOf("// ── 1)"), end);
+    // 🔒 워치독에 지표용 판정이 들어가면, 사내 계정으로 테스트 중인 진짜 응급 미발송이 감시에서 빠진다
+    expect(watchdog).toMatch(/isTestAccount\(u\?\.email\)/);
+    expect(watchdog).not.toMatch(/isInternalOrTestAccount/);
+  });
 });
 
 /**

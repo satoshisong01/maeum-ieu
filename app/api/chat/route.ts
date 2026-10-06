@@ -16,19 +16,21 @@ import { getTimeContext, getCurrentKstDateTimeString, isDateTimeQuestion, getRel
 import { getWeatherContext } from "@/lib/chat/weather";
 import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { getPrefixCache } from "@/lib/chat/prompt-cache";
+import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
 import { getGenAI, getTextModel, buildFallbackMessage, generateWithFallback, extractText, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { buildHistoryText, extractLastAiMessage } from "@/lib/chat/history-text";
 import { buildWordGameHint, buildNameAnswerHint, buildRepetitionHint, buildAnomalyCorrectionHint, buildFamilyQueryGuard, buildRecallVerificationHint, buildInfoRequestHint } from "@/lib/chat/hints";
 import { detectLowEngagement, buildEngagementHint } from "@/lib/chat/engagement";
-import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly, countRecentL1Signals } from "@/lib/chat/messages";
+import { saveMessages, saveGreetingMessage, saveCognitiveAssessments, markAnomaly } from "@/lib/chat/messages";
 import { getDailyUsage, buildDailyLimitReply, buildNearLimitPromptHint } from "@/lib/usage/daily-limit";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { randomUUID } from "crypto";
 import { buildExamPlan, renderDomainBattery, scoreDomainAnswer, isNonResponse, renderDomainReask, itemsForDomain } from "@/lib/screening/exam-runner";
 import { classifyProvisional, assessCoverage } from "@/lib/screening/exam-eval";
 import { detectInappropriate, buildModerationReply } from "@/lib/chat/moderation";
-import { detectEmergency, buildEmergencyL3Reply, buildEmergencyL2Hint, shouldEscalateL1ToL2, type EmergencyResult } from "@/lib/chat/emergency";
+import { detectEmergency, buildEmergencyL3Reply, type EmergencyResult } from "@/lib/chat/emergency";
 import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
+import { evaluateEmergency } from "@/lib/chat/emergency-evaluate";
 import { evaluateSttConfidence, buildClarificationReply } from "@/lib/chat/stt-confidence";
 import { buildSttHints } from "@/lib/chat/stt-hints";
 import { correctTranscriptionByContext } from "@/lib/chat/stt-context-correction";
@@ -162,7 +164,7 @@ async function fetchMemories(userId: string, query: string): Promise<string> {
 async function fetchRecentHistory(conversationId: string): Promise<{ role: string; content: string; createdAt?: string }[]> {
   try {
     const rows = await prisma.message.findMany({
-      where: { conversationId, NOT: { content: { startsWith: "[관찰]" } } }, // 상시 감시 로그는 대화 컨텍스트에서 제외
+      where: { conversationId, ...EXCLUDE_OBSERVATION }, // 상시 감시 로그는 대화 컨텍스트에서 제외(표지는 lib/chat/observation 단일 출처)
       orderBy: { createdAt: "desc" },
       take: 80,
       select: { role: true, content: true, createdAt: true },
@@ -807,38 +809,15 @@ async function handleAudioMessage(params: {
   });
 }
 
-/**
- * 응급 발화 감지 — moderation보다 먼저 분기.
- *
- * - L3: LLM 우회 즉시 응급 안내 반환 + Message에 마킹
- * - L2: hint를 호출자에게 반환(LLM 프롬프트에 주입) + Message에 마킹
- * - L1: 24h 누적 ≥3이면 L2로 승격하여 hint 반환, 아니면 마킹만
- * - 0: noop
+/*
+ * 응급 발화 감지(evaluateEmergency)는 lib/chat/emergency-evaluate.ts로 옮겼다(2026-10-06).
+ *   - L3: LLM 우회 즉시 응급 안내 반환 + Message에 마킹
+ *   - L2: hint를 호출자에게 반환(LLM 프롬프트에 주입) + Message에 마킹
+ *   - L1: 24h 누적 ≥3이면 L2로 승격하여 hint 반환, 아니면 마킹만
+ *   - 0: noop
+ * 옮긴 이유: 상시 감시·Live가 이 3단계 중 **승격 단계만 빠뜨린 복사본**을 쓰고 있었다 — 같은 L1
+ *   신호가 경로에 따라 보호자 알림이 되기도 하고 영원히 묻히기도 했다. 이제 세 경로가 한 함수를 쓴다.
  */
-async function evaluateEmergency(params: {
-  userContent: string;
-  conversationId: string | undefined;
-}): Promise<{ result: EmergencyResult; effectiveLevel: 0 | 1 | 2 | 3; hint: string }> {
-  const { userContent, conversationId } = params;
-  let result = detectEmergency(userContent);
-  // 정규식이 놓친 과소감지 꼬리(사투리·완곡어·어순 변형) — LLM 백스톱.
-  //   정규식이 none일 때만 + 사전필터 통과 시에만 LLM 호출(평범한 대화는 비용·지연 0).
-  if (result.level === 0) {
-    const llm = await detectEmergencyLLM(userContent);
-    if (llm) result = llm;
-  }
-  let effectiveLevel: 0 | 1 | 2 | 3 = result.level;
-
-  // L1이면 누적 평가 후 L2로 승격할지 결정
-  if (result.level === 1 && conversationId) {
-    const recent = await countRecentL1Signals(conversationId);
-    // 현재 발화 1건이 곧 저장될 예정이므로 +1로 평가
-    if (shouldEscalateL1ToL2(recent + 1)) effectiveLevel = 2;
-  }
-
-  const hint = effectiveLevel === 2 ? buildEmergencyL2Hint(result.category, result.evidence) : "";
-  return { result, effectiveLevel, hint };
-}
 
 async function handleEmergencyL3(params: {
   result: EmergencyResult;
@@ -1386,6 +1365,13 @@ export async function POST(req: Request) {
     if (isInitialGreeting && examSession) {
       return handleExamGreeting(examSession, conversationId, new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10));
     }
+    // 🔒 대리 신원으로 일반 인사(첫·재방문·재참여)를 만들면 안 된다 — 셋 다 **환자의 시스템 프롬프트**
+    //   (프로필·요약·이력)로 LLM을 불러 그 응답을 돌려준다. 검진 세션이 열려 있으면 위 1325행 가드를
+    //   통과하므로, 여기서 막지 않으면 전문가가 isReturningGreeting/isReEngage 플래그 하나로 환자의
+    //   일상 맥락이 녹은 응답을 받는다(2026-10-06, 아래 '대리 신원은 여기서 끝난다'와 같은 불변식).
+    if (userId !== actorId && (isInitialGreeting || isReturningGreeting || isReEngage)) {
+      return NextResponse.json({ error: "대리 접근은 검진 시행에만 쓸 수 있습니다." }, { status: 409 });
+    }
     if (isInitialGreeting) return handleFirstGreeting(systemPrompt, userName, honorific, companionName, companionRelation, conversationId);
     if (isReturningGreeting) return handleReturningGreeting(systemPrompt, userName, honorific, conversationId, userId, mode);
     if (isReEngage) return handleReEngageGreeting(systemPrompt, honorific, companionName, history, conversationId, reEngageAttempt ?? 1);
@@ -1443,7 +1429,26 @@ export async function POST(req: Request) {
       if (isAudio && sttPromise) {
         return handleExamTurn({ examSession, answer: examAnswer, conversationId, userId, transcription: examAnswer || "(음성 응답)", emergency: examEmg, honorific });
       }
-      if (lastUserMessage) return handleExamTurn({ examSession, answer: lastUserMessage, conversationId, userId, emergency: examEmg, honorific });
+      // ⚠ 빈 답도 검진 턴이다(무응답 → handleExamTurn이 재질문). 예전엔 `if (lastUserMessage)`라
+      //   빈 문자열이면 이 분기를 **빠져나가** 일반 대화 경로로 갔다 — 아래 가드 참조(2026-10-06).
+      return handleExamTurn({ examSession, answer: lastUserMessage ?? "", conversationId, userId, emergency: examEmg, honorific });
+    }
+
+    /**
+     * 🔒 대리 신원은 **여기서 끝난다** — 이 줄 아래(동반자 LLM 일반 대화)로 내려가면 안 된다.
+     *
+     * 결함(2026-10-06 적대 감사, 재현 확인): 텍스트 대리 턴의 마지막 user content가 비면 위 검진 분기의
+     *   `if (lastUserMessage)`를 통과하지 못해 **일반 대화 경로로 떨어졌다**. userId는 이미 환자로
+     *   승격된 상태라, 환자의 프로필·주간/월간 요약·최근 대화가 맥락으로 들어간 LLM 응답이 전문가에게
+     *   반환됐다(동의서 §4 "일상 대화 비공개" 위반). 10-02에 item_order NULL 변형을 막았는데 같은
+     *   폴스루가 다른 조건으로 남아 있었다 — 변형을 하나씩 막으면 다음 변형이 남는다.
+     *   그래서 조건이 아니라 **불변식**으로 막는다: 대리(userId ≠ actorId)는 검진 분기에서만 응답한다.
+     */
+    if (userId !== actorId) {
+      return NextResponse.json(
+        { error: "대리 접근은 검진 시행에만 쓸 수 있습니다." },
+        { status: 409 },
+      );
     }
 
     /**

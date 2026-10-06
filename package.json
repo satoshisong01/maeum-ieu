@@ -20,6 +20,11 @@
     "test:watch": "vitest",
     "ci:safety": "npm run audit:prompt-leak:ci && npx tsc --noEmit && vitest run",
     "ci:safety:all": "npm run audit:user-scope; npm run audit:prompt-leak:ci && npx tsc --noEmit",
+    "gate:safety": "npx tsx scripts/safety-regression.ts",
+    "e2e:safety": "node scripts/e2e-safety-spots.mjs",
+    "e2e:pro": "node scripts/e2e-pro-exam.mjs",
+    "e2e:roles": "node scripts/e2e-roles.mjs",
+    "cost:report": "node scripts/cost-quality-report.mjs",
     "check:env": "npx tsx scripts/check-env.ts",
     "prebuild": "npx tsx scripts/check-env.ts --build",
     "check:env:deploy": "npx tsx scripts/check-env.ts"

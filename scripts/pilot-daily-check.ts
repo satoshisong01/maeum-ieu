@@ -9,7 +9,7 @@
 import "dotenv/config";
 import { prisma } from "../lib/prisma";
 import { FALLBACK_MARKS } from "../lib/chat/llm"; // 폴백 멘트와 단일 소스 — 문구 변경 시 자동 동기화
-import { isTestAccount } from "../lib/test-accounts";
+import { isTestAccount, isInternalOrTestAccount } from "../lib/test-accounts";
 
 const DAYS = Math.max(1, parseInt(process.argv[2] || "2", 10) || 2);
 const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
@@ -72,31 +72,50 @@ async function main() {
     console.log(`  ✅ 발송 실패 0건${notes ? ` (${notes})` : ""}`);
   }
 
+  /**
+   * ── [2]~[6]은 **실사용 지표**다 — 테스트·사내·QA 계정을 뺀다 ──
+   *
+   * [1] 워치독과 판정 방향이 반대다(lib/test-accounts.ts 참조):
+   *   · [1]은 경보다 — 실사용자를 테스트로 오분류하면 그 응급이 감시에서 빠진다 → 보수적.
+   *   · [2]~[6]은 지표다 — 테스트를 실사용으로 세면 판단이 틀린다 → 공격적.
+   *
+   * 결함(2026-10-02 감사, 2026-10-06 수정): 여기만 필터가 없었다. 단순 부풀림보다 나쁜 것은
+   *   **경보가 가려지는 것**이었다:
+   *   · [3] "발화 0건" 경보는 실사용이 끊긴 장애를 잡으라는 건데, e2e가 돌면 영원히 안 울린다.
+   *   · [5] 미연결 어르신 목록이 role_user_*@example.com으로 뒤덮여 진짜 미연결 어르신이 묻힌다.
+   *   · [2] e2e-safety-spots가 매일 L3 발화를 보내 "L3 n건"이 노이즈가 된다.
+   *   usage-stats·관리자 대시보드는 이미 고쳤고 여기가 **세 번째 집계 지점**이었다(가이드 F3).
+   */
+  const allUsers = await prisma.user.findMany({ select: { id: true, email: true, createdAt: true } });
+  const excluded = new Set(allUsers.filter((u) => isInternalOrTestAccount(u.email)).map((u) => u.id));
+  const isReal = (userId: string) => !excluded.has(userId);
+  console.log(`\n(지표 [2]~[6]은 테스트·사내 계정 ${excluded.size}개를 뺀 실사용 기준 — 전체 ${allUsers.length}계정)`);
+
   // ── 2) 응급 발생·발송 현황 (24h) ──
-  const emg = await prisma.message.findMany({
+  const emg = (await prisma.message.findMany({
     where: { emergencyLevel: { gte: 1 }, createdAt: { gte: last24h }, role: "user" },
-    select: { emergencyLevel: true, emergencyEvidence: true, notifiedAt: true },
-  });
+    select: { emergencyLevel: true, emergencyEvidence: true, notifiedAt: true, conversation: { select: { userId: true } } },
+  })).filter((m) => isReal(m.conversation.userId));
   const byLvl = [1, 2, 3].map((l) => emg.filter((m) => m.emergencyLevel === l).length);
   const sent = emg.filter((m) => m.notifiedAt).length;
   const byBackstop = emg.filter((m) => (m.emergencyEvidence || "").includes(":llm:")).length;
   console.log(`\n[2] 응급 현황(24h): L1 ${byLvl[0]} · L2 ${byLvl[1]} · L3 ${byLvl[2]} — 알림 발송 ${sent}건, 백스톱 감지 ${byBackstop}건`);
 
   // ── 3) 활동량 (24h) ──
-  const userMsgs = await prisma.message.findMany({
+  const userMsgs = (await prisma.message.findMany({
     where: { role: "user", createdAt: { gte: last24h } },
     select: { conversation: { select: { userId: true } } },
-  });
+  })).filter((m) => isReal(m.conversation.userId));
   const activeUsers = new Set(userMsgs.map((m) => m.conversation.userId));
-  const newUsers = await prisma.user.count({ where: { createdAt: { gte: last24h } } });
+  const newUsers = allUsers.filter((u) => u.createdAt >= last24h && isReal(u.id)).length;
   console.log(`\n[3] 활동(24h): 발화 ${userMsgs.length}건 · 활성 사용자 ${activeUsers.size}명 · 신규 가입 ${newUsers}명`);
   if (userMsgs.length === 0) console.log(`  ⚠️ 발화 0건 — 파일럿 중이라면 앱/서버 접속 문제 가능성 확인`);
 
   // ── 4) 폴백(빈 응답)률 (24h) — 높으면 Gemini 쿼터/장애 신호 ──
-  const aiMsgs = await prisma.message.findMany({
+  const aiMsgs = (await prisma.message.findMany({
     where: { role: "assistant", createdAt: { gte: last24h } },
-    select: { content: true },
-  });
+    select: { content: true, conversation: { select: { userId: true } } },
+  })).filter((m) => isReal(m.conversation.userId));
   const fallbacks = aiMsgs.filter((m) => FALLBACK_MARKS.some((f) => m.content.includes(f))).length;
   const rate = aiMsgs.length ? ((fallbacks / aiMsgs.length) * 100).toFixed(1) : "0.0";
   console.log(`\n[4] 폴백률(24h): ${fallbacks}/${aiMsgs.length} (${rate}%)`);
@@ -104,7 +123,8 @@ async function main() {
   else console.log(`  ✅ 정상 범위`);
 
   // ── 5) 보호자 연결 현황 — 온보딩 빠짐 감지 ──
-  const patients = await prisma.user.findMany({ where: { screeningMode: "user" }, select: { id: true, name: true, createdAt: true } });
+  const patients = (await prisma.user.findMany({ where: { screeningMode: "user" }, select: { id: true, name: true, createdAt: true } }))
+    .filter((p) => isReal(p.id));
   const recentPatients = patients.filter((p) => p.createdAt >= since);
   const unlinked: string[] = [];
   for (const pt of recentPatients) {
@@ -117,10 +137,13 @@ async function main() {
   // ── 6) 인지분석 파이프라인 흐름 (24h) — Live 전환(2026-07-20) 후 턴 회송→분석 연결이 살아있는지 ──
   //   발화는 있는데 분석 0건이면 /api/live/turn 회송 또는 분석기 장애 신호.
   const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
-  const assessRows = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
-    `SELECT COUNT(*) AS cnt FROM cognitive_assessments WHERE created_at >= $1`, dayAgo,
-  ).catch(() => [{ cnt: BigInt(-1) }]);
-  const assessCnt = Number(assessRows[0]?.cnt ?? -1);
+  // 사용자별로 받아 실사용만 센다 — 위 지표들과 같은 기준이어야 "발화 n건인데 분석 0건" 비교가 성립한다
+  const assessRows = await prisma.$queryRawUnsafe<{ user_id: string; cnt: bigint }[]>(
+    `SELECT user_id, COUNT(*) AS cnt FROM cognitive_assessments WHERE created_at >= $1 GROUP BY user_id`, dayAgo,
+  ).catch(() => null);
+  const assessCnt = assessRows === null
+    ? -1
+    : assessRows.filter((r) => isReal(r.user_id)).reduce((s, r) => s + Number(r.cnt), 0);
   console.log(`\n[6] 인지분석 흐름(24h): ${assessCnt < 0 ? "조회 실패" : `${assessCnt}건 생성`}`);
   //   ⚠ 기준 주의: 분석 기록은 "확인성 문답이 있던 턴"에만 생김 — 수다만 있던 날은 0건이 정상.
   //   발화가 꽤 많은데(30+) 0건이 이어질 때만 회송/분석기 점검 신호로 본다.

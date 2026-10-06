@@ -16,11 +16,11 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getGenAI, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
 import { evaluateSttConfidence } from "@/lib/chat/stt-confidence";
-import { detectEmergency } from "@/lib/chat/emergency";
-import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
+import { detectWithBackstop, applyL1Escalation } from "@/lib/chat/emergency-evaluate";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { toObservationContent } from "@/lib/chat/observation";
 
 const MAX_AUDIO_B64 = 3_000_000; // ~2MB WAV (30초 16k mono ≈ 960KB) 상한
 
@@ -63,30 +63,52 @@ export async function POST(req: Request) {
   try {
     const text = await transcribe(audioB64, mimeType);
     observed = text;
-    const conf = evaluateSttConfidence(text);
-    if (!text || !conf.pass) {
-      return NextResponse.json({ ok: true, skipped: true, reason: conf.reason || "empty" });
-    }
+    if (!text) return NextResponse.json({ ok: true, skipped: true, reason: "empty" });
 
-    // 응급 감지 — 정규식 우선, none이면 LLM 백스톱
-    let emergency = detectEmergency(text);
-    if (emergency.level === 0) {
-      const llm = await detectEmergencyLLM(text);
-      if (llm) emergency = llm;
+    // 응급 감지 — 정규식 우선, none이면 LLM 백스톱(DB 미사용). **STT 신뢰도 게이트보다 먼저** 한다.
+    const emergency = await detectWithBackstop(text);
+
+    /**
+     * STT 저신뢰 게이트는 **응급이 아닐 때만** — /api/chat과 같은 처방(2026-10-02 수정분).
+     *
+     * 결함(2026-10-06 적대 감사 → 재현): 이 경로에선 게이트가 응급 판정 **앞**에 있었다.
+     *   보속증(같은 말 되풀이)은 치매의 전형 증상인데, evaluateSttConfidence는 그걸
+     *   `vocabulary collapse`로 떨어뜨린다. 실측: "죽고 싶어 죽고 싶어 죽고 싶어 죽고 싶어"
+     *   → stt.pass=false **이면서** detectEmergency L3 suicidal. 저장도 알림도 없이 버려졌다.
+     *   한 번만 말했으면 잡혔을 발화가, 더 절박하게 반복할수록 더 확실히 버려지는 역전이다.
+     *   상시 감시 대상은 혼자 있는 중증 어르신이라 대신 알아챌 사람도 없다.
+     *   stt-confidence.ts 헤더의 불변식("응급 감지는 STT 신뢰도와 무관하게 먼저")과도 반대였다.
+     */
+    const conf = evaluateSttConfidence(text);
+    if (!conf.pass && emergency.level === 0) {
+      return NextResponse.json({ ok: true, skipped: true, reason: conf.reason || "low-confidence" });
+    }
+    if (!conf.pass) {
+      console.log("[observe-turn] STT 저신뢰이나 응급 동반 — 게이트 우회:", conf.reason, "L" + emergency.level);
     }
 
     // 관찰 로그 저장 — 감시 전용이라 AI 응답 없음. user 메시지 1건만 직접 생성(빈 assistant 미생성).
     //   "[관찰]" 접두로 일반 대화와 구분. 응급 dedup·알림마킹(notifyGuardian)이 Message 행에 의존하므로 여기 저장.
     let conv = await prisma.conversation.findUnique({ where: { userId }, select: { id: true } });
     if (!conv) conv = await prisma.conversation.create({ data: { userId }, select: { id: true } });
+
+    /**
+     * L1 24시간 누적 → L2 승격 — /api/chat과 같은 규칙(lib/chat/emergency-evaluate 공유).
+     * 결함(2026-10-06 적대 감사): 이 경로엔 승격이 없어, "입맛이 하나도 없어"·"기운이 하나도 없어"를
+     *   하루 종일 혼잣말해도 보호자에게 아무것도 가지 않았다. 상시 감시는 대화가 어려운 어르신용이라
+     *   /api/chat에서 대신 승격될 기회도 거의 없다 — 이 경로에서 L1은 죽은 규칙이었다.
+     *   (승격된 발화는 2로 저장된다 — /api/chat과 같은 기존 설계)
+     */
+    const effectiveLevel = await applyL1Escalation(emergency, conv.id);
+
     // 저장 실패가 보호자 알림을 삼키지 않게 분리(2026-10-02, /api/chat과 동일 처방).
     let userMsgId: string | undefined;
     try {
       const msg = await prisma.message.create({
         data: {
-          conversationId: conv.id, role: "user", content: `[관찰] ${text}`,
-          emergencyLevel: emergency.level > 0 ? emergency.level : null,
-          emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : null,
+          conversationId: conv.id, role: "user", content: toObservationContent(text),
+          emergencyLevel: effectiveLevel > 0 ? effectiveLevel : null,
+          emergencyEvidence: effectiveLevel > 0 ? `${emergency.category}:${emergency.evidence}` : null,
         },
         select: { id: true },
       });
@@ -95,10 +117,10 @@ export async function POST(req: Request) {
       console.error("[observe-turn] 저장 실패 — 응급 알림은 계속 진행:", e instanceof Error ? e.message : e);
     }
 
-    // 보호자 알림(L2+) — 메인 경로와 동등한 안전망
+    // 보호자 알림(L2+, 승격 포함) — 메인 경로와 동등한 안전망
     //   ⚠ `&& userMsgId` 제거: 저장 실패에도 발송은 간다(마킹만 생략).
-    if (emergency.level >= 2) {
-      const level = emergency.level as 2 | 3;
+    if (effectiveLevel >= 2) {
+      const level = effectiveLevel as 2 | 3;
       const send = async () => {
         try {
           await notifyGuardian({
@@ -110,7 +132,7 @@ export async function POST(req: Request) {
       try { after(send); } catch { await send(); }
     }
 
-    return NextResponse.json({ ok: true, text, emergencyLevel: emergency.level });
+    return NextResponse.json({ ok: true, text, emergencyLevel: effectiveLevel });
   } catch (e) {
     console.error("[observe-turn]", e);
     /**

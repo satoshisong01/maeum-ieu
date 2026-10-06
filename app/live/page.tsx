@@ -107,6 +107,7 @@ function LiveInner() {
         onTurnComplete: async (u, a) => {
           upsertBubble("user", u, true); // 직전 두 버블 확정
           setBubbles((prev) => prev.map((b) => ({ ...b, final: true })));
+          let dailyLimitMessage: string | null = null;
           if (convRef.current) {
             try {
               const r = await fetch("/api/live/turn", {
@@ -115,6 +116,15 @@ function LiveInner() {
               });
               const j = await r.json().catch(() => ({}));
               if (j.emergencyLevel === 3) setEmergency(true);
+              // 세션 **중간**에 일일 한도에 닿았다 — 서버는 이 턴의 저장·응급은 처리했고 유료 분석만
+              //   건너뛰었다. 세션은 아래 복약 캡처까지 끝낸 **뒤에** 닫는다(바로 return하면 이 턴의
+              //   "먹었어" 답변이 복용 기록에서 빠진다).
+              //   ⚠ 응급이면(**L1 이상 전부**) 닫지 않는다 — /api/chat은 한도 초과여도 응급 발화를 통과시켜
+              //     대화를 이어간다. 서버도 응급 턴엔 이 신호를 보내지 않지만, 끊는 쪽으로 실패하면 안 되므로
+              //     여기서도 한 번 더 막는다(처음엔 L3만 예외로 둬서 L2 호소 중에 통화가 끊겼다).
+              if (j.dailyLimitReached && typeof j.message === "string" && !j.emergencyLevel) {
+                dailyLimitMessage = j.message;
+              }
             } catch { /* 회송 실패 — 다음 턴에서 복구 */ }
           }
           // 복약 자동캡처 — 리마인더 후 긍정 답변이면 복용 기록(classic과 동일 로직·10분 만료)
@@ -136,6 +146,11 @@ function LiveInner() {
           }
           // 종료 명령("그만/이제 그만/조용히 해" 등) — 본선과 동일 패턴 모듈로 감지, 세션 종료
           if (isSessionEndUtterance(u)) {
+            engineRef.current?.stop();
+            setState("stopped");
+          } else if (dailyLimitMessage) {
+            // 일일 한도 — 마무리 인사를 남기고 닫는다(위 복약 캡처는 이미 끝났다)
+            upsertBubble("assistant", dailyLimitMessage, true);
             engineRef.current?.stop();
             setState("stopped");
           }

@@ -10,13 +10,17 @@
  * 주의: SpeechRecognition은 마이크 권한이 따로 또 떠지 않도록 streamRef와 공존 가능.
  *   onresult.interimResults=true 사용으로 사용자가 "마음아"라고 끝까지 말하기 전 부분 매칭도 가능.
  */
-/* eslint-disable react-hooks/immutability, react-hooks/refs --
- * 이 훅은 전체가 "렌더 중 ref 동기화" 패턴으로 쓰여 있다(onWakeRef/enabledRef/pausedRef 등 7곳).
- * 콜백이 전부 useCallback(…, [])이라 최신 prop을 보려면 ref 경유가 필요했고, 그 설계 위에
- * barge-in·자동재시작 로직이 얹혀 있다.
+/* eslint-disable react-hooks/immutability --
+ * 이 지시문이 끄는 것은 **정확히 1건**이다: 아래 start 콜백이 자동 재시작 타이머 안에서
+ * 자기 자신을 부르는 것(선언 전 참조, "Cannot access variable before it is declared").
  *
- * 2026-10-02에 린트를 0으로 만들려고 자기참조를 startRef로 바꿔 봤더니 **에러가 1건에서 7건으로
- * 늘었다** — 이 규칙은 컴포넌트당 하나만 보고하므로, 하나를 고치면 다음 것이 드러날 뿐이다.
+ * 이 훅은 콜백이 전부 useCallback(…, [])이라 최신 prop을 보려면 ref 경유가 필요했고,
+ * 그 설계 위에 barge-in·자동재시작 로직이 얹혀 있다.
+ * 2026-10-02에 이 1건을 없애려고 자기참조를 startRef로 바꿔 봤더니 **이번엔 react-hooks/refs가
+ * 7건 생겼다**(렌더 중 ref 동기화 7곳) — 그래서 되돌렸다.
+ *   ⚠ 정정(2026-10-06): 되돌린 뒤에도 지시문에 `react-hooks/refs`를 남겨 두었는데, 되돌린 코드에서는
+ *   그 규칙이 **한 건도 나오지 않는다**(eslint --report-unused-disable-directives가 직접 반박).
+ *   쓰이지 않는 예외는 나중에 진짜 문제를 조용히 삼킨다 — 지웠다. CI가 이제 이런 지시문을 잡는다.
  * 0으로 만들려면 훅 전체를 재설계해야 하는데, 여기는 호출어("마음아") 진입점이다.
  * 음성 전용 제품에서 이 파일이 고장나면 어르신이 불러도 아무 반응이 없는 형태로 조용히 나타난다.
  * 동작하는 코드를 린트 숫자 때문에 갈아엎는 건 위험 대비 이득이 없다 — 사유를 남기고 예외 처리한다.

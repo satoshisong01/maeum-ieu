@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Session } from "next-auth";
+import { isObservationContent } from "@/lib/chat/observation";
 
 /**
  * 대화 소유자 결정 — 기본은 본인. 전문가 대리 검사 시 proxyPatientId(연결된 환자)로 귀속.
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     conversation: { id: conv.id },
-    messages: isProxyAccess ? [] : conv.messages.filter((m) => !m.content.startsWith("[관찰]")).map((m) => ({
+    messages: isProxyAccess ? [] : conv.messages.filter((m) => !isObservationContent(m.content)).map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,

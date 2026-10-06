@@ -38,6 +38,21 @@ describe("검증_가이드 §2 래칫 수치 = vitest.config.ts thresholds", () 
   });
 });
 
+describe("검증_가이드 §6 린트 경고 래칫 = ci.yml --max-warnings", () => {
+  it("두 숫자가 같다", async () => {
+    const ci = await readFile(".github/workflows/ci.yml", "utf-8");
+    const guide = await readFile(GUIDE, "utf-8");
+    const inCi = ci.match(/eslint \. --max-warnings (\d+)/);
+    expect(inCi, "ci.yml에 --max-warnings가 없다 — 경고가 다시 조용히 늘어난다").not.toBeNull();
+    const inGuide = guide.match(/현재 경고 바닥: (\d+)/);
+    expect(inGuide, "가이드 §6에 경고 바닥 수치가 없다").not.toBeNull();
+    // 🔒 2026-10-06: "경고는 추적한다"고만 적어둔 사이 215 → 217 → 220으로 늘었다
+    expect(Number(inGuide![1]), `가이드 ${inGuide![1]} vs CI ${inCi![1]}`).toBe(Number(inCi![1]));
+    // 명령 예시도 같은 숫자여야 한다(복사해서 돌리는 사람이 다른 기준으로 통과시키지 않게)
+    expect(guide).toContain(`eslint . --max-warnings ${inCi![1]}`);
+  });
+});
+
 describe("가이드가 실재하는 산출물을 가리킨다", () => {
   it("가이드가 언급한 스크립트·설정 파일이 모두 존재한다", async () => {
     const guide = await readFile(GUIDE, "utf-8");
@@ -51,5 +66,14 @@ describe("가이드가 실재하는 산출물을 가리킨다", () => {
     }
     // 🔒 "이 스크립트를 돌려라"가 존재하지 않는 파일을 가리키면, 그 단계는 조용히 건너뛰어진다
     expect(missing, `가이드가 없는 파일을 가리킨다: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("가이드가 언급한 `npm run <스크립트>`가 package.json에 모두 있다", async () => {
+    const guide = await readFile(GUIDE, "utf-8");
+    const pkg = JSON.parse(await readFile("package.json", "utf-8")) as { scripts: Record<string, string> };
+    const named = [...guide.matchAll(/npm run ([\w:-]+)/g)].map((m) => m[1]);
+    expect(named.length, "가이드가 npm 스크립트를 하나도 언급하지 않는다").toBeGreaterThan(3);
+    const missing = [...new Set(named)].filter((n) => !(n in pkg.scripts));
+    expect(missing, `package.json에 없는 스크립트: ${missing.join(", ")}`).toEqual([]);
   });
 });

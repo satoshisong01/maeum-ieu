@@ -111,6 +111,15 @@ describe("카운트 범위 — KST 자정 기준", () => {
     expect(gte.getTime()).toBeLessThanOrEqual(now);
     expect(now - gte.getTime()).toBeLessThan(24 * 3600 * 1000);
   });
+
+  it("상시 감시 기록(혼잣말 조각)은 세지 않는다", async () => {
+    const m = await load("10");
+    const { OBSERVATION_PREFIX } = await import("@/lib/chat/observation");
+    await m.getDailyUsage("conv-42");
+    // 🔒 2026-10-06 이전: 감시 조각이 role=user로 같은 대화에 쌓여 한도를 채웠다 →
+    //   감시를 켜 둔 날 어르신이 동반자와 대화하려 하면 마무리 인사만 돌아왔다(인지 선별도 0건)
+    expect(lastWhere?.NOT).toEqual({ content: { startsWith: OBSERVATION_PREFIX } });
+  });
 });
 
 describe("실패 모드 — 열린 방향으로 실패한다", () => {

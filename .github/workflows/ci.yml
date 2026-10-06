@@ -42,8 +42,13 @@ jobs:
         run: npx tsc --noEmit
         continue-on-error: false
 
-      - name: Lint (에러 0 — 2026-10-02 79건 정리 후 유지)
-        run: npx eslint .
+      # 에러 0(2026-10-02 79건 정리) + **경고 래칫**. 경고를 "추적한다"고 적어두기만 했더니
+      #   215 → 217 → 220으로 조용히 늘었다(2026-10-06 실측). 숫자는 내리기만 한다.
+      #   docs/검증_가이드.md §6의 수치와 같아야 한다(__tests__/docs-consistency.test.ts가 검사).
+      # --report-unused-disable-directives: 쓰이지 않는 예외 지시문도 에러로 — 낡은 예외는 나중에
+      #   진짜 문제를 조용히 삼킨다(2026-10-06: useWakeWord의 react-hooks/refs가 그 상태였다).
+      - name: Lint (에러 0 + 경고 래칫 + 낡은 예외 금지)
+        run: npx eslint . --max-warnings 216 --report-unused-disable-directives
         continue-on-error: false
 
       # vitest가 safety-regression(342) + regex-battery를 함께 돈다
@@ -53,9 +58,13 @@ jobs:
         run: npx vitest run --coverage
         continue-on-error: false  # 회귀 고정 + 커버리지 하락 차단 — 깨지면 merge 금지
 
+      # 2026-10-02까지 warning 모드였다 — 오탐 8건이 상시 레드를 만들었고, 상시 레드인
+      #   게이트는 아무도 보지 않게 되어 진짜 위반이 섞여도 구분되지 않았다.
+      #   탐지기를 고치고(주석 스킵·컨텍스트 25줄) 남은 오탐은 ACKNOWLEDGED에 근거와 함께
+      #   기록해 0건으로 만든 뒤 strict로 올렸다. 새 위반만 레드가 된다.
       - name: User-scope audit (DB queries have user_id filter)
         run: npx tsx scripts/audit-user-scope.ts
-        continue-on-error: true  # false positive 많아 warning 모드. 향후 strict 전환.
+        continue-on-error: false
 
       # ⚠ CI가 빌드를 한 번도 하지 않고 있었다 — 유일한 빌드 검증이 Vercel이었는데
       #   AWS 이전으로 그걸 끊는 중이다(2026-10-02 감사 #37).
@@ -77,6 +86,6 @@ jobs:
           echo "- TypeScript compile: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "- Lint (eslint, 에러 0): strict" >> $GITHUB_STEP_SUMMARY
           echo "- Unit tests + safety-regression 342 + regex-battery + 커버리지 래칫: strict" >> $GITHUB_STEP_SUMMARY
-          echo "- User-scope audit: warning-only" >> $GITHUB_STEP_SUMMARY
+          echo "- User-scope audit: strict (오탐은 ACKNOWLEDGED에 근거 기록)" >> $GITHUB_STEP_SUMMARY
           echo "- Production build (standalone): strict" >> $GITHUB_STEP_SUMMARY
           echo "- Prompt-leak (regex): strict" >> $GITHUB_STEP_SUMMARY

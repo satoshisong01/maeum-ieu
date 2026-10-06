@@ -15,11 +15,10 @@ import { authOptions } from "@/lib/auth";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { buildSystemPrompt, getHonorific } from "@/lib/chat/prompt";
+import { buildSystemPrompt } from "@/lib/chat/prompt";
 import { getTimeContext } from "@/lib/chat/time";
 import { getWeatherContext } from "@/lib/chat/weather";
-import { COMPANION_DEFAULTS } from "@/lib/chat/constants";
-import { getDailyUsage, buildDailyLimitReply } from "@/lib/usage/daily-limit";
+import { getDailyUsage, buildDailyLimitReplyForUser } from "@/lib/usage/daily-limit";
 import { isLiveBetaEnabledServer } from "@/lib/feature-flags";
 
 const LIVE_MODEL = process.env.LIVE_MODEL || "gemini-3.1-flash-live-preview";
@@ -36,6 +35,21 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const userId = session.user.id;
+
+  /**
+   * 보호자(guardian) 계정은 대화 대상이 아니다 — /api/chat과 같은 403.
+   *
+   * 결함(2026-10-06 발견): /api/chat은 2026-10-01에 guardian을 막았는데 이 경로엔 건너오지
+   *   않았다. 아래 mode 판정이 "일반인 외에는 user"라서 보호자가 **어르신 페르소나**
+   *   (80/20 + 인지 확인 질문)로 세션을 받았다 — /api/chat에서 고친 것과 똑같은 결함이다.
+   *   UI는 guardian을 /expert로 보내므로 직접 API 호출 시에만 발생한다(Live 베타는 현재 off).
+   */
+  if (session.user.screeningMode === "guardian") {
+    return NextResponse.json(
+      { error: "보호자 계정은 대화 기능을 사용할 수 없습니다. 환자 관리 화면을 이용해주세요." },
+      { status: 403 },
+    );
+  }
 
   // 토큰 발급 남용 방지 — 계정당 분당 10회(세션 재접속 여유 포함)
   const rl = await checkRateLimit(`live-token:${userId}`, 10, 60_000);
@@ -54,24 +68,21 @@ export async function POST(req: Request) {
 
   // 일일 대화량 제한 — /api/chat과 같은 상한을 적용한다. 세션 단위로 발급되는 경로라
   //   여기서 막지 않으면 Live가 제한 우회로가 된다(Live는 턴당 비용이 더 크다).
-  //   Live는 세션 중간에 서버가 개입할 수 없으므로 **세션 시작 시점**에만 판정한다.
-  if (conversationId && session.user.screeningMode !== "general") {
+  //   세션 시작 시점 판정이다. 세션 **중간**에 한도에 닿는 경우는 /api/live/turn이 맡는다
+  //   (그 턴의 저장·응급은 처리하고 유료 후처리만 건너뛴 뒤 클라가 세션을 닫는다, 2026-10-06).
+  // ⚠ 대상은 /api/chat과 같다 — **어르신(user)만**. 원래 조건이 `!== "general"`이라
+  //   위 주석("/api/chat과 같은 상한")과 달리 pro·guardian까지 막고 있었다(2026-10-06 정정).
+  const role = session.user.screeningMode;
+  if (conversationId && role !== "general" && role !== "pro") {
     const usage = await getDailyUsage(conversationId, userId);
     if (usage.exceeded) {
-      // 호칭·동반자 이름은 /api/chat과 같은 규칙으로 — 들리는 목소리가 달라지면 어르신이 혼란스럽다.
-      const u = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true, age: true, gender: true, userHonorific: true, companionName: true },
-      }).catch(() => null);
-      const derived = getHonorific(u?.age ?? null, u?.gender ?? null);
-      const honorific = u?.userHonorific?.trim()
-        || (derived === "선생님" && u?.name?.trim() ? `${u.name.trim()}님` : derived);
       // 403이지만 클라이언트는 error 대신 message를 읽어 평소 말풍선으로 띄운다 —
       //   어르신에게 "토큰 발급 실패"를 보여주지 않는다.
+      //   문구는 /api/live/turn과 같은 헬퍼로 — 들리는 목소리가 경로마다 다르면 어르신이 혼란스럽다.
       return NextResponse.json({
         error: "오늘 대화를 마쳤습니다.",
         dailyLimitReached: true,
-        message: buildDailyLimitReply(honorific, u?.companionName?.trim() || COMPANION_DEFAULTS.name),
+        message: await buildDailyLimitReplyForUser(userId),
       }, { status: 403 });
     }
   }

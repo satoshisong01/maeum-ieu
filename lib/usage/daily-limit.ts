@@ -17,6 +17,7 @@
  *   - 검진(대리 검사) 턴과 pro·general 계정은 제한하지 않는다 — 비용 주체·목적이 다르다.
  */
 import { prisma } from "@/lib/prisma";
+import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
 
 /**
  * 기본 상한 — env DAILY_TURN_LIMIT로 조정. **명시적인 0 이하면** 제한 없음(운영 중 비상 해제용).
@@ -69,8 +70,9 @@ export async function getDailyUsage(conversationId: string, userId?: string): Pr
   if (freeLimit <= 0) return none;
 
   try {
+    // ⚠ 상시 감시 기록(혼잣말 조각)은 대화가 아니다 — 세면 감시를 켠 날 대화가 막힌다(2026-10-06).
     const used = await prisma.message.count({
-      where: { conversationId, role: "user", createdAt: { gte: kstMidnightUtc() } },
+      where: { conversationId, role: "user", createdAt: { gte: kstMidnightUtc() }, ...EXCLUDE_OBSERVATION },
     });
 
     // 구독 상한은 **무료 상한에 근접했을 때만** 조회한다 — 평상시 턴(대부분)에
@@ -102,6 +104,30 @@ export async function getDailyUsage(conversationId: string, userId?: string): Pr
  */
 export function buildDailyLimitReply(honorific: string, companionName: string): string {
   return `${honorific}, 오늘 ${companionName}랑 이야기 많이 나눴네요. 목도 쉬셔야 하니 오늘은 여기까지 하고, 내일 또 만나서 얘기해요. 편히 쉬세요.`;
+}
+
+/**
+ * 한도 안내 문구를 **사용자 정보까지 조회해서** 완성한다.
+ *
+ * 왜 여기 있나: 호칭·동반자 이름 유도 로직이 라우트마다 복사되면, 한쪽만 바뀌는 순간
+ *   같은 어르신이 경로에 따라 다른 이름으로 불린다 — Live는 **목소리**로 들리므로
+ *   그 불일치가 글자보다 크게 체감된다(가이드 F3).
+ *   `/api/live/token`(세션 발급)과 `/api/live/turn`(세션 중 도달)이 같은 문구를 써야 한다.
+ *
+ * DB 조회가 실패하면 기본 호칭으로 떨어진다 — 안내를 못 하는 것보다 낫다.
+ */
+export async function buildDailyLimitReplyForUser(userId: string): Promise<string> {
+  const { prisma } = await import("@/lib/prisma");
+  const { getHonorific } = await import("@/lib/chat/prompt");
+  const { COMPANION_DEFAULTS } = await import("@/lib/chat/constants");
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, age: true, gender: true, userHonorific: true, companionName: true },
+  }).catch(() => null);
+  const derived = getHonorific(u?.age ?? null, u?.gender ?? null);
+  const honorific = u?.userHonorific?.trim()
+    || (derived === "선생님" && u?.name?.trim() ? `${u.name.trim()}님` : derived);
+  return buildDailyLimitReply(honorific, u?.companionName?.trim() || COMPANION_DEFAULTS.name);
 }
 
 /**

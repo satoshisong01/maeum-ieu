@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { summarizeMessages, rollupSummaries } from "./summarizer";
+import { OBSERVATION_PREFIX } from "./observation";
 
 const WEEKLY_TRIGGER_THRESHOLD = 50;  // 마지막 요약 이후 새 메시지 50건+
 
@@ -39,12 +40,16 @@ export async function maybeTriggerSummaryRollup(params: {
     const cutoff = last[0]?.periodEnd ?? new Date(0);
 
     // 마지막 요약 이후 새 메시지 조회
+    //   ⚠ 상시 감시 기록(혼잣말)은 뺀다 — 요약이 되면 동반자 프롬프트의 "지난 대화 기억"으로 들어간다.
+    //     수집 목적이 "응급만"인 데이터의 목적 외 사용이고, 조각 수만큼 유료 요약이 자주 돌았다(2026-10-06).
+    //     표지는 매개변수($3)로 넘긴다 — SQL에 리터럴로 박으면 표지가 바뀔 때 여기만 남는다(F3).
     const msgs = await prisma.$queryRawUnsafe<MsgRow[]>(
       `SELECT id, role, content, "createdAt"
        FROM "Message"
        WHERE "conversationId" = $1 AND "createdAt" > $2::timestamptz
+         AND content NOT LIKE $3
        ORDER BY "createdAt" ASC`,
-      conversationId, cutoff,
+      conversationId, cutoff, `${OBSERVATION_PREFIX}%`,
     );
     if (msgs.length < WEEKLY_TRIGGER_THRESHOLD) return;
 

@@ -11,7 +11,8 @@
 import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 
-describe("실제 DB 차단 가드", () => {
+// LIVE_DB_TEST=1은 실 DB 통합 테스트용 명시적 opt-in — 그때는 가드가 꺼진 게 정상이다
+describe.skipIf(process.env.LIVE_DB_TEST === "1")("실제 DB 차단 가드", () => {
   it("DATABASE_URL이 예약 도메인으로 교체돼 있다", () => {
     // 🔒 이게 깨지면 목이 빗나간 순간 유닛 테스트가 **운영 DB에 쓴다**
     expect(process.env.DATABASE_URL).toContain("unit-test-must-mock-lib-prisma.invalid");

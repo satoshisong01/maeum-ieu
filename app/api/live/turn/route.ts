@@ -12,14 +12,15 @@ import { saveMessages } from "@/lib/chat/messages";
 import { runCognitiveAnalysis } from "@/lib/chat/cognitive-run";
 import { buildHistoryText } from "@/lib/chat/history-text";
 import { getTimeContext } from "@/lib/chat/time";
-import { detectEmergency } from "@/lib/chat/emergency";
-import { detectEmergencyLLM } from "@/lib/chat/emergency-llm";
+import { evaluateEmergency } from "@/lib/chat/emergency-evaluate";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
 import { lastResortEmergency } from "@/lib/chat/emergency-last-resort";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { extractAndSaveProfile } from "@/lib/chat/profile-extractor";
 import { maybeTriggerSummaryRollup } from "@/lib/chat/summary-trigger";
 import { isLiveBetaEnabledServer } from "@/lib/feature-flags";
+import { getDailyUsage, buildDailyLimitReplyForUser } from "@/lib/usage/daily-limit";
+import { EXCLUDE_OBSERVATION } from "@/lib/chat/observation";
 
 export async function POST(req: Request) {
   // 라이브 베타 서버 게이트(2026-07-07 감사) — UI 링크 숨김과 짝. 플래그 없으면 저장 경로도 차단.
@@ -30,6 +31,24 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   const userId = session.user.id;
+
+  // 역할 판정은 맨 위에서 한 번만 — 아래 게이트(보호자 차단·일일 한도·인지 분석)가 같은 값을 본다
+  const rawMode = session.user.screeningMode;
+  const mode = rawMode === "pro" ? "pro" : rawMode === "general" ? "general" : rawMode === "guardian" ? "guardian" : "user";
+
+  /**
+   * 보호자(guardian) 계정은 대화 대상이 아니다 — /api/chat과 같은 403.
+   *
+   * 결함(2026-10-06 발견): /api/chat은 2026-10-01에 guardian을 403으로 막았는데 Live 경로엔
+   *   그 수정이 건너오지 않았다. 여기선 인지 분석만 빼고 **보호자 발화를 저장**하고 있었다.
+   *   한 경로만 고치면 F3·F9(역할 간 누수)가 남는다 — 가이드 §4 역할 행렬.
+   */
+  if (mode === "guardian") {
+    return NextResponse.json(
+      { error: "보호자 계정은 대화 기능을 사용할 수 없습니다. 환자 관리 화면을 이용해주세요." },
+      { status: 403 },
+    );
+  }
 
   const rl = await checkRateLimit(`live-turn:${userId}`, 60, 60_000);
   if (!rl.ok) return NextResponse.json({ error: "잠시 후 다시 시도해주세요." }, { status: 429 });
@@ -55,11 +74,35 @@ export async function POST(req: Request) {
 
     // 응급 감지 — 저장 전에 판정해 마킹까지(위급 이력·보호자 알림의 전제). 정규식 none이면 LLM 백스톱.
     //   이 라우트는 음성 응답 이후의 회송이라 백스톱 지연이 대화 턴테이킹을 막지 않음.
-    let emergency = detectEmergency(userText);
-    if (emergency.level === 0) {
-      const llm = await detectEmergencyLLM(userText);
-      if (llm) emergency = llm;
-    }
+    // ⚠ L1 24시간 누적 → L2 승격까지 /api/chat과 같은 함수로(2026-10-06). 예전엔 정규식·백스톱만
+    //   복사해 두고 승격을 빠뜨려, Live가 기본 음성 경로가 되면 추세 알림이 소리 없이 사라질 상태였다.
+    const ev = await evaluateEmergency({ userContent: userText, conversationId });
+    const emergency = ev.result;        // 카테고리·근거
+    const level = ev.effectiveLevel;    // 저장·알림·응답에 쓰는 실효 등급(승격 반영)
+
+    /**
+     * 일일 사용량 한도 — /api/live/token은 **세션 시작**만 막는다. 세션이 열린 뒤에는 턴마다
+     *   인지 분석·프로필 추출·요약 롤업(전부 유료 Gemini 호출)이 무제한이었다
+     *   (가이드 §4 행렬 '일일 사용량 제한 / live = ❌', 2026-10-02 감사 #24).
+     *
+     * 여기서 **저장과 응급은 막지 않는다**:
+     *   · 이 턴은 이미 클라에서 일어났다(어르신이 말했고 대답을 들었다). 저장을 거부하면
+     *     대화 기록과 응급 마킹이 사라진다 — 거부할 대상이 아니다.
+     *   · 안전 기능은 한도와 무관하게 무료다(제품 원칙).
+     *   유료 후처리만 건너뛰고, 클라에 dailyLimitReached를 돌려 세션을 마무리 인사로 닫는다.
+     *
+     * ⚠ 저장 **전에** 센다. 저장 뒤에 세면 현재 턴이 포함돼 /api/chat보다 한 턴 일찍 끊긴다
+     *   (/api/chat은 생성 전에 세므로 1..limit턴이 전부 정상 처리된다 — 같은 상한이 경로마다
+     *   다르게 동작하면 그게 F3다). 조회 실패는 getDailyUsage가 내부에서 통과로 처리한다.
+     * ⚠ 대상도 /api/chat과 같다 — **어르신(user)만**. pro·general은 목적·과금 주체가 다르다.
+     * ⚠ **응급 발화(L1 이상, 백스톱 포함)는 한도와 무관하게 통과**시킨다 — /api/chat과 같은 정책
+     *   (chat/route.ts `isEmergencyUtterance = detectEmergency(spoken).level > 0` + 백스톱).
+     *   처음 구현에서 이 예외를 빼먹어, 한도에 닿은 날 "어지러워서 못 일어나겠어"(L2)라고 하면
+     *   통화가 끊겼다 — 악화돼 L3가 돼도 들어 줄 채널이 없었다(2026-10-06 적대 감사가 잡음).
+     *   위 응급 판정(정규식 → LLM 백스톱)이 이 줄보다 **먼저** 끝나 있으므로 그 결과를 그대로 쓴다.
+     */
+    const usage = mode === "user" ? await getDailyUsage(conversationId, userId) : null;
+    const limitReached = !!usage?.exceeded && level === 0;
 
     // 저장 실패가 보호자 알림을 삼키지 않게 분리(2026-10-02, /api/chat과 동일 처방).
     //   이전엔 await가 throw하면 500으로 끝나 **응급인데 알림 0건**이었다.
@@ -67,8 +110,8 @@ export async function POST(req: Request) {
     try {
       ({ userMsgId } = await saveMessages({
         conversationId, userId, userContent: userText, assistantContent: aiText,
-        emergencyLevel: emergency.level > 0 ? emergency.level : undefined,
-        emergencyEvidence: emergency.level > 0 ? `${emergency.category}:${emergency.evidence}` : undefined,
+        emergencyLevel: level > 0 ? level : undefined,
+        emergencyEvidence: level > 0 ? `${emergency.category}:${emergency.evidence}` : undefined,
       }));
     } catch (e) {
       console.error("[live-turn] 저장 실패 — 응급 알림은 계속 진행:", e instanceof Error ? e.message : e);
@@ -76,12 +119,12 @@ export async function POST(req: Request) {
 
     // 보호자 알림(L2+) — 메인 /api/chat 경로와 동등한 안전망(2026-07-07 감사: Live 경로가 알림을 전부 우회했음).
     //   ⚠ `&& userMsgId` 제거: 저장이 실패해도 FCM·이메일은 메시지 행 없이 나간다. 마킹만 생략된다.
-    if (emergency.level >= 2) {
-      const level = emergency.level as 2 | 3;
+    if (level >= 2) {
+      const notifyLevel = level as 2 | 3;
       const sendLiveNotify = async () => {
         try {
           const r = await notifyGuardian({
-            userId, userName: session.user.name || "사용자", messageId: userMsgId, level,
+            userId, userName: session.user.name || "사용자", messageId: userMsgId, level: notifyLevel,
             category: emergency.category, content: userText, aiReply: aiText, createdAt: new Date(),
           });
           if (r.sent) console.log("[emergency-notify] live sent:", r.channels);
@@ -95,11 +138,10 @@ export async function POST(req: Request) {
     // 인지 분석은 어르신(user) 계정에만 — general(목적 분리)·pro(검사자)·guardian(보호자) 제외.
     //   기존에는 general만 제외해 guardian 발화가 보호자 본인의 cognitive_assessments로
     //   기록되고 C2 알림 평가 대상이 됐다(2026-10-01 감사).
-    const rawMode = session.user.screeningMode;
-    const mode = rawMode === "pro" ? "pro" : rawMode === "general" ? "general" : rawMode === "guardian" ? "guardian" : "user";
-    if (mode === "user" && userMsgId) {
+    if (mode === "user" && userMsgId && !limitReached) {
+      // 상시 감시 혼잣말은 채점 맥락이 아니다 — /api/chat의 대화 컨텍스트와 같은 범위(2026-10-06)
       const rows = await prisma.message.findMany({
-        where: { conversationId }, orderBy: { createdAt: "desc" }, take: 20,
+        where: { conversationId, ...EXCLUDE_OBSERVATION }, orderBy: { createdAt: "desc" }, take: 20,
         select: { role: true, content: true, createdAt: true },
       });
       const historyText = buildHistoryText(rows.reverse().map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt.toISOString() })));
@@ -111,7 +153,7 @@ export async function POST(req: Request) {
 
     // 기억 축적 — 프로필 추출(가족·취미 등 신규 사실) + 계층 요약 롤업. classic 경로(route.ts)와 동등.
     //   라이브가 기본 음성경로가 된 뒤 이 연결이 없으면 새로 들은 정보가 다음 세션 페르소나에 반영되지 않음(2026-07-20).
-    if (userMsgId) {
+    if (userMsgId && !limitReached) {
       const runMemory = async () => {
         await extractAndSaveProfile({ userId, userMessage: userText, userMessageId: userMsgId }).catch((e) => console.error("[live-turn:profile]", e));
         await maybeTriggerSummaryRollup({ userId, conversationId }).catch((e) => console.error("[live-turn:summary]", e));
@@ -120,7 +162,15 @@ export async function POST(req: Request) {
     }
 
     // Live 경로는 서버 즉답 게이트가 없으므로 클라에 응급 신호 전달(안내 모드 전환용)
-    return NextResponse.json({ ok: true, emergencyLevel: emergency.level });
+    if (limitReached && usage) {
+      console.log(`[daily-limit] live 한도 도달 — userId=${userId.slice(0, 8)} used=${usage.used}/${usage.limit} (저장·응급은 처리, 유료 분석 생략)`);
+      // 필드 이름은 /api/live/token과 같게 — 클라가 한 가지 형태만 알면 된다
+      return NextResponse.json({
+        ok: true, emergencyLevel: level,
+        dailyLimitReached: true, message: await buildDailyLimitReplyForUser(userId),
+      });
+    }
+    return NextResponse.json({ ok: true, emergencyLevel: level });
   } catch (e) {
     console.error("[live-turn]", e);
     /**
