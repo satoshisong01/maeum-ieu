@@ -13,6 +13,7 @@ import Link from "next/link";
 import { LogoutButton, LogoutIcon } from "../LogoutButton";
 import { VoiceMonitor } from "@/lib/voiceprint/monitor";
 import { extractVoiceprintRobust, cosineSim, float32ToWavBase64, warmupVoiceprint } from "@/lib/voiceprint/client";
+import { SegmentQueue } from "@/lib/voiceprint/segment-queue";
 
 interface LogItem { at: string; kind: "patient" | "other" | "emergency"; text: string; score: number; level?: number }
 
@@ -32,10 +33,16 @@ export default function ObservePage() {
   const printRef = useRef<number[] | null>(null);
   const thrRef = useRef(0.55);
   const monRef = useRef<VoiceMonitor | null>(null);
-  const busyRef = useRef(false); // 조각 처리 중복 방지(직렬)
+  /**
+   * 처리 대기열 — 예전엔 처리 중에 들어온 조각을 **그냥 버렸다**(busy면 return). 동작은
+   *   lib/voiceprint/segment-queue.ts에 있고 테스트로 고정돼 있다(순서 처리·넘치면 오래된 것부터 버림).
+   */
+  const queueRef = useRef<SegmentQueue<Float32Array> | null>(null);
+  /** 서버 상한(전사 15s + 백스톱 8s + DB) 위로 여유 — 이보다 오래 매달리면 다음 조각으로 넘어간다 */
+  const TURN_TIMEOUT_MS = 30_000;
 
   useEffect(() => { if (status === "unauthenticated") router.replace("/login"); }, [status, router]);
-  useEffect(() => () => { monRef.current?.stop(); }, []);
+  useEffect(() => () => { monRef.current?.stop(); queueRef.current?.stop(); }, []);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -51,9 +58,9 @@ export default function ObservePage() {
 
   const pushLog = (item: LogItem) => setLog((prev) => [item, ...prev].slice(0, 50));
 
-  const handleSegment = async (audio: Float32Array) => {
-    if (busyRef.current || !printRef.current) return;
-    busyRef.current = true;
+  /** 조각 1개 처리. 감시를 계속할 수 없는 응답(동의 필요·역할 불가)이면 false */
+  const handleSegment = async (audio: Float32Array): Promise<boolean> => {
+    if (!printRef.current) return true;
     try {
       const emb = await extractVoiceprintRobust(audio, 3, 1.5);
       const score = cosineSim(emb, printRef.current);
@@ -62,7 +69,7 @@ export default function ObservePage() {
         // 환자 아님(다른 사람/잡음) — 서버로 보내지 않고 폐기
         setCounts((c) => ({ ...c, other: c.other + 1 }));
         pushLog({ at: now, kind: "other", text: "(다른 사람/잡음 — 분석 안 함)", score });
-        return;
+        return true;
       }
       // 환자 발화 — WAV로 서버 전송(전사·응급감지)
       setCounts((c) => ({ ...c, patient: c.patient + 1 }));
@@ -70,34 +77,51 @@ export default function ObservePage() {
       const res = await fetch("/api/observe/turn", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audio: wav, mimeType: "audio/wav" }),
+        // 구형 WebView엔 AbortSignal.timeout이 없을 수 있다 — 없으면 타임아웃 없이(예전 동작) 보낸다
+        signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(TURN_TIMEOUT_MS) : undefined,
       });
       const d = await res.json().catch(() => ({}));
+      /**
+       * 감시를 계속할 수 없는 응답 — 예전엔 이게 전부 "(잘 안 들림)"으로 표시됐다. 동의가 필요하거나
+       *   보호자 계정으로 켠 경우, 화면은 감시 중인 것처럼 보이는데 실제로는 아무것도 처리되지 않았다.
+       */
+      if (res.status === 403 && (d?.needConsent || d?.wrongRole)) {
+        stop();
+        setError(d.needConsent
+          ? "건강정보 수집 동의가 필요해요. 동의 화면에서 동의한 뒤 다시 켜 주세요."
+          : (d.error || "이 계정에서는 상시 감시를 쓸 수 없어요."));
+        if (d.needConsent) router.push("/consent");
+        return false;
+      }
       if (d?.skipped || !d?.text) {
         pushLog({ at: now, kind: "patient", text: "(잘 안 들림)", score });
-        return;
+        return true;
       }
       const lvl = d.emergencyLevel ?? 0;
       pushLog({ at: now, kind: lvl >= 2 ? "emergency" : "patient", text: d.text, score, level: lvl });
-      if (lvl >= 2) setEmergency(`응급 징후 감지 (레벨 ${lvl}) — 보호자에게 알림을 보냈어요.`);
+      // ⚠ 서버는 알림을 **요청**하고 응답한다(발송 결과는 이 응답 뒤에 나온다) — "보냈어요"는 확인되지 않은 말이었다
+      if (lvl >= 2) setEmergency(`응급 징후 감지 (레벨 ${lvl}) — 보호자에게 알림을 요청했어요.`);
     } catch (e) {
       console.warn("[observe] segment error", (e as Error).message);
-    } finally {
-      busyRef.current = false;
     }
+    return true;
   };
 
   const start = async () => {
     setError(""); setEmergency(null);
+    // 세션마다 새 대기열 — 이전 세션에서 stop()된 대기열은 더 받지 않는다
+    const queue = new SegmentQueue<Float32Array>(handleSegment, 5);
+    queueRef.current = queue;
     const mon = new VoiceMonitor({
       onLevel: (l) => setLevel(l),
       onState: (s) => setSpeaking(s),
-      onSegment: (audio) => { void handleSegment(audio); },
+      onSegment: (audio) => { if (printRef.current) void queue.enqueue(audio); },
       onError: (m) => setError(m),
     });
     try { await mon.start(); monRef.current = mon; setRunning(true); }
     catch { setError("마이크를 사용할 수 없어요. 권한을 허용한 뒤 다시 시도해 주세요."); }
   };
-  const stop = () => { monRef.current?.stop(); monRef.current = null; setRunning(false); setSpeaking(false); setLevel(0); };
+  const stop = () => { monRef.current?.stop(); monRef.current = null; queueRef.current?.stop(); queueRef.current = null; setRunning(false); setSpeaking(false); setLevel(0); };
 
   return (
     <div className="min-h-screen bg-[#0e1b1e] text-zinc-100">

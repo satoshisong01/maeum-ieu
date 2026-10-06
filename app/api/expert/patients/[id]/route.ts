@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { computeOverallAvg, classifySeverity, detectAcuteChange, assessReliability, guardianStatusLine, type DomainStat } from "@/lib/health/severity";
 import { classifyProvisional, classifyFormal, compareSessions, summarizeExamTrend, EXAM_DISCLAIMER, type ExamTrend } from "@/lib/screening/exam-eval";
 import { itemLabel } from "@/lib/screening/cist-bank";
+import { buildExamQa } from "@/lib/screening/exam-qa";
 import { toKstDateString } from "@/lib/chat/time";
 import { resolveViewerRole } from "@/lib/roles";
 import { BILLING_ENFORCE } from "@/lib/billing/plans";
@@ -249,20 +250,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       patientId, session.user.id);
     const built = await Promise.all(rows.map(async (r) => {
       const start = new Date(r.started_at);
-      // 문답 창 하드캡: 시작+30분(검진 25분+여유) — ended_at이 없거나 비정상적으로 늦게 찍혔어도(과거 고아 세션
-      //   데이터 포함) 창이 검진 상한을 넘지 못하게 서버에서 강제. 일상 대화 원문이 문답 기록에 섞이는 것 차단(2026-07-07 감사).
-      const windowCap = new Date(start.getTime() + 30 * 60 * 1000);
-      // ended_at은 마지막 문답 saveMessages보다 먼저 찍힘(완주 분기) — +3초 여유로 마지막 답·종결 멘트 포함
-      const rawEnd = r.ended_at ? new Date(new Date(r.ended_at).getTime() + 3000) : null;
-      const end = rawEnd && rawEnd < windowCap ? rawEnd : windowCap;
-      const [msgs, itemRows] = await Promise.all([
-        prisma.message.findMany({
-          where: { conversation: { userId: patientId }, createdAt: { gte: start, lte: end } },
-          orderBy: { createdAt: "asc" }, select: { role: true, content: true, createdAt: true },
-        }),
-        prisma.$queryRawUnsafe<{ item_id: string; domain: string; prompt: string | null; answer: string | null; score: number; max_points: number; reason: string | null }[]>(
-          `SELECT item_id, domain, prompt, answer, score, max_points, reason FROM exam_item_score WHERE session_id = $1 ORDER BY created_at`, r.id),
-      ]);
+      /**
+       * 🔒 문답 기록은 **검진 테이블에서만** 만든다 — 환자의 메시지 테이블을 시간 창으로 읽지 않는다.
+       *
+       * 결함(2026-10-06 적대 감사, 반증 0/2): 예전엔 "검진 시작 ~ 종료(최대 30분) 사이의 **모든** 메시지"를
+       *   문답 기록으로 보여줬다. 그래서 검진을 '시작'만 해 두면 그 30분 동안 환자가 집에서 나눈 일상 대화
+       *   (상시 감시 혼잣말 포함)가 원문째 전문가 화면에 떴다 — 동의서 §4 "일상 대화 비공개" 위반.
+       *   전문가는 대화 목록 API의 lastMessageAt으로 환자가 대화 중인 시점도 고를 수 있었다.
+       *   07-07의 30분 상한은 창을 좁혔을 뿐 창이라는 구조를 그대로 둬, 악의적 시작·방치를 막지 못했다.
+       *
+       * 그래서 창을 좁히지 않고 **출처를 바꾼다**: exam_item_score는 검진 경로만 쓰는 테이블이라 일상 대화가
+       *   들어올 수 없다(구조적 차단). 과거 세션까지 소급해 막힌다.
+       *   질문 = 그 영역 문항 프롬프트의 결합(= 환자가 실제로 들은 renderDomainBattery와 같은 문장),
+       *   답 = 그 영역 답(음성이면 전사). 잃는 것은 재질문 대화와 인사·종결 멘트뿐이고,
+       *   재질문 끝의 무응답은 점수·사유("무응답")에 남는다.
+       */
+      const itemRows = await prisma.$queryRawUnsafe<{ item_id: string; domain: string; prompt: string | null; answer: string | null; score: number; max_points: number; reason: string | null; created_at: Date }[]>(
+        `SELECT item_id, domain, prompt, answer, score, max_points, reason, created_at FROM exam_item_score WHERE session_id = $1 ORDER BY created_at`, r.id);
       const sufficient = r.coverage_status !== "insufficient";
       const provisional = r.total_score != null ? classifyProvisional(r.total_score, r.max_score ?? undefined, sufficient) : null;
       // 의사가 학력·시공간을 입력했으면 학력보정 잠정 등급 계산
@@ -281,7 +285,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         formalBand: formal?.band ?? null, formalLabel: formal?.label ?? null, formalAdvice: formal?.advice ?? null, formalScore: formal?.fullScore ?? null, formalMax: formal?.fullMax ?? null,
         // 배점 0점 보조 문항(예: 숫자 거꾸로)은 총점 미반영 → 항목별 채점/결과지에서 제외(질문·답변은 문답 기록에 남음)
         items: itemRows.filter((it) => it.max_points > 0).map((it) => ({ itemId: it.item_id, label: itemLabel(it.item_id), domain: it.domain, prompt: it.prompt ?? "", answer: it.answer ?? "", score: it.score, max: it.max_points, reason: it.reason ?? "" })),
-        qa: msgs.map((m) => ({ role: m.role, content: m.content, at: m.createdAt.toISOString() })),
+        // 배점 0점 보조 문항도 문답 기록에는 남는다(itemRows 전체 사용 — 위 items만 0점을 뺀다)
+        qa: buildExamQa(itemRows),
         trend: null as null | { direction: string; deltaPct: number },
       };
     }));

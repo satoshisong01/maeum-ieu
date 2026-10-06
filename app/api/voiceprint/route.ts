@@ -85,6 +85,29 @@ export async function POST(req: Request) {
   if (!isEmbedding(body?.embedding)) return NextResponse.json({ error: "임베딩 형식 오류" }, { status: 400 });
   const embedding = l2norm(body.embedding as number[]);
 
+  /**
+   * 성문을 **만들거나 대조하는** 동작은 대상자가 (1) 어르신 계정이고 (2) 동의했을 때만.
+   *   (reset은 막지 않는다 — 지우는 것은 언제든 할 수 있어야 한다)
+   *
+   * 결함(2026-10-06 적대 감사): 아무 확인 없이 성문을 만들었다. 마이페이지의 등록 링크는 역할·동의와
+   *   무관하게 모든 계정에 보여, 동의 화면을 거치지 않는 보호자·전문가 계정이 UI만으로 자기 이름의
+   *   성문을 만들 수 있었다(상시 감시는 이제 어르신 계정만 받으므로 쓸 곳도 없다). pro의 대리 등록도
+   *   환자 동의를 보지 않았다.
+   *
+   * ⚠ 이것으로 법적 요건이 채워지지는 않는다. 성문은 생체인식정보(민감정보)인데, 현재 동의서와
+   *   개인정보처리방침 어디에도 성문 저장이 고지돼 있지 않다 — 별도 동의 문구가 필요하다(사용자 판단,
+   *   docs/CYCLE_FIXLOG.md OPEN). 여기서는 최소한 "동의 게이트를 통과한 어르신 계정"으로 범위를 좁힌다.
+   */
+  if (action === "enroll" || action === "verify") {
+    const target = await prisma.user.findUnique({ where: { id: uid }, select: { consentedAt: true, screeningMode: true } });
+    if (!target?.consentedAt) {
+      return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
+    }
+    if (target.screeningMode !== "user") {
+      return NextResponse.json({ error: "목소리 등록은 어르신 계정에서만 할 수 있어요.", wrongRole: true }, { status: 403 });
+    }
+  }
+
   if (action === "enroll") {
     const sampleSecs = typeof body?.sampleSecs === "number" ? Math.max(0, Math.min(600, body.sampleSecs)) : null;
     // 1) 개별 표본 추가

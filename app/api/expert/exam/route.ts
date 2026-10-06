@@ -35,6 +35,8 @@ export async function POST(req: Request) {
     // 진행 중이던 기존 세션 자동 종료 — 고아 세션 누적 방지(다중 클릭·중간 재시작).
     //   ⚠ ended_at은 검진 상한(시작+30분)으로 캡(2026-07-07 감사 blocker): now()로 찍으면 며칠 전 고아 세션의
     //   문답 창이 [이전 검진~현재]로 확장돼 그 사이 일상 대화 원문이 전문가 화면 '문답 기록'에 노출됨.
+    //   (2026-10-06부터 문답 기록은 시간 창이 아니라 exam_item_score에서 만든다 — 노출 경로 자체가 없어졌다.
+    //    캡은 세션 길이 지표를 정직하게 두기 위해 유지한다.)
     await prisma.$executeRawUnsafe(
       `UPDATE exam_session SET ended_at = LEAST(now(), started_at + interval '30 minutes') WHERE expert_user_id = $1 AND patient_user_id = $2 AND ended_at IS NULL`,
       expertId, patientId).catch(() => {});

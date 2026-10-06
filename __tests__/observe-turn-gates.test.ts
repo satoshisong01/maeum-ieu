@@ -13,6 +13,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const pending: Promise<unknown>[] = [];
+const sttCalls: number[] = [];
+const sttConfigs: { abortSignal?: unknown }[] = [];
 let session: { user: { id: string; name?: string; screeningMode?: string } } | null = null;
 let transcript = "";
 
@@ -27,8 +29,11 @@ const messageCreate = vi.fn<(a: { data: { emergencyLevel: number | null; content
   async () => ({ id: "m-obs" }));
 // L1 누적 집계(countRecentL1Signals → prisma.message.count) — 승격 검증에 쓴다
 let recentL1 = 0;
+/** 동의 조회 결과 — Error면 DB 장애를 흉내낸다 */
+let consentRow: { consentedAt: Date | null } | null | Error = { consentedAt: new Date("2026-01-01") };
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    user: { findUnique: vi.fn(async () => { if (consentRow instanceof Error) throw consentRow; return consentRow; }) },
     conversation: { findUnique: vi.fn(async () => ({ id: "c-obs" })), create: vi.fn(async () => ({ id: "c-obs" })) },
     message: {
       create: (a: { data: { emergencyLevel: number | null; content: string } }) => messageCreate(a),
@@ -36,10 +41,16 @@ vi.mock("@/lib/prisma", () => ({
     },
   },
 }));
-vi.mock("@/lib/chat/llm", () => ({
-  getGenAI: () => ({ models: { generateContent: vi.fn(async () => ({})) } }),
+// ⚠ 원본을 펼치고 필요한 것만 덮어쓴다. 처음엔 필요한 export만 골라 목을 만들었는데, 라우트가
+//   LLM_TIMEOUT_MS·timeoutSignal을 새로 가져오자 undefined가 되어 **모든 턴이 500**이 됐다.
+//   부분 목은 대상 모듈의 import가 늘 때마다 조용히 깨진다.
+vi.mock("@/lib/chat/llm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/llm")>()),
+  // 전사 호출을 기록한다 — 막혀야 할 계정이면 전사(=건강 음성 처리) 자체가 일어나면 안 된다
+  getGenAI: () => ({ models: { generateContent: async (req: { config?: { abortSignal?: unknown } }) => {
+    sttCalls.push(1); sttConfigs.push(req?.config ?? {}); return {};
+  } } }),
   extractText: () => transcript,          // 전사 결과를 테스트가 정한다
-  COMPANION_SAFETY_SETTINGS: [],
   logUsage: () => {},
 }));
 vi.mock("@/lib/chat/emergency-llm", () => ({ detectEmergencyLLM: vi.fn(async () => null) }));
@@ -65,6 +76,9 @@ async function call(text: string) {
 beforeEach(() => {
   pending.length = 0;
   recentL1 = 0;
+  consentRow = { consentedAt: new Date("2026-01-01") };
+  sttCalls.length = 0;
+  sttConfigs.length = 0;
   session = { user: { id: "u-elder", name: "김어르신", screeningMode: "user" } };
   messageCreate.mockClear();
   notifyGuardian.mockClear();
@@ -148,5 +162,49 @@ describe("L1 혼잣말 24시간 누적 → L2 승격 — /api/chat과 같은 규
     expect(r.status).toBe(200);
     expect(messageCreate.mock.calls[0][0].data.emergencyLevel).toBe(1);
     expect(notifyGuardian).not.toHaveBeenCalled();
+  });
+});
+
+describe("전사 타임아웃 (2026-10-06)", () => {
+  it("전사 호출에 중단 신호가 실린다 — Gemini가 매달려도 요청이 끝난다", async () => {
+    await call("오늘 날씨 좋네");
+    expect(sttConfigs.length).toBe(1);
+    // 🔒 이전엔 신호가 없어, 전사가 매달리는 동안 요청이 끝나지 않았고 클라는 그 사이 조각을 버렸다
+    expect(sttConfigs[0].abortSignal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("감시 대상은 어르신 본인 계정만 (2026-10-06)", () => {
+  it.each(["guardian", "pro", "general"])("%s 계정은 403이고 전사·저장·알림이 일어나지 않는다", async (role) => {
+    session = { user: { id: `u-${role}`, screeningMode: role } };
+    const r = await call("숨이 안 쉬어져");
+    // 🔒 이전: 보호자 계정으로 켜면 어르신 발화·응급이 **보호자 계정**에 기록되고, 알림 대상도
+    //   보호자 계정 기준이라 사실상 아무에게도 안 가는데 화면엔 "보냈어요"가 떴다
+    expect(r.status).toBe(403);
+    expect(r.body.wrongRole).toBe(true);
+    expect(sttCalls).toEqual([]);
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(notifyGuardian).not.toHaveBeenCalled();
+  });
+});
+
+describe("건강정보 수집 동의 (2026-10-06)", () => {
+  it("미동의 계정은 403 needConsent — 전사(건강 음성 처리) 자체를 하지 않는다", async () => {
+    consentRow = { consentedAt: null };
+    const r = await call("숨이 안 쉬어져");
+    expect(r.status).toBe(403);
+    expect(r.body.needConsent).toBe(true);
+    expect(sttCalls).toEqual([]);
+    expect(messageCreate).not.toHaveBeenCalled();
+  });
+
+  it("⚠ 동의 **조회가 실패**(DB 장애)하면 감시를 멈추지 않는다 — 응급은 계속 잡는다", async () => {
+    consentRow = new Error("db down");
+    const r = await call("숨이 안 쉬어져");
+    // 🔒 의도된 비대칭: 이 경로는 DB가 흔들려도 응급 감지가 돌도록 만들어져 있다. 동의 조회 실패로
+    //   막으면 장애 중 감지가 통째로 꺼진다. DB가 정상이면 미동의는 위 테스트처럼 반드시 막힌다.
+    expect(r.status).toBe(200);
+    expect(r.body.emergencyLevel).toBe(3);
+    expect(notifyGuardian).toHaveBeenCalledTimes(1);
   });
 });

@@ -14,7 +14,7 @@ import type { Part } from "@google/genai";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getGenAI, extractText, COMPANION_SAFETY_SETTINGS, logUsage } from "@/lib/chat/llm";
+import { getGenAI, extractText, COMPANION_SAFETY_SETTINGS, logUsage, LLM_TIMEOUT_MS, timeoutSignal } from "@/lib/chat/llm";
 import { evaluateSttConfidence } from "@/lib/chat/stt-confidence";
 import { detectWithBackstop, applyL1Escalation } from "@/lib/chat/emergency-evaluate";
 import { notifyGuardian } from "@/lib/chat/emergency-notify";
@@ -32,7 +32,10 @@ async function transcribe(audioB64: string, mimeType: string): Promise<string> {
   const res = await getGenAI().models.generateContent({
     model: process.env.STT_MODEL || "gemini-2.5-flash",
     contents: [{ role: "user", parts }],
-    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS },
+    // ⚠ 타임아웃 — /api/chat 전사와 같은 상한(LLM_TIMEOUT_MS.stt). 없으면 Gemini가 매달리는 동안 요청이
+    //   끝나지 않고, 클라는 처리 중에 들어온 조각을 버린다 — 그 사이의 "넘어져서 못 일어나" 같은
+    //   발화가 서버에 닿지도 못하고 기기에서 폐기됐다(2026-10-06 적대 감사).
+    config: { temperature: 0, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 64 }, safetySettings: COMPANION_SAFETY_SETTINGS, abortSignal: timeoutSignal(LLM_TIMEOUT_MS.stt) },
   });
   logUsage("observe-stt", res);
   return extractText(res, { isUserSpeech: true }).trim();
@@ -53,9 +56,36 @@ export async function POST(req: Request) {
   if (!audioB64 || audioB64.length > MAX_AUDIO_B64) {
     return NextResponse.json({ error: "오디오 형식 오류" }, { status: 400 });
   }
-  // 감시 대상 = 본인 계정(어르신). 대리(보호자가 환자 계정 감시)는 후속 — 1차는 본인 세션.
-  if (session.user.screeningMode === "general") {
-    return NextResponse.json({ error: "이 계정은 감시 대상이 아닙니다." }, { status: 400 });
+  /**
+   * 감시 대상 = **어르신 본인 계정만**. 대리(보호자가 환자 계정 감시)는 후속 — 1차는 본인 세션.
+   *
+   * 결함(2026-10-06 적대 감사): general만 막고 있었다. 보호자가 자기 계정으로 로그인한 기기를
+   *   어르신 곁에 두고 /observe를 열면, 어르신의 혼잣말·응급이 **보호자 계정**에 기록되고
+   *   (어르신 위급 이력엔 안 남는다), 알림 대상도 보호자 계정 기준으로 조회돼 사실상 아무에게도
+   *   가지 않는데 화면엔 "보냈어요"가 떴다. pro도 같다. /api/chat은 guardian을 403으로 막는다.
+   */
+  const role = session.user.screeningMode;
+  if (role === "general" || role === "guardian" || role === "pro") {
+    return NextResponse.json(
+      { error: "상시 감시는 어르신 본인 계정에서만 쓸 수 있어요.", wrongRole: true },
+      { status: 403 },
+    );
+  }
+
+  /**
+   * 건강정보 수집 동의 — /api/chat·/api/live/turn과 같은 게이트(2026-10-06, 적대 감사).
+   *   미동의 계정이 상시 감시로 발화 전사·응급 이력을 만들고 원문이 보호자에게 전송되고 있었다.
+   *
+   * ⚠ 조회 **실패**(DB 장애)면 막지 않는다 — 의도된 비대칭이다.
+   *   이 경로는 DB가 흔들려도 응급 감지가 돌도록 만들어져 있다(아래 최후 안전망). 동의 조회 실패로
+   *   막으면 장애 중 응급 감지가 통째로 꺼진다. 이 세션은 이미 홈 화면의 동의 게이트를 지나왔고,
+   *   장애 중 감지가 꺼지는 쪽이 동의 확인을 한 번 건너뛰는 쪽보다 위험하다.
+   *   DB가 정상이면 미동의는 반드시 막힌다.
+   */
+  const consent = await prisma.user.findUnique({ where: { id: userId }, select: { consentedAt: true } })
+    .catch((e) => { console.error("[observe-turn] 동의 조회 실패 — 감시는 계속:", e instanceof Error ? e.message : e); return undefined; });
+  if (consent !== undefined && !consent?.consentedAt) {
+    return NextResponse.json({ error: "건강정보 수집 동의가 필요합니다.", needConsent: true }, { status: 403 });
   }
 
   // 전사는 try 밖에서 받아 catch가 쓸 수 있게 한다 — 안쪽에서만 알면 DB 실패 시 발화를 잃는다.
