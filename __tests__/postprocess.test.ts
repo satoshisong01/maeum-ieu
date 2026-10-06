@@ -282,6 +282,40 @@ describe("fixParentReferent — 부모 행위주체 복원", () => {
   });
 });
 
+/**
+ * 확인 질문의 답 턴 — 채점하는 말을 뺀다(2026-10-06 직접 운전 B6 잔여).
+ *   지시를 줘도 답 턴 4번 중 3번 "정답이에요, 할머니!" 류가 나왔다. "검사받는 느낌 0"이 사용자 모드의 핵심 원칙.
+ */
+describe("stripGradingOnAnswer — 답 턴의 채점 문장 제거", () => {
+  it.each([
+    ["정답이에요, 할머니! 손주가 그 돈으로 과자 사 먹으면 좋아하겠네요.", "손주가 그 돈으로 과자 사 먹으면 좋아하겠네요."],
+    ["네, 정답입니다. 오늘 점심은 뭐 드실 거예요?", "오늘 점심은 뭐 드실 거예요?"],
+    ["딱 맞히셨네요! 김장은 언제 하셨어요?", "김장은 언제 하셨어요?"],
+    ["정답은 삼천 원이에요. 괜찮아요, 천천히 하셔도 돼요.", "괜찮아요, 천천히 하셔도 돼요."],
+  ])("%s", async (input, expected) => {
+    const { stripGradingOnAnswer } = await import("@/lib/chat/postprocess");
+    expect(stripGradingOnAnswer(input)).toBe(expected);
+  });
+
+  it("'맞아요' 같은 일상 맞장구는 건드리지 않는다", async () => {
+    const { stripGradingOnAnswer } = await import("@/lib/chat/postprocess");
+    const t = "맞아요, 할머니. 그때 김장은 정말 잔치였겠어요.";
+    expect(stripGradingOnAnswer(t)).toBe(t);
+  });
+
+  it("문장 단위 스트리밍에서 채점 문장 하나만 오면 빈 문자열(말하지 않음)", async () => {
+    const { stripGradingOnAnswer } = await import("@/lib/chat/postprocess");
+    expect(stripGradingOnAnswer("정답이에요, 할머니!")).toBe("");
+  });
+
+  it("파이프라인은 답 턴(answeringProbe)에서만 이 단계를 탄다", async () => {
+    const base = { userText: "삼천 원이지", companionName: "민지", ctx: "", honorific: "할머니", family: [], prevAi: "" };
+    const t = "정답이에요, 할머니! 손주가 좋아하겠네요.";
+    expect(postProcessReply(t, { ...base, answeringProbe: true })).toBe("손주가 좋아하겠네요.");
+    expect(postProcessReply(t, base)).toBe(t);
+  });
+});
+
 describe("postProcessReply (파이프라인 스모크)", () => {
   const opts = { userText: "응 그래", companionName: "민지", ctx: "", honorific: "할머니", family: [], prevAi: "" };
 

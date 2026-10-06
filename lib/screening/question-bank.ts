@@ -24,11 +24,25 @@ interface QuestionBank {
 
 const bank = bankData as QuestionBank;
 
-/** 해당 영역의 모든 항목 질문을 합친 풀 */
+/**
+ * 어르신이 **하지 않은 말·일을 전제**하는 문항인가 — "어제 마실 다녀오셨다 그러셨잖아요", "손녀가 용돈 주고 갔다던데".
+ *
+ * 결함(2026-10-06 직접 운전 B13): 확인 질문 "요번 주 손녀가 용돈 쥐여주고 갔다던데, 언제였어요?"에 어르신이
+ *   "그런 일 없었는데… 내가 그런 말을 했었나? 요새 내가 정신이 없나 보네"라고 답했다. 정적 풀은 대화 내용을 모르니
+ *   이런 전제는 늘 지어낸 것이다 — 기억이 걱정되는 분이 자기 기억을 의심하게 만들고, 바른 부정이 회상 실패로
+ *   오채점될 위험도 있다. 풀 3,888개 중 124개(최근 일 회상은 100개 중 46개)가 해당해 추출 단계에서 거른다.
+ */
+const PRESUPPOSES_UNSAID = /그러셨던|그러셨잖|다던데|셨다면서|셨다며|다녀가셨다|셨잖아요|말씀하셨던/;
+export function presupposesUnsaid(text: string): boolean {
+  return PRESUPPOSES_UNSAID.test(text);
+}
+
+/** 해당 영역의 모든 항목 질문을 합친 풀 — 전제형 문항은 뺀다(위 presupposesUnsaid) */
 function poolForDomain(domain: string): BankQuestion[] {
   return Object.values(bank.items)
     .filter((it) => it.domain === domain)
-    .flatMap((it) => it.questions);
+    .flatMap((it) => it.questions)
+    .filter((q) => !presupposesUnsaid(q.text));
 }
 
 /** 영역에서 서로 다른 질문 n개를 무작위 추출(반복 회피용 다양화). 없으면 빈 배열. */

@@ -487,7 +487,7 @@ function streamCompanionReply(opts: {
   };
   contents: unknown;
   fallback: string;
-  post: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string };
+  post: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string; answeringProbe?: boolean };
   fact: { profile: FullProfile; recentUserText: string; memories: string; honorific: string; companionName: string; currentUserText: string };
   extra?: Record<string, unknown>;
   timings?: Record<string, number>; // 계측(있으면 done에 실어 보냄)
@@ -760,7 +760,7 @@ async function handleAudioMessage(params: {
     model,
     contents: { contents },
     fallback,
-    post: { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi },
+    post: { userText: transcription, companionName, ctx, honorific, family: profile.family, prevAi, answeringProbe },
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: transcription },
     extra: { transcription, ...(emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : {}) },
     timings,
@@ -1123,7 +1123,7 @@ async function handleTextMessage(params: {
     model,
     contents: { contents },
     fallback,
-    post: { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi },
+    post: { userText: userContent, companionName, ctx, honorific, family: profile.family, prevAi, answeringProbe },
     fact: { profile, recentUserText, memories: memories || "", honorific, companionName, currentUserText: userContent },
     extra: emergency.effectiveLevel > 0 ? { emergency: { level: emergency.effectiveLevel, category: emergency.result.category } } : undefined,
     timings,

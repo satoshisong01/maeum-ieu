@@ -41,6 +41,29 @@ interface PatternRule {
 // 과거 회상·TV·꿈·농담 맥락 제외 가드
 // 한 발화 안에 이 표현이 있으면 응급 평가에서 일단 빼낸다 (특정 패턴은 별도 가드 적용)
 const PAST_CONTEXT_GUARD = /(예전[에엔은도]|옛날[에엔은도]|어릴\s*[때적]|어렸을\s*적|젊었을\s*[때적]|젊을\s*[적때]|젊은\s*시절|한창\s*때|왕년에|작년에|지난번에|저번에|꿈에서|꿈\s*꿨|TV|드라마|영화\s*(?:에서|봤|보고)|뉴스|방송에서)/;
+
+/**
+ * 과거 표지가 **발화 전체**를 과거로 만들지 않게 — 증상 근거 바로 앞의 가장 가까운 시점 표지로 판정한다.
+ *
+ * 결함(2026-10-06 직접 운전 B12): "옛날엔 뭐든 맛있었지. 근데 요즘은 기운이 하나도 없어서"가 L0,
+ *   "어릴 때 넘어져서 다친 적 있는데 **지금 어지러워서 못 일어나겠어**"도 L0였다. 문장 앞의 '옛날엔/어릴 때'가
+ *   PAST_CONTEXT_GUARD에 걸리면 뒤의 현재 신호까지 통째로 과거 취급했다.
+ * 적용 범위: 자살·복약 외 범주(L3 신체·L2·L1). 자살·복약은 RESOLVED/STILL_DISTRESSED로 따로 조정돼 있어
+ *   기존(발화 전체) 판정을 유지한다. 꿈·TV·뉴스 같은 매체 맥락은 위치와 무관하게 발화 전체에 적용한다.
+ */
+const PAST_TIME_MARKER = /예전[에엔은도]|옛날[에엔은도]|어릴\s*[때적]|어렸을\s*적|젊었을\s*[때적]|젊을\s*[적때]|젊은\s*시절|한창\s*때|왕년에|작년에|지난번에|저번에/g;
+const MEDIA_DREAM_GUARD = /꿈에서|꿈\s*꿨|TV|드라마|영화\s*(?:에서|봤|보고)|뉴스|방송에서/;
+const PRESENT_MARKER = /요즘|요새|요즈음|지금|오늘|이번\s*주|며칠째|방금|아까/g;
+function pastGovernsAt(text: string, evidenceIdx: number): boolean {
+  if (MEDIA_DREAM_GUARD.test(text)) return true;
+  const lastBefore = (re: RegExp) => {
+    let last = -1;
+    for (const m of text.matchAll(re)) if ((m.index ?? 0) < evidenceIdx) last = m.index ?? -1;
+    return last;
+  };
+  const past = lastBefore(PAST_TIME_MARKER);
+  return past >= 0 && past > lastBefore(PRESENT_MARKER);
+}
 // 비유/감탄/농담 가드 (강도 강조용 "죽겠어", "쓰러질 것 같아 (피곤해서)" 등)
 // 단독으로 "죽겠다/쓰러질 것 같아"가 신체 통증·식사/날씨 등 비응급 명사와 함께 오면 L3 후보에서 강등
 const FIGURATIVE_HINT = /(맛있어\s*죽|배고파\s*죽|더워\s*죽|추워\s*죽|졸려\s*죽|좋아\s*죽|예뻐\s*죽|웃겨\s*죽|힘들어\s*죽|피곤해서\s*쓰러)/;
@@ -59,7 +82,19 @@ const MEDICATION_CONDITIONAL_GUARD = /(?:먹|드시|복용하)(?:으)?면|(?:먹
  * ⚠️ 3인칭 주체 **AND 전문(들은 말) 종결**이 함께 있을 때만 적용한다.
  *   "며느리가 약을 잘못 줬어"처럼 주체는 제3자지만 **피해자가 어르신 본인**인 경우를 살리기 위함.
  */
-const THIRD_PARTY_GUARD = /(?:친구|옆집|이웃|아는\s*사람|누가|누군가|어떤\s*(?:사람|노인|분|할[머아]\S*)|동네\s*(?:사람|분)|노인정|경로당|같은\s*반)[^.!?]{0,30}(?:더라|더군|답니다|랍니다|한다더|그러더|라던데|했대|갔대|하시더|셨대|대[요다]?(?=[\s.!?,]|$))/;
+/**
+ * 호흡·급성 증상의 **비유**와 **부정** — 정규식 L3에서 빼고 백스톱(사전필터 통과)이 문맥으로 판정하게 한다.
+ *
+ * 결함(2026-10-06 직접 운전 B10·B11): 일반인이 "회사 생각하면 숨이 막히는 기분이에요"(비유)라고 하자 119 템플릿,
+ *   이어 "진짜로 숨이 안 쉬어지는 게 아니라 마음이 답답하다는 뜻"이라고 **해명하자 또 119** — 해명할수록 응급 안내가
+ *   반복되는 고리였다. 부정 가드는 자살 범주에만 있었다.
+ * ⚠ 비유는 '생각·떠올림·이야기'가 촉발한 경우와 '기분'만 — "연기 때문에 숨이 막혀"(화재)·"숨이 막히는 것 같아"(신체)는
+ *   그대로 L3다. 부정은 증상 **바로 뒤**의 "~게/건 아니"류만 본다("숨 막히는 건 아닌데 가슴이 너무 아파"는 가슴 규칙이 잡는다).
+ */
+const BREATH_FIGURATIVE = /(?:생각(?:만)?\s*(?:하면|해도|나면|하니까)|떠올리면|얘기만?\s*(?:하면|나오면))[^.!?]{0,15}숨(?:이)?\s*(?:턱\s*)?(?:막히|막혀|막힌)|숨(?:이)?\s*(?:막히는|막힐\s*것\s*같은)\s*기분/;
+const MED_NEGATED = /(?:게|건|것은?|거는?)\s*아니|(?:는|은)\s*아니(?:에|야|고|라)|지는?\s*않|진\s*않/;
+
+const THIRD_PARTY_GUARD =/(?:친구|옆집|이웃|아는\s*사람|누가|누군가|어떤\s*(?:사람|노인|분|할[머아]\S*)|동네\s*(?:사람|분)|노인정|경로당|같은\s*반)[^.!?]{0,30}(?:더라|더군|답니다|랍니다|한다더|그러더|라던데|했대|갔대|하시더|셨대|대[요다]?(?=[\s.!?,]|$))/;
 
 // ─── L3 즉시 응급 ──────────────────────────────────────────────────────────
 const L3_RULES: PatternRule[] = [
@@ -152,8 +187,18 @@ export function detectEmergency(userText: string): EmergencyResult {
     if (m) {
       // 약 누락(덜 복용) / 복용 여부 질문·부정 — 응급 X, skip
       if (rule.category === "medication_error" && (isMedicationUnderdose || isMedicationQuestion)) continue;
+      // 호흡 비유·증상 부정 — 정규식 L3에서 빼고 백스톱이 문맥으로 판정(위 BREATH_FIGURATIVE 주석, 2026-10-06)
+      if (rule.category === "medical_acute") {
+        if (/^(?:숨|호흡)/.test(m[0]) && BREATH_FIGURATIVE.test(text)) continue;
+        if (m.index !== undefined && MED_NEGATED.test(text.slice(m.index + m[0].length, m.index + m[0].length + 14))) continue;
+      }
       // 과거 회상 — suicidal/medication만 L2로 보존(과소평가 방지), 그 외는 무시
-      if (isPastContext) {
+      //   ⚠ 신체 범주는 **근거 바로 앞의 시점 표지**로 판정한다(pastGovernsAt, 2026-10-06 B12) — "어릴 때 다친 적 있는데
+      //   지금 어지러워서 못 일어나겠어"가 L0였다. 자살·복약은 따로 조정된 기존(발화 전체) 판정을 유지한다.
+      const pastHere = rule.category === "suicidal" || rule.category === "medication_error" || m.index === undefined
+        ? isPastContext
+        : pastGovernsAt(text, m.index);
+      if (pastHere) {
         // 단, 이미 해소된 과거 복약 사고("예전에 ~한 적 있었지, 그 뒤로 잘 챙겨")는 현재 응급 아님 (2026-06-25 라운드7 위양성)
         if (rule.category === "medication_error" && (/적\s*(?:이|도)?\s*있었|그\s*뒤로|그\s*후로?|이제[는요]?\s*(?:잘|괜찮)|인자[는]?\s*(?:잘|괜찮|챙)|지금[은]?\s*(?:잘|괜찮)/.test(text) || /뉴스|드라마|TV|영화|방송|어떤\s*(?:사람|노인|할[머아])/.test(text))) continue;
         // 명백히 해소된 과거 자살사고("젊을 때 죽고 싶었지만 이제는 마음 편해졌어")는 현재 위기 아님 (2026-06-25 라운드17·19)
@@ -222,7 +267,7 @@ export function detectEmergency(userText: string): EmergencyResult {
   for (const rule of L2_RULES) {
     const m = text.match(rule.pattern);
     if (m) {
-      if (isPastContext) continue;
+      if (m.index !== undefined ? pastGovernsAt(text, m.index) : isPastContext) continue;
       if (isFigurative) return { level: 1, evidence: m[0], category: rule.category };
       return { level: 2, evidence: m[0], category: rule.category };
     }
@@ -230,7 +275,7 @@ export function detectEmergency(userText: string): EmergencyResult {
   for (const rule of L1_RULES) {
     const m = text.match(rule.pattern);
     if (m) {
-      if (isPastContext) continue;
+      if (m.index !== undefined ? pastGovernsAt(text, m.index) : isPastContext) continue;
       return { level: 1, evidence: m[0], category: rule.category };
     }
   }

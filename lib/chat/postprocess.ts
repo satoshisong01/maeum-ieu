@@ -429,16 +429,32 @@ export function stripMarkdownEmphasis(text: string): string {
 }
 
 /**
+ * 확인 질문의 **답 턴**에서 채점하는 문장을 뺀다 — "정답이에요!", "딱 맞히셨네요", "정답은 ○○예요".
+ *
+ * 결함(2026-10-06 직접 운전 B6 잔여): 답 턴 지시(prevProbeTurn — 평가·채점식 칭찬 금지)를 줘도 4번 중 3번
+ *   "정답이에요, 할머니!"류가 나왔다. "검사받는 느낌 0"이 사용자 모드의 핵심 원칙이고, "정답은 ○○"는
+ *   정답 노출이기도 하다. ⚠ "맞아요"는 일상 맞장구와 구별되지 않아 건드리지 않는다.
+ * 문장 단위로 판정한다 — 스트리밍은 문장 하나씩 들어오므로 채점 문장만 오면 빈 문자열(말하지 않음).
+ */
+const GRADING_SENTENCE = /^(?:네[,!]?\s*)?(?:정답(?:이에요|입니다|이죠|!)|정답은\s|(?:딱\s*)?맞히셨|정확(?:해요|합니다|히\s*맞))/;
+export function stripGradingOnAnswer(text: string): string {
+  if (!text) return text;
+  return text.split(/(?<=[.!?])\s+/).filter((s) => !GRADING_SENTENCE.test(s.trim())).join(" ").trim();
+}
+
+/**
  * 응답 후처리 파이프라인 — 11단 변환을 명시적 순서로 실행 + 단계별 관측.
  * 기존 중첩 1줄 호출(양 핸들러 중복)을 단일화. 어떤 단계가 응답을 통째로 비우면 로깅(빈응답 버그 원인 추적).
  * 순서는 load-bearing이므로 변경 주의(removeUngroundedClaims/removeParrot이 빈 문자열을 만들 수 있어 호출부 가드 필수).
  */
 export function postProcessReply(
   rawText: string,
-  opts: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string },
+  opts: { userText: string; companionName: string; ctx: string; honorific: string; family: FullProfile["family"]; prevAi: string; answeringProbe?: boolean },
 ): string {
   const { userText, companionName, ctx, honorific, family, prevAi } = opts;
   const stages: Array<[string, (t: string) => string]> = [
+    // 확인 질문의 답 턴에서만 — 채점 문장 제거(맨 앞: 뒤 단계의 호칭·문두 정리가 남은 문장 기준으로 돌게)
+    ...(opts.answeringProbe ? [["stripGradingOnAnswer", (t: string) => stripGradingOnAnswer(t)] as [string, (t: string) => string]] : []),
     ["stripMarkdownEmphasis", (t) => stripMarkdownEmphasis(t)],
     ["trimIncomplete", (t) => trimIncomplete(t)],
     ["removeTimeLabels", (t) => removeTimeLabels(t)],

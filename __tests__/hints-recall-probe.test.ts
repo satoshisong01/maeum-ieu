@@ -95,3 +95,11 @@ describe("새 힌트 배선 — 음성·텍스트 두 경로", () => {
     expect(src.match(/buildMentalCheckOfferHint\(mode, (?:transcription|userContent), historyText\),/g)?.length).toBe(2);
   });
 });
+
+describe("답 턴 채점 문장 제거 배선 (B6 잔여)", () => {
+  it("음성·텍스트 두 경로 모두 후처리에 answeringProbe를 넘긴다", async () => {
+    const src = await readFile("app/api/chat/route.ts", "utf-8");
+    // 🔒 빠지면 답 턴에도 단계가 안 돌아 "정답이에요, 할머니!"가 그대로 나간다
+    expect(src.match(/post: \{ userText: (?:transcription|userContent), companionName, ctx, honorific, family: profile\.family, prevAi, answeringProbe \},/g)?.length).toBe(2);
+  });
+});
