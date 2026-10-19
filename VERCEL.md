@@ -28,7 +28,7 @@ git push -u origin main
 
 | 이름 | 값 | 비고 |
 |------|-----|------|
-| `DATABASE_URL` | RDS 연결 문자열 (로컬 .env와 동일) | 비밀번호 `#` → `%23` |
+| `DATABASE_URL` | DB 연결 문자열 — RDS 또는 회사 자체 DB 서버(옮긴 뒤). 끝에 `?sslmode=verify-full`을 붙인다 | 비밀번호 `#` → `%23`. RDS가 아닌 원격 서버면 `lib/db-tls.ts`가 회사 CA(`lib/onprem-db-ca.ts`)로 인증서를 **검증**한다(RDS와 같은 방식). `ssl=`·`sslrootcert=` 같은 다른 TLS 파라미터는 넣지 말 것(지워진다) — `DATABASE_SSL_NO_VERIFY`도 여전히 두지 말 것 |
 | `NEXTAUTH_URL` | **https://프로젝트도메인.vercel.app** | 배포 후 주소로 수정 가능 |
 | `NEXTAUTH_SECRET` | 랜덤 문자열 (로컬과 동일해도 됨) | `openssl rand -base64 32` |
 | `GEMINI_API_KEY` | Google AI Studio 키 | 로컬과 동일 |
